@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#f0f4f8">
 <title>English Talk Trainer</title>
 <link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -176,7 +177,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.04c";
+const VERSION = "v2026.05.04d";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -431,8 +432,8 @@ function saveStats() {
 function render() {
   if (S.screen === "apikey") renderApiKey();
   else if (S.screen === "home") renderHome();
-  else if (S.screen === "freetalk") renderFreeTalk();
-  else if (S.screen === "flash") renderFlash();
+  else if (S.screen === "freetalk") renderFreeTalkSetup();
+  else if (S.screen === "flash") renderFlashSetup();
   else if (S.screen === "review") renderReview();
 }
 
@@ -440,37 +441,52 @@ function render() {
 function renderApiKey() {
   const hasGemini = !!S.geminiKey;
   const hasAzure = !!S.azureKey;
+  const fromHome = hasGemini; // 既にキーがあるなら設定画面からの遷移
   app.innerHTML = `
+    ${fromHome ? `
+    <div class="navbar">
+      <button class="back" id="apiBack">←</button>
+      <div class="title">APIキー設定</div>
+    </div>` : `
     <div class="home-header">
       <div class="pre">AI-Powered English Training</div>
       <h1>English Talk Trainer</h1>
       <div class="sub">フリートーク + 瞬間英作文</div>
-    </div>
+    </div>`}
     <div class="card">
       <div style="font-size:15px;font-weight:600;margin-bottom:16px">🔑 APIキー設定</div>
+
       <div class="mb-16">
-        <label class="text-xs text-muted" style="display:block;margin-bottom:6px">Gemini API Key <span class="tag ${hasGemini?'tag-green':'tag-orange'}">${hasGemini?'設定済':'未設定'}</span></label>
-        <input class="input" id="geminiKeyInput" type="password" placeholder="AIzaSy..." value="${S.geminiKey?'••••••••••':''}">
+        <label class="text-sm" style="display:block;margin-bottom:6px;font-weight:600">Gemini API Key <span class="tag ${hasGemini?'tag-green':'tag-orange'}">${hasGemini?'設定済':'未設定'}</span></label>
+        <input class="input" id="geminiKeyInput" type="text" placeholder="AIzaSy..." value="${esc(S.geminiKey)}" autocomplete="off" autocorrect="off" spellcheck="false">
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:13px;color:var(--accent);text-decoration:none">🔗 Google AI Studio でキーを取得 →</a>
       </div>
+
+      <div class="divider"></div>
+
+      <div class="mb-16" style="margin-top:16px">
+        <label class="text-sm" style="display:block;margin-bottom:6px;font-weight:600">Azure Speech Key <span class="tag ${hasAzure?'tag-green':'tag-orange'}">${hasAzure?'設定済':'未設定'}</span></label>
+        <input class="input" id="azureKeyInput" type="text" placeholder="Azure Speech key..." value="${esc(S.azureKey)}" autocomplete="off" autocorrect="off" spellcheck="false">
+        <a href="https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:13px;color:var(--accent);text-decoration:none">🔗 Azure Portal で Speech リソースを作成 →</a>
+      </div>
+
       <div class="mb-16">
-        <label class="text-xs text-muted" style="display:block;margin-bottom:6px">Azure Speech Key <span class="tag ${hasAzure?'tag-green':'tag-orange'}">${hasAzure?'設定済':'未設定'}</span></label>
-        <input class="input" id="azureKeyInput" type="password" placeholder="Azure Speech key..." value="${S.azureKey?'••••••••••':''}">
+        <label class="text-sm" style="display:block;margin-bottom:6px;font-weight:600">Azure Region</label>
+        <input class="input" id="azureRegionInput" placeholder="eastus" value="${esc(S.azureRegion)}" autocomplete="off">
       </div>
-      <div class="mb-16">
-        <label class="text-xs text-muted" style="display:block;margin-bottom:6px">Azure Region</label>
-        <input class="input" id="azureRegionInput" placeholder="eastus" value="${esc(S.azureRegion)}">
-      </div>
-      <button class="btn btn-primary w-full" id="saveKeysBtn">保存してスタート</button>
-      ${hasGemini ? '<button class="btn btn-ghost w-full mt-8" id="skipBtn">スキップ</button>' : ''}
+
+      <button class="btn btn-primary w-full" id="saveKeysBtn">${fromHome ? 'キーを保存' : '保存してスタート'}</button>
+      ${!fromHome && hasGemini ? '<button class="btn btn-ghost w-full mt-8" id="skipBtn">スキップ</button>' : ''}
     </div>
-    <p class="text-xs text-muted" style="text-align:center;margin-top:12px">APIキーはブラウザ内にのみ保存されます</p>
+    <p class="text-xs text-muted" style="text-align:center;margin-top:12px;padding-bottom:16px">APIキーはブラウザ内にのみ保存されます</p>
   `;
+  if ($("apiBack")) $("apiBack").onclick = () => { S.screen = "home"; render(); };
   $("saveKeysBtn").onclick = () => {
     const gk = $("geminiKeyInput").value.trim();
     const ak = $("azureKeyInput").value.trim();
     const ar = $("azureRegionInput").value.trim();
-    if (gk && !gk.startsWith("••")) { S.geminiKey = gk; localStorage.setItem("gemini_api_key", gk); }
-    if (ak && !ak.startsWith("••")) { S.azureKey = ak; localStorage.setItem("azure_speech_key", ak); }
+    if (gk) { S.geminiKey = gk; localStorage.setItem("gemini_api_key", gk); }
+    if (ak) { S.azureKey = ak; localStorage.setItem("azure_speech_key", ak); }
     if (ar) { S.azureRegion = ar; localStorage.setItem("azure_speech_region", ar); }
     if (!S.geminiKey) { alert("Gemini APIキーを入力してください"); return; }
     S.screen = "home"; render();

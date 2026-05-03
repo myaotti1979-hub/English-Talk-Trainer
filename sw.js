@@ -1,5 +1,5 @@
-const CACHE_NAME = 'ett-v2026.05.04c';
-const ASSETS = ['./', './index.html', './manifest.json'];
+const CACHE_NAME = 'ett-v2026.05.04d';
+const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(ASSETS)));

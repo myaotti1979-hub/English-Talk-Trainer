@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f0f4f8">
+<title>English Talk Trainer</title>
+<link rel="manifest" href="manifest.json">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f0f4f8;--surface:#ffffff;--card:#ffffff;--border:#d1d9e6;
+  --text:#1a2a3a;--muted:#5a6a7a;--accent:#4f46e5;--accent2:#6d5cdb;
+  --green:#059669;--yellow:#b45309;--red:#dc2626;--blue:#2563eb;
+  --orange:#c2410c;
+  --font:'Outfit',system-ui,-apple-system,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',monospace;
+}
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;-webkit-tap-highlight-color:transparent;font-size:16px}
+#app{max-width:520px;margin:0 auto;padding:16px;min-height:100vh;position:relative}
+
+/* ── Buttons ── */
+.btn{padding:14px 24px;border:none;border-radius:12px;font-family:var(--font);font-weight:600;font-size:16px;cursor:pointer;touch-action:manipulation;transition:all .2s}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 2px 8px rgba(79,70,229,.25)}
+.btn-primary:active{transform:scale(.97);filter:brightness(1.1)}
+.btn-secondary{background:var(--surface);color:var(--text);border:1.5px solid var(--border)}
+.btn-secondary:active{background:var(--bg)}
+.btn-ghost{background:transparent;color:var(--muted);padding:10px 14px;font-size:15px}
+.btn-ghost:active{color:var(--text)}
+.btn-danger{background:#fef2f2;color:var(--red);border:1.5px solid #fecaca}
+.btn:disabled{opacity:.4;pointer-events:none}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1.5px solid var(--border);border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.card-glow{box-shadow:0 2px 16px rgba(79,70,229,.1)}
+
+/* ── Inputs ── */
+.input{width:100%;padding:14px 16px;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font);font-size:16px;outline:none;transition:border .2s}
+.input:focus{border-color:var(--accent)}
+.input::placeholder{color:#8a9ab0}
+
+/* ── Tags / Badges ── */
+.tag{display:inline-block;padding:4px 10px;border-radius:20px;font-size:13px;font-weight:600;letter-spacing:.3px}
+.tag-accent{background:#ede9fe;color:var(--accent)}
+.tag-green{background:#d1fae5;color:var(--green)}
+.tag-orange{background:#ffedd5;color:var(--orange)}
+
+/* ── Home Screen ── */
+.home-header{text-align:center;padding:36px 0 28px}
+.home-header .pre{font-size:13px;font-weight:600;letter-spacing:3px;color:var(--accent);margin-bottom:8px;text-transform:uppercase}
+.home-header h1{font-size:30px;font-weight:800;color:var(--text);margin-bottom:6px}
+.home-header .sub{font-size:15px;color:var(--muted);font-weight:400}
+
+.mode-card{position:relative;padding:24px;border-radius:20px;cursor:pointer;transition:all .25s;overflow:hidden;touch-action:manipulation}
+.mode-card:active{transform:scale(.98)}
+.mode-card .icon{font-size:36px;margin-bottom:12px}
+.mode-card h3{font-size:20px;font-weight:700;margin-bottom:6px}
+.mode-card p{font-size:15px;color:var(--muted);line-height:1.6}
+.mode-card .arrow{position:absolute;right:20px;top:50%;transform:translateY(-50%);font-size:22px;color:var(--muted);transition:transform .2s}
+.mode-card:active .arrow{transform:translateY(-50%) translateX(4px)}
+
+.mode-freetalk{background:#ede9fe;border:1.5px solid #c4b5fd;color:#3b2e8a}
+.mode-freetalk h3{color:#3b2e8a}
+.mode-flash{background:#d1fae5;border:1.5px solid #86efac;color:#065f46}
+.mode-flash h3{color:#065f46}
+
+/* ── Chat UI ── */
+.chat-area{display:flex;flex-direction:column;gap:12px;padding-bottom:110px;min-height:60vh}
+.msg{max-width:85%;padding:16px 20px;border-radius:18px;font-size:16px;line-height:1.7;animation:msgIn .3s ease}
+.msg-ai{background:var(--surface);border:1.5px solid var(--border);border-bottom-left-radius:4px;align-self:flex-start;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.msg-user{background:var(--accent);color:#fff;border-bottom-right-radius:4px;align-self:flex-end;box-shadow:0 1px 3px rgba(79,70,229,.2)}
+.msg-system{align-self:center;background:#ede9fe;border:1.5px solid #c4b5fd;color:#4f46e5;font-size:14px;padding:10px 18px;border-radius:20px;text-align:center;font-weight:600}
+.msg-feedback{background:#f0fdf4;border:1.5px solid #86efac;border-radius:14px;padding:18px;align-self:stretch;font-size:15px;line-height:1.7}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.chat-input-bar{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(transparent,var(--bg) 20%);padding:12px 16px 20px;z-index:100}
+.chat-input-bar .inner{max-width:520px;margin:0 auto;display:flex;gap:8px;align-items:center}
+.chat-input-bar .inner .input{flex:1;border-radius:24px;padding:14px 20px;background:var(--surface);font-size:16px}
+
+/* ── Mic Button ── */
+.mic-btn{width:58px;height:58px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:26px;transition:all .2s;touch-action:manipulation;flex-shrink:0}
+.mic-btn.idle{background:var(--surface);border:2px solid var(--border);color:var(--muted)}
+.mic-btn.recording{background:var(--red);color:#fff;animation:pulse 1.5s infinite}
+.mic-btn.processing{background:var(--surface);border:2px solid var(--accent);color:var(--accent);animation:spin 1s linear infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.3)}50%{box-shadow:0 0 0 14px rgba(220,38,38,0)}}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+/* ── Flash Translation ── */
+.flash-card{text-align:center;padding:32px 24px}
+.flash-ja{font-size:24px;font-weight:700;margin-bottom:10px;line-height:1.5;color:var(--text)}
+.flash-hint{font-size:14px;color:var(--muted);margin-bottom:24px}
+.flash-answer{font-size:17px;padding:18px;background:var(--bg);border-radius:12px;margin-top:16px;border:1.5px solid var(--border);line-height:1.7;text-align:left}
+.flash-answer .correct{color:var(--green);font-weight:600}
+.flash-answer .wrong{color:var(--red);text-decoration:line-through}
+.flash-result{display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+.flash-score{text-align:center;padding:12px 16px}
+.flash-score .num{font-size:30px;font-weight:800}
+.flash-score .label{font-size:13px;color:var(--muted);margin-top:2px}
+
+/* ── Progress Bar ── */
+.progress-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin:12px 0}
+.progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--green));transition:width .3s}
+
+/* ── Session Summary ── */
+.summary-header{text-align:center;padding:24px 0}
+.summary-header .score{font-size:52px;font-weight:800;color:var(--accent)}
+.summary-header .label{font-size:16px;color:var(--muted);margin-top:4px}
+
+/* ── Loading / Typing ── */
+.typing{display:flex;gap:5px;padding:16px;align-self:flex-start}
+.typing span{width:10px;height:10px;background:#94a3b8;border-radius:50%;animation:typing .8s infinite}
+.typing span:nth-child(2){animation-delay:.15s}
+.typing span:nth-child(3){animation-delay:.3s}
+@keyframes typing{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c1cad6;border-radius:3px}
+
+/* ── Misc ── */
+.divider{height:1px;background:var(--border);margin:16px 0}
+.text-sm{font-size:15px}.text-xs{font-size:13px}
+.text-muted{color:var(--muted)}
+.text-green{color:var(--green)}
+.text-red{color:var(--red)}
+.text-accent{color:var(--accent)}
+.mt-8{margin-top:8px}.mt-16{margin-top:16px}.mt-24{margin-top:24px}
+.mb-8{margin-bottom:8px}.mb-16{margin-bottom:16px}
+.flex{display:flex}.gap-8{gap:8px}.gap-12{gap:12px}
+.items-center{align-items:center}.justify-between{justify-content:space-between}
+.w-full{width:100%}
+.hidden{display:none!important}
+
+/* ── Topic Pills ── */
+.topic-grid{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.topic-pill{padding:10px 18px;border-radius:20px;background:var(--bg);border:1.5px solid var(--border);color:var(--text);font-size:15px;cursor:pointer;transition:all .2s;touch-action:manipulation}
+.topic-pill:active{background:var(--accent);border-color:var(--accent);color:#fff}
+.topic-pill.selected{background:#ede9fe;border-color:var(--accent);color:var(--accent);font-weight:600}
+
+/* ── Word Score Colors ── */
+.ws-great{color:var(--green)}.ws-good{color:var(--yellow)}.ws-poor{color:var(--red)}
+
+/* ── Settings Row ── */
+.setting-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-size:16px;font-weight:500}
+.setting-value{font-size:15px;color:var(--muted)}
+
+/* ── Navbar ── */
+.navbar{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.navbar .back{background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;padding:6px;touch-action:manipulation}
+.navbar .title{font-size:18px;font-weight:700;flex:1;color:var(--text)}
+.navbar .action{background:none;border:none;color:var(--accent);font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation}
+
+/* ── Level Select ── */
+.level-select{display:flex;gap:8px;margin:12px 0}
+.level-chip{flex:1;padding:12px;text-align:center;border-radius:10px;background:var(--bg);border:1.5px solid var(--border);font-size:15px;font-weight:600;cursor:pointer;transition:all .2s;touch-action:manipulation;color:var(--text)}
+.level-chip.active{background:#ede9fe;border-color:var(--accent);color:var(--accent)}
+
+/* ── Stats Grid ── */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.stat-card{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+.stat-card .val{font-size:28px;font-weight:700}
+.stat-card .lbl{font-size:13px;color:var(--muted);margin-top:4px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ═══════════════════════════════════════════════
+   English Talk Trainer
+   フリートーク + 瞬間英作文
+   Gemini 2.5 Flash + Azure Speech + PWA
+   ═══════════════════════════════════════════════ */
+
+const VERSION = "v2026.05.04c";
+
+const $ = id => document.getElementById(id);
+const app = document.getElementById("app");
+const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+
+// ── Azure TTS Neural Voices ──
+const TTS_VOICES = [
+  { id: "en-US-JennyNeural",   label: "👩 Jenny",   desc: "🇺🇸 アメリカ女性・フレンドリー", lang: "en-US" },
+  { id: "en-US-GuyNeural",     label: "👨 Guy",     desc: "🇺🇸 アメリカ男性・落ち着き", lang: "en-US" },
+  { id: "en-US-AriaNeural",    label: "👩 Aria",    desc: "🇺🇸 アメリカ女性・明るい", lang: "en-US" },
+  { id: "en-US-DavisNeural",   label: "👨 Davis",   desc: "🇺🇸 アメリカ男性・カジュアル", lang: "en-US" },
+  { id: "en-GB-SoniaNeural",   label: "👩 Sonia",   desc: "🇬🇧 イギリス女性", lang: "en-GB" },
+  { id: "en-GB-RyanNeural",    label: "👨 Ryan",    desc: "🇬🇧 イギリス男性", lang: "en-GB" },
+  { id: "en-AU-NatashaNeural", label: "👩 Natasha", desc: "🇦🇺 オーストラリア女性", lang: "en-AU" },
+  { id: "en-AU-WilliamNeural", label: "👨 William", desc: "🇦🇺 オーストラリア男性", lang: "en-AU" },
+  { id: "en-IN-NeerjaNeural",  label: "👩 Neerja",  desc: "🇮🇳 インド女性", lang: "en-IN" },
+  { id: "en-IN-PrabhatNeural", label: "👨 Prabhat", desc: "🇮🇳 インド男性", lang: "en-IN" },
+];
+
+// 話速マッピング（レベル別）
+const TTS_RATE = { beginner: "slow", intermediate: "medium", advanced: "fast" };
+
+// ── 音声自動選択（重み付きランダム + シチュエーション対応）──
+// US/UK多め、AU/IN少なめ
+const VOICE_WEIGHTS = {
+  "en-US-JennyNeural": 5, "en-US-GuyNeural": 5,
+  "en-US-AriaNeural": 4,  "en-US-DavisNeural": 4,
+  "en-GB-SoniaNeural": 4, "en-GB-RyanNeural": 4,
+  "en-AU-NatashaNeural": 1, "en-AU-WilliamNeural": 1,
+  "en-IN-NeerjaNeural": 1,  "en-IN-PrabhatNeural": 1,
+};
+
+// シチュエーション別のおすすめ音声プール
+const SITUATION_VOICES = {
+  si_checkin:    ["en-US-JennyNeural","en-GB-SoniaNeural","en-US-GuyNeural","en-GB-RyanNeural"],
+  si_order:      ["en-US-AriaNeural","en-US-DavisNeural","en-GB-RyanNeural","en-AU-WilliamNeural"],
+  si_doctor:     ["en-US-JennyNeural","en-US-GuyNeural","en-GB-SoniaNeural"],
+  si_shop:       ["en-US-AriaNeural","en-GB-SoniaNeural","en-US-DavisNeural","en-AU-NatashaNeural"],
+  si_phone:      ["en-US-JennyNeural","en-US-GuyNeural","en-GB-RyanNeural"],
+  si_complaint:  ["en-US-GuyNeural","en-GB-RyanNeural","en-US-JennyNeural"],
+  si_directions: ["en-US-DavisNeural","en-GB-SoniaNeural","en-AU-WilliamNeural"],
+  si_emergency:  ["en-US-GuyNeural","en-US-JennyNeural","en-GB-RyanNeural"],
+  si_bank:       ["en-US-JennyNeural","en-GB-SoniaNeural","en-IN-NeerjaNeural"],
+  si_customs:    ["en-US-GuyNeural","en-GB-RyanNeural","en-AU-WilliamNeural","en-IN-PrabhatNeural"],
+};
+
+function pickVoice(topicId) {
+  // シチュエーション別プールがあればそこからランダム
+  const pool = SITUATION_VOICES[topicId];
+  if (pool) return pool[Math.floor(Math.random() * pool.length)];
+
+  // それ以外は重み付きランダム
+  const entries = Object.entries(VOICE_WEIGHTS);
+  const totalW = entries.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * totalW;
+  for (const [id, w] of entries) {
+    r -= w;
+    if (r <= 0) return id;
+  }
+  return entries[0][0];
+}
+
+function getVoiceLabel(voiceId) {
+  const v = TTS_VOICES.find(v => v.id === voiceId);
+  return v ? `${v.label} ${v.desc}` : voiceId;
+}
+
+// ── State ──
+const S = {
+  screen: "apikey",       // apikey | home | freetalk | flash | review
+  geminiKey: localStorage.getItem("gemini_api_key") || "",
+  azureKey: localStorage.getItem("azure_speech_key") || "",
+  azureRegion: localStorage.getItem("azure_speech_region") || "eastus",
+  // Free Talk
+  chatHistory: [],        // {role, content}
+  chatMessages: [],       // UI messages {type, text, ...}
+  ftTopic: "",
+  ftLevel: "intermediate",
+  ftVoice: "en-US-JennyNeural",  // auto-selected per session
+  ftTurnCount: 0,
+  ftSessionActive: false,
+  // Flash Translation
+  flashQuestions: [],
+  flashCurrent: 0,
+  flashResults: [],
+  flashLevel: "beginner",
+  flashCategory: "daily",
+  // Recording
+  isRecording: false,
+  isProcessing: false,
+  // Stats
+  totalSessions: parseInt(localStorage.getItem("ett_total_sessions") || "0"),
+  totalMinutes: parseInt(localStorage.getItem("ett_total_minutes") || "0"),
+};
+
+if (S.geminiKey) S.screen = "home";
+
+// ── Gemini API ──
+async function geminiChat(messages, systemPrompt = "", json = false) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`;
+  const contents = messages.map(m => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }]
+  }));
+  const body = {
+    contents,
+    generationConfig: {
+      temperature: json ? 0.3 : 0.8,
+      maxOutputTokens: 2048,
+      ...(json ? { responseMimeType: "application/json" } : {})
+    }
+  };
+  if (systemPrompt) {
+    body.systemInstruction = { parts: [{ text: systemPrompt }] };
+  }
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`Gemini API ${res.status}`);
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
+// ── Azure TTS ──
+let _curAudio = null;
+function stopAudio() { if(_curAudio){_curAudio.pause();_curAudio=null;} }
+
+async function speakText(text, voiceId = "en-US-JennyNeural") {
+  if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
+  stopAudio();
+
+  const voiceInfo = TTS_VOICES.find(v => v.id === voiceId) || TTS_VOICES[0];
+  const rate = TTS_RATE[S.ftLevel] || "medium";
+
+  // Escape XML special characters
+  const xmlText = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${voiceInfo.lang}'>
+    <voice name='${voiceId}'>
+      <prosody rate='${rate}'>${xmlText}</prosody>
+    </voice>
+  </speak>`;
+
+  const url = `https://${S.azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": S.azureKey,
+      "Content-Type": "application/ssml+xml",
+      "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3"
+    },
+    body: ssml
+  });
+  if (!res.ok) throw new Error(`Azure TTS ${res.status}`);
+
+  const audioBlob = await res.blob();
+  const blobUrl = URL.createObjectURL(audioBlob);
+  return new Promise((resolve, reject) => {
+    _curAudio = new Audio(blobUrl);
+    _curAudio.onended = () => { _curAudio = null; resolve(); };
+    _curAudio.onerror = reject;
+    _curAudio.play().catch(reject);
+  });
+}
+
+// ── WAV Recording ──
+async function recordWav(maxMs = 20000) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+  proc.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(proc); proc.connect(ctx.destination);
+  let _timeout = setTimeout(() => recorder.stop(), maxMs);
+  const recorder = {
+    stop: async () => {
+      clearTimeout(_timeout);
+      proc.disconnect(); src.disconnect();
+      stream.getTracks().forEach(t => t.stop());
+      await ctx.close();
+      const samples = new Float32Array(chunks.reduce((a, c) => a + c.length, 0));
+      let off = 0; for (const c of chunks) { samples.set(c, off); off += c.length; }
+      const pcm = new Int16Array(samples.length);
+      for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 32767;
+      const wavBuf = new ArrayBuffer(44 + pcm.byteLength);
+      const dv = new DataView(wavBuf);
+      const sr = 16000, ch = 1, bps = 16;
+      dv.setUint32(0,0x52494646,false); dv.setUint32(4,36+pcm.byteLength,true);
+      dv.setUint32(8,0x57415645,false); dv.setUint32(12,0x666D7420,false);
+      dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,ch,true);
+      dv.setUint32(24,sr,true); dv.setUint32(28,sr*ch*bps/8,true);
+      dv.setUint16(32,ch*bps/8,true); dv.setUint16(34,bps,true);
+      dv.setUint32(36,0x64617461,false); dv.setUint32(40,pcm.byteLength,true);
+      new Uint8Array(wavBuf).set(new Uint8Array(pcm.buffer),44);
+      return new Blob([wavBuf],{type:"audio/wav"});
+    }
+  };
+  return recorder;
+}
+
+// ── Azure STT (Speech-to-Text) ──
+async function azureSTT(wavBlob) {
+  if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
+  const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": S.azureKey,
+      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000"
+    },
+    body: wavBlob
+  });
+  if (!res.ok) throw new Error(`Azure STT ${res.status}`);
+  const data = await res.json();
+  if (data.RecognitionStatus !== "Success") throw new Error(`Recognition: ${data.RecognitionStatus}`);
+  return data.DisplayText || "";
+}
+
+// ── Azure Pronunciation Assessment ──
+async function azurePronAssess(wavBlob, refText) {
+  if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
+  const pronConfig = btoa(JSON.stringify({
+    ReferenceText: refText,
+    GradingSystem: "HundredMark",
+    Granularity: "Word",
+    Dimension: "Comprehensive",
+    EnableMiscue: true
+  }));
+  const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": S.azureKey,
+      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+      "Pronunciation-Assessment": pronConfig
+    },
+    body: wavBlob
+  });
+  if (!res.ok) throw new Error(`Azure PronAssess ${res.status}`);
+  return await res.json();
+}
+
+// ── Utility ──
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function saveStats() {
+  localStorage.setItem("ett_total_sessions", S.totalSessions);
+  localStorage.setItem("ett_total_minutes", S.totalMinutes);
+}
+
+// ═══════════════════════════════════
+// RENDER
+// ═══════════════════════════════════
+function render() {
+  if (S.screen === "apikey") renderApiKey();
+  else if (S.screen === "home") renderHome();
+  else if (S.screen === "freetalk") renderFreeTalk();
+  else if (S.screen === "flash") renderFlash();
+  else if (S.screen === "review") renderReview();
+}
+
+// ── API Key Screen ──
+function renderApiKey() {
+  const hasGemini = !!S.geminiKey;
+  const hasAzure = !!S.azureKey;
+  app.innerHTML = `
+    <div class="home-header">
+      <div class="pre">AI-Powered English Training</div>
+      <h1>English Talk Trainer</h1>
+      <div class="sub">フリートーク + 瞬間英作文</div>
+    </div>
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:16px">🔑 APIキー設定</div>
+      <div class="mb-16">
+        <label class="text-xs text-muted" style="display:block;margin-bottom:6px">Gemini API Key <span class="tag ${hasGemini?'tag-green':'tag-orange'}">${hasGemini?'設定済':'未設定'}</span></label>
+        <input class="input" id="geminiKeyInput" type="password" placeholder="AIzaSy..." value="${S.geminiKey?'••••••••••':''}">
+      </div>
+      <div class="mb-16">
+        <label class="text-xs text-muted" style="display:block;margin-bottom:6px">Azure Speech Key <span class="tag ${hasAzure?'tag-green':'tag-orange'}">${hasAzure?'設定済':'未設定'}</span></label>
+        <input class="input" id="azureKeyInput" type="password" placeholder="Azure Speech key..." value="${S.azureKey?'••••••••••':''}">
+      </div>
+      <div class="mb-16">
+        <label class="text-xs text-muted" style="display:block;margin-bottom:6px">Azure Region</label>
+        <input class="input" id="azureRegionInput" placeholder="eastus" value="${esc(S.azureRegion)}">
+      </div>
+      <button class="btn btn-primary w-full" id="saveKeysBtn">保存してスタート</button>
+      ${hasGemini ? '<button class="btn btn-ghost w-full mt-8" id="skipBtn">スキップ</button>' : ''}
+    </div>
+    <p class="text-xs text-muted" style="text-align:center;margin-top:12px">APIキーはブラウザ内にのみ保存されます</p>
+  `;
+  $("saveKeysBtn").onclick = () => {
+    const gk = $("geminiKeyInput").value.trim();
+    const ak = $("azureKeyInput").value.trim();
+    const ar = $("azureRegionInput").value.trim();
+    if (gk && !gk.startsWith("••")) { S.geminiKey = gk; localStorage.setItem("gemini_api_key", gk); }
+    if (ak && !ak.startsWith("••")) { S.azureKey = ak; localStorage.setItem("azure_speech_key", ak); }
+    if (ar) { S.azureRegion = ar; localStorage.setItem("azure_speech_region", ar); }
+    if (!S.geminiKey) { alert("Gemini APIキーを入力してください"); return; }
+    S.screen = "home"; render();
+  };
+  if ($("skipBtn")) $("skipBtn").onclick = () => { S.screen = "home"; render(); };
+}
+
+// ── Home Screen ──
+function renderHome() {
+  app.innerHTML = `
+    <div class="home-header">
+      <div class="pre">AI-Powered English Training</div>
+      <h1>English Talk Trainer</h1>
+      <div class="sub">Gemini AI × Azure Speech</div>
+    </div>
+
+    ${S.totalSessions > 0 ? `
+    <div class="stats-grid mb-16">
+      <div class="stat-card"><div class="val text-accent">${S.totalSessions}</div><div class="lbl">セッション</div></div>
+      <div class="stat-card"><div class="val text-green">${S.totalMinutes}</div><div class="lbl">練習時間(分)</div></div>
+    </div>` : ''}
+
+    <div class="mode-card mode-freetalk mb-16" id="startFreeTalk">
+      <div class="icon">🗣️</div>
+      <h3>Free Talk</h3>
+      <p>AIと自由に英会話。会話後に文法・語彙・自然さをフィードバック</p>
+      <div class="arrow">→</div>
+    </div>
+
+    <div class="mode-card mode-flash mb-16" id="startFlash">
+      <div class="icon">⚡</div>
+      <h3>Flash Translation</h3>
+      <p>日本語を見て3秒以内に英語で言う。瞬間英作文トレーニング</p>
+      <div class="arrow">→</div>
+    </div>
+
+    <div class="card" style="text-align:center">
+      <button class="btn btn-ghost" id="settingsBtn">⚙️ APIキー設定</button>
+    </div>
+    <div class="text-xs text-muted" style="text-align:center;margin-top:8px;padding-bottom:16px">${VERSION}</div>
+  `;
+  $("startFreeTalk").onclick = () => { initFreeTalk(); };
+  $("startFlash").onclick = () => { initFlash(); };
+  $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
+}
+
+// ═══════════════════════════════════
+// FREE TALK
+// ═══════════════════════════════════
+const FT_CATEGORIES = [
+  { id: "free", icon: "🆓", label: "フリートーク", topics: [
+    { id: "free_any", label: "何でもOK", prompt: "Talk about anything the user wants. Follow their lead." },
+    { id: "free_random", label: "🎲 ランダム", prompt: "__RANDOM__" },
+  ]},
+  { id: "daily", icon: "🏠", label: "日常生活", topics: [
+    { id: "d_morning", label: "朝のルーティン", prompt: "Talk about morning routines — waking up, breakfast, getting ready for work/school." },
+    { id: "d_weather", label: "天気・季節", prompt: "Talk about the weather, seasons, and how they affect daily life." },
+    { id: "d_shopping", label: "買い物", prompt: "Talk about shopping — favorite stores, online shopping, bargain hunting." },
+    { id: "d_housework", label: "家事・掃除", prompt: "Talk about household chores, cleaning tips, and home organization." },
+    { id: "d_health", label: "健康・体調", prompt: "Talk about health, exercise routines, doctor visits, and staying healthy." },
+    { id: "d_commute", label: "通勤・通学", prompt: "Talk about commuting — transportation, traffic, and the daily journey." },
+    { id: "d_weekend", label: "週末の過ごし方", prompt: "Talk about weekend plans, relaxation, and how to spend days off." },
+    { id: "d_pets", label: "ペット・動物", prompt: "Talk about pets, animals, pet care, and favorite animals." },
+  ]},
+  { id: "travel", icon: "✈️", label: "旅行", topics: [
+    { id: "t_plan", label: "旅行計画", prompt: "Talk about planning trips — choosing destinations, booking, and budgeting." },
+    { id: "t_airport", label: "空港・飛行機", prompt: "Talk about airport experiences, flights, check-in, and boarding." },
+    { id: "t_hotel", label: "ホテル滞在", prompt: "Talk about hotels — checking in/out, room service, and amenities." },
+    { id: "t_sightseeing", label: "観光", prompt: "Talk about sightseeing, tourist attractions, and memorable places visited." },
+    { id: "t_local", label: "現地の体験", prompt: "Talk about local experiences — trying local food, talking to locals, cultural immersion." },
+    { id: "t_trouble", label: "旅先のトラブル", prompt: "Talk about travel troubles — lost luggage, missed flights, getting lost, and how to handle them." },
+    { id: "t_souvenir", label: "お土産・思い出", prompt: "Talk about souvenirs, travel photos, and sharing travel memories." },
+    { id: "t_dream", label: "行きたい場所", prompt: "Talk about dream destinations and bucket list travel experiences." },
+  ]},
+  { id: "food", icon: "🍕", label: "食べ物・料理", topics: [
+    { id: "f_cooking", label: "料理・レシピ", prompt: "Talk about cooking — favorite recipes, cooking techniques, and kitchen tips." },
+    { id: "f_restaurant", label: "レストラン", prompt: "Talk about dining out — favorite restaurants, ordering food, and restaurant reviews." },
+    { id: "f_world", label: "世界の料理", prompt: "Talk about cuisines from around the world and food culture differences." },
+    { id: "f_healthy", label: "ヘルシーフード", prompt: "Talk about healthy eating, diets, nutrition, and organic food." },
+    { id: "f_sweets", label: "スイーツ・カフェ", prompt: "Talk about desserts, sweets, coffee shops, and cafe culture." },
+    { id: "f_home", label: "おふくろの味", prompt: "Talk about home cooking, comfort food, and food memories from childhood." },
+    { id: "f_trend", label: "食のトレンド", prompt: "Talk about food trends — viral recipes, food influencers, and new food experiences." },
+  ]},
+  { id: "work", icon: "💼", label: "仕事・ビジネス", topics: [
+    { id: "w_intro", label: "自己紹介(仕事)", prompt: "Practice introducing yourself in a business context — your role, company, and responsibilities." },
+    { id: "w_meeting", label: "会議・ミーティング", prompt: "Talk about business meetings — preparation, participation, and follow-ups." },
+    { id: "w_presentation", label: "プレゼン", prompt: "Talk about giving presentations — structure, delivery tips, and handling Q&A." },
+    { id: "w_email", label: "ビジネスメール", prompt: "Talk about writing professional emails — tone, structure, and common phrases." },
+    { id: "w_interview", label: "面接", prompt: "Practice job interview conversations — strengths, experience, and career goals." },
+    { id: "w_remote", label: "リモートワーク", prompt: "Talk about remote work — pros/cons, productivity tips, and work-life balance." },
+    { id: "w_colleague", label: "同僚との雑談", prompt: "Practice small talk with colleagues — weekend plans, office life, and water cooler chat." },
+    { id: "w_negotiate", label: "交渉・商談", prompt: "Practice business negotiation — making proposals, compromising, and closing deals." },
+  ]},
+  { id: "hobby", icon: "🎮", label: "趣味・エンタメ", topics: [
+    { id: "h_sports", label: "スポーツ", prompt: "Talk about sports — favorite teams, playing sports, and recent games." },
+    { id: "h_movies", label: "映画・ドラマ", prompt: "Talk about movies and TV shows — recommendations, reviews, and favorites." },
+    { id: "h_music", label: "音楽", prompt: "Talk about music — favorite artists, genres, concerts, and playlists." },
+    { id: "h_books", label: "読書", prompt: "Talk about books — favorite authors, genres, reading habits, and recommendations." },
+    { id: "h_games", label: "ゲーム", prompt: "Talk about video games — favorite games, gaming culture, and new releases." },
+    { id: "h_fitness", label: "フィットネス", prompt: "Talk about fitness — gym routines, running, yoga, and staying motivated." },
+    { id: "h_art", label: "アート・写真", prompt: "Talk about art, photography, museums, and creative hobbies." },
+    { id: "h_outdoor", label: "アウトドア", prompt: "Talk about outdoor activities — hiking, camping, fishing, and nature." },
+  ]},
+  { id: "tech", icon: "💻", label: "テクノロジー", topics: [
+    { id: "tc_ai", label: "AI・ChatGPT", prompt: "Talk about artificial intelligence — ChatGPT, AI tools, and how AI is changing our lives." },
+    { id: "tc_sns", label: "SNS・ソーシャル", prompt: "Talk about social media — usage habits, favorite platforms, and digital communication." },
+    { id: "tc_gadget", label: "ガジェット", prompt: "Talk about gadgets — smartphones, smartwatches, headphones, and tech purchases." },
+    { id: "tc_programming", label: "プログラミング", prompt: "Talk about programming — coding languages, projects, and learning to code." },
+    { id: "tc_future", label: "未来のテクノロジー", prompt: "Talk about future technology — self-driving cars, space travel, VR/AR, and tech predictions." },
+    { id: "tc_security", label: "セキュリティ", prompt: "Talk about cybersecurity, passwords, privacy, and staying safe online." },
+    { id: "tc_startup", label: "スタートアップ", prompt: "Talk about startups, entrepreneurship, and tech industry trends." },
+  ]},
+  { id: "society", icon: "🌍", label: "社会・時事", topics: [
+    { id: "s_env", label: "環境問題", prompt: "Talk about environmental issues — climate change, recycling, and sustainability." },
+    { id: "s_education", label: "教育", prompt: "Talk about education — school systems, learning methods, and the future of education." },
+    { id: "s_economy", label: "経済・お金", prompt: "Talk about economics — saving money, investments, and financial planning." },
+    { id: "s_diversity", label: "多様性", prompt: "Talk about diversity, inclusion, and cultural understanding in society." },
+    { id: "s_volunteer", label: "ボランティア", prompt: "Talk about volunteering, community service, and giving back to society." },
+    { id: "s_aging", label: "高齢化社会", prompt: "Talk about aging societies, elderly care, and generational differences." },
+    { id: "s_work_life", label: "ワークライフバランス", prompt: "Talk about work-life balance, burnout, mental health, and quality of life." },
+  ]},
+  { id: "culture", icon: "🏛️", label: "文化・異文化", topics: [
+    { id: "c_japan", label: "日本文化の紹介", prompt: "Practice explaining Japanese culture to a foreigner — festivals, food, customs, and traditions." },
+    { id: "c_diff", label: "文化の違い", prompt: "Talk about cultural differences between Japan and other countries." },
+    { id: "c_holiday", label: "祝日・イベント", prompt: "Talk about holidays and celebrations — Christmas, New Year, Halloween, etc." },
+    { id: "c_manners", label: "マナー・エチケット", prompt: "Talk about manners and etiquette differences across cultures." },
+    { id: "c_language", label: "言語学習", prompt: "Talk about learning languages — tips, challenges, funny mistakes, and motivation." },
+    { id: "c_living", label: "海外生活", prompt: "Talk about living abroad — challenges, discoveries, and advice for expats." },
+    { id: "c_stereotype", label: "偏見・ステレオタイプ", prompt: "Talk about stereotypes and misconceptions about different cultures." },
+  ]},
+  { id: "situation", icon: "🎭", label: "シチュエーション", topics: [
+    { id: "si_checkin", label: "ホテルチェックイン", prompt: "Role-play: You are checking into a hotel. The AI plays the front desk staff. Practice requesting rooms, asking about amenities." },
+    { id: "si_order", label: "レストラン注文", prompt: "Role-play: You are ordering at a restaurant. The AI plays the waiter. Practice ordering, asking about the menu, dietary restrictions." },
+    { id: "si_doctor", label: "病院・薬局", prompt: "Role-play: You are visiting a doctor or pharmacy. The AI plays the medical staff. Practice describing symptoms and understanding instructions." },
+    { id: "si_shop", label: "ショッピング", prompt: "Role-play: You are shopping at a store. The AI plays the shop assistant. Practice asking about sizes, prices, returns." },
+    { id: "si_phone", label: "電話応対", prompt: "Role-play: You are making/receiving a phone call. Practice phone etiquette, taking messages, and scheduling." },
+    { id: "si_complaint", label: "クレーム対応", prompt: "Role-play: You need to make a complaint about a product or service. The AI plays customer service. Practice expressing dissatisfaction politely." },
+    { id: "si_directions", label: "道案内", prompt: "Role-play: You are asking for or giving directions. Practice location vocabulary and navigation." },
+    { id: "si_emergency", label: "緊急事態", prompt: "Role-play: You are in an emergency situation abroad. Practice asking for help, calling emergency services, and explaining your situation." },
+    { id: "si_bank", label: "銀行・両替", prompt: "Role-play: You are at a bank or currency exchange. Practice financial transactions and asking about rates." },
+    { id: "si_customs", label: "入国審査", prompt: "Role-play: You are going through immigration/customs. The AI plays the officer. Practice answering questions about your visit." },
+  ]},
+  { id: "personal", icon: "👤", label: "自分のこと", topics: [
+    { id: "p_intro", label: "自己紹介", prompt: "Practice self-introduction — name, hometown, occupation, interests, and personality." },
+    { id: "p_family", label: "家族", prompt: "Talk about your family — members, relationships, and family activities." },
+    { id: "p_dream", label: "将来の夢", prompt: "Talk about dreams, goals, and plans for the future." },
+    { id: "p_childhood", label: "子供時代の思い出", prompt: "Talk about childhood memories, growing up, and nostalgia." },
+    { id: "p_opinion", label: "意見を述べる", prompt: "Practice expressing opinions on various topics — agree, disagree, and explain reasoning." },
+    { id: "p_recommend", label: "おすすめ紹介", prompt: "Practice recommending things — movies, books, restaurants, places, and explaining why." },
+    { id: "p_experience", label: "体験談", prompt: "Talk about personal experiences — memorable moments, challenges overcome, and lessons learned." },
+  ]},
+];
+
+// Flatten for lookup
+const FT_ALL_TOPICS = FT_CATEGORIES.flatMap(c => c.topics.map(t => ({...t, catId: c.id, catLabel: c.label, catIcon: c.icon})));
+
+const FT_LEVELS = [
+  { id: "beginner", label: "初級", desc: "Simple words, short sentences" },
+  { id: "intermediate", label: "中級", desc: "Natural conversation" },
+  { id: "advanced", label: "上級", desc: "Complex topics, idioms" },
+];
+
+function initFreeTalk() {
+  S.ftTopic = "";
+  S.ftCategory = "";
+  S.screen = "freetalk";
+  S.chatHistory = [];
+  S.chatMessages = [];
+  S.ftTurnCount = 0;
+  S.ftSessionActive = false;
+  renderFreeTalkSetup();
+}
+
+function renderFreeTalkSetup() {
+  const selCat = S.ftCategory;
+  const selTopic = S.ftTopic;
+  const selLevel = S.ftLevel;
+  const activeCat = FT_CATEGORIES.find(c => c.id === selCat);
+  const topicCount = FT_ALL_TOPICS.length;
+
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="ftBack">←</button>
+      <div class="title">Free Talk</div>
+      <span class="text-xs text-muted">${topicCount} topics</span>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📋 カテゴリ</div>
+      <div class="topic-grid" id="catGrid">
+        ${FT_CATEGORIES.map(c => `<div class="topic-pill ${selCat===c.id?'selected':''}" data-id="${c.id}">${c.icon} ${c.label}<span class="text-xs text-muted" style="margin-left:4px">${c.topics.length}</span></div>`).join("")}
+      </div>
+    </div>
+
+    ${activeCat ? `
+    <div class="card" id="topicCard">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">${activeCat.icon} ${activeCat.label}</div>
+      <div class="topic-grid" id="topicGrid">
+        ${activeCat.topics.map(t => `<div class="topic-pill ${selTopic===t.id?'selected':''}" data-id="${t.id}">${t.label}</div>`).join("")}
+      </div>
+    </div>` : `
+    <div class="card" style="text-align:center;padding:32px;color:var(--muted)">
+      <div style="font-size:24px;margin-bottom:8px">☝️</div>
+      <div class="text-sm">カテゴリを選んでください</div>
+    </div>`}
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${FT_LEVELS.map(l => `<div class="level-chip ${selLevel===l.id?'active':''}" data-id="${l.id}">${l.label}</div>`).join("")}
+      </div>
+    </div>
+
+    <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic?'disabled':''}>会話をスタート</button>
+    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：音声入力・読み上げが使えません</p>' : ''}
+  `;
+  $("ftBack").onclick = () => { S.screen = "home"; render(); };
+
+  // Category select
+  document.querySelectorAll("#catGrid .topic-pill").forEach(el => {
+    el.onclick = () => {
+      S.ftCategory = el.dataset.id;
+      S.ftTopic = ""; // reset topic when category changes
+      renderFreeTalkSetup();
+    };
+  });
+
+  // Topic select
+  if ($("topicGrid")) {
+    document.querySelectorAll("#topicGrid .topic-pill").forEach(el => {
+      el.onclick = () => {
+        S.ftTopic = el.dataset.id;
+        // Handle random
+        if (el.dataset.id === "free_random") {
+          const allTopics = FT_ALL_TOPICS.filter(t => t.id !== "free_any" && t.id !== "free_random");
+          const rand = allTopics[Math.floor(Math.random() * allTopics.length)];
+          S.ftTopic = rand.id;
+          S.ftCategory = rand.catId;
+        }
+        renderFreeTalkSetup();
+      };
+    });
+  }
+
+  // Level select
+  document.querySelectorAll(".level-chip").forEach(el => {
+    el.onclick = () => { S.ftLevel = el.dataset.id; renderFreeTalkSetup(); };
+  });
+
+  $("startChatBtn").onclick = () => startFreeTalkSession();
+}
+
+async function startFreeTalkSession() {
+  const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
+  const level = FT_LEVELS.find(l => l.id === S.ftLevel);
+  if (!topic) return;
+  S.ftSessionActive = true;
+  S.ftStartTime = Date.now();
+
+  // 音声自動選択
+  S.ftVoice = pickVoice(topic.id);
+  const voiceLabel = getVoiceLabel(S.ftVoice);
+
+  // For situation/role-play topics, add role-play instructions
+  const isRolePlay = topic.catId === "situation";
+
+  const sysPrompt = `You are a friendly English conversation partner.
+
+RULES:
+- Speak ONLY in English
+- Level: ${level.id} (${level.desc})
+- Topic: ${topic.prompt}
+- Keep responses 1-3 sentences (natural conversation length)
+- If the user makes grammar mistakes, DON'T correct them during conversation — just respond naturally
+- Ask follow-up questions to keep the conversation going
+- Be warm, encouraging, and natural
+- DO NOT use Japanese unless the user is completely stuck
+${isRolePlay ? "- This is a ROLE-PLAY scenario. Stay in character throughout the conversation." : ""}
+
+${level.id === "beginner" ? "Use simple vocabulary and short sentences. Speak slowly." : ""}
+${level.id === "advanced" ? "Use natural expressions, phrasal verbs, and idioms. Challenge the user." : ""}
+
+Start the conversation with a friendly greeting related to the topic.`;
+
+  S.chatHistory = [{ role: "user", content: "Start the conversation." }];
+  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topic.label} — ${level.label}\n🔊 ${voiceLabel}` }];
+  renderFreeTalkChat();
+  showTyping();
+
+  try {
+    const reply = await geminiChat(S.chatHistory, sysPrompt);
+    S.chatHistory.push({ role: "assistant", content: reply });
+    S.chatMessages.push({ type: "ai", text: reply });
+    hideTyping();
+    renderFreeTalkChat();
+    // Auto-speak AI response
+    try { await speakText(reply, S.ftVoice); } catch(e) { console.warn("TTS:", e); }
+  } catch(e) {
+    hideTyping();
+    S.chatMessages.push({ type: "system", text: `❌ Error: ${e.message}` });
+    renderFreeTalkChat();
+  }
+}
+
+function renderFreeTalkChat() {
+  const msgs = S.chatMessages.map(m => {
+    if (m.type === "system") return `<div class="msg msg-system">${esc(m.text)}</div>`;
+    if (m.type === "ai") return `<div class="msg msg-ai">
+      ${esc(m.text)}
+      <div style="margin-top:8px"><button class="btn-ghost text-xs replay-btn" data-text="${esc(m.text).replace(/"/g,'&quot;')}">🔊 再生</button></div>
+    </div>`;
+    if (m.type === "user") return `<div class="msg msg-user">${esc(m.text)}</div>`;
+    if (m.type === "feedback") return `<div class="msg msg-feedback">${m.html}</div>`;
+    return "";
+  }).join("");
+
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="ftChatBack">←</button>
+      <div class="title">Free Talk</div>
+      <button class="action" id="ftEndBtn">終了</button>
+    </div>
+    <div class="chat-area" id="chatArea">${msgs}<div id="typingIndicator" class="typing hidden"><span></span><span></span><span></span></div></div>
+    <div class="chat-input-bar">
+      <div class="inner">
+        <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
+        ${S.azureKey ? `<button class="mic-btn ${S.isRecording?'recording':S.isProcessing?'processing':'idle'}" id="micBtn">${S.isRecording?'⏹':S.isProcessing?'⏳':'🎤'}</button>` : ''}
+        <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%">↑</button>
+      </div>
+    </div>
+  `;
+
+  $("ftChatBack").onclick = () => {
+    if (S.ftSessionActive && S.chatHistory.length > 2) {
+      if (confirm("会話を終了しますか？フィードバックを取得できます。")) endFreeTalkSession();
+      else return;
+    }
+    S.screen = "home"; stopAudio(); render();
+  };
+  $("ftEndBtn").onclick = () => endFreeTalkSession();
+
+  // Send text
+  const sendMsg = () => {
+    const text = $("chatInput")?.value?.trim();
+    if (!text) return;
+    $("chatInput").value = "";
+    handleUserMessage(text);
+  };
+  $("sendBtn").onclick = sendMsg;
+  $("chatInput").onkeydown = e => { if (e.key === "Enter") sendMsg(); };
+
+  // Mic
+  if ($("micBtn")) $("micBtn").onclick = () => toggleRecording();
+
+  // Replay buttons
+  document.querySelectorAll(".replay-btn").forEach(btn => {
+    btn.onclick = async () => {
+      btn.textContent = "⏳";
+      try { await speakText(btn.dataset.text, S.ftVoice); } catch(e) { console.warn(e); }
+      btn.textContent = "🔊 再生";
+    };
+  });
+
+  // Scroll to bottom
+  const area = $("chatArea");
+  if (area) area.scrollTop = area.scrollHeight;
+}
+
+function showTyping() {
+  const el = $("typingIndicator");
+  if (el) el.classList.remove("hidden");
+  const area = $("chatArea");
+  if (area) area.scrollTop = area.scrollHeight;
+}
+function hideTyping() {
+  const el = $("typingIndicator");
+  if (el) el.classList.add("hidden");
+}
+
+let _recorder = null;
+async function toggleRecording() {
+  if (S.isRecording) {
+    // Stop
+    S.isRecording = false;
+    S.isProcessing = true;
+    renderFreeTalkChat();
+    try {
+      const wavBlob = await _recorder.stop();
+      _recorder = null;
+      const text = await azureSTT(wavBlob);
+      S.isProcessing = false;
+      if (text) handleUserMessage(text);
+      else { S.isProcessing = false; renderFreeTalkChat(); }
+    } catch(e) {
+      S.isProcessing = false;
+      alert("音声認識エラー: " + e.message);
+      renderFreeTalkChat();
+    }
+  } else {
+    // Start
+    try {
+      _recorder = await recordWav(20000);
+      S.isRecording = true;
+      renderFreeTalkChat();
+    } catch(e) {
+      alert("マイクアクセスエラー: " + e.message);
+    }
+  }
+}
+
+async function handleUserMessage(text) {
+  S.chatMessages.push({ type: "user", text });
+  S.chatHistory.push({ role: "user", content: text });
+  S.ftTurnCount++;
+  renderFreeTalkChat();
+  showTyping();
+
+  const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
+  const level = FT_LEVELS.find(l => l.id === S.ftLevel);
+  const isRolePlay = topic?.catId === "situation";
+  const sysPrompt = `You are a friendly English conversation partner.
+Level: ${level.id}. Topic: ${topic?.prompt || "Free conversation"}.
+Keep responses 1-3 sentences. Ask follow-up questions. Be natural.
+${isRolePlay ? "Stay in character for this role-play scenario." : ""}
+${level.id === "beginner" ? "Use simple words." : ""}
+${level.id === "advanced" ? "Use idioms and complex structures." : ""}`;
+
+  try {
+    const reply = await geminiChat(S.chatHistory, sysPrompt);
+    S.chatHistory.push({ role: "assistant", content: reply });
+    S.chatMessages.push({ type: "ai", text: reply });
+    hideTyping();
+    renderFreeTalkChat();
+    try { await speakText(reply, S.ftVoice); } catch(e) { console.warn("TTS:", e); }
+  } catch(e) {
+    hideTyping();
+    S.chatMessages.push({ type: "system", text: `❌ ${e.message}` });
+    renderFreeTalkChat();
+  }
+}
+
+async function endFreeTalkSession() {
+  S.ftSessionActive = false;
+  const elapsed = Math.round((Date.now() - (S.ftStartTime || Date.now())) / 60000);
+  S.totalSessions++;
+  S.totalMinutes += Math.max(1, elapsed);
+  saveStats();
+
+  showTyping();
+  // Get feedback from Gemini
+  const userMsgs = S.chatHistory.filter(m => m.role === "user" && m.content !== "Start the conversation.").map(m => m.content);
+  const feedbackPrompt = `You are an English teacher reviewing a student's conversation practice.
+
+The student said these sentences during a conversation:
+${userMsgs.map((m,i) => `${i+1}. "${m}"`).join("\n")}
+
+Provide feedback in this JSON format:
+{
+  "overallScore": 75,
+  "grammar": {"score": 80, "issues": ["specific issue 1", "specific issue 2"]},
+  "vocabulary": {"score": 70, "level": "intermediate", "suggestions": ["better word choices"]},
+  "naturalness": {"score": 75, "notes": ["what sounded natural", "what sounded unnatural"]},
+  "corrections": [{"original": "what user said", "corrected": "better version", "explanation": "why"}],
+  "encouragement": "A brief encouraging message in Japanese"
+}`;
+
+  try {
+    const raw = await geminiChat(
+      [{ role: "user", content: feedbackPrompt }],
+      "You are an English language evaluator. Respond ONLY in valid JSON.",
+      true
+    );
+    hideTyping();
+    const fb = JSON.parse(raw);
+    S._lastFeedback = fb;
+    S.screen = "review";
+    render();
+  } catch(e) {
+    hideTyping();
+    S.chatMessages.push({ type: "system", text: `フィードバック取得失敗: ${e.message}` });
+    renderFreeTalkChat();
+  }
+}
+
+// ═══════════════════════════════════
+// REVIEW / FEEDBACK
+// ═══════════════════════════════════
+function renderReview() {
+  const fb = S._lastFeedback;
+  if (!fb) { S.screen = "home"; render(); return; }
+
+  const scoreColor = fb.overallScore >= 80 ? "var(--green)" : fb.overallScore >= 60 ? "var(--yellow)" : "var(--red)";
+  const corrections = (fb.corrections || []).map(c => `
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="text-sm"><span class="text-red">✗</span> ${esc(c.original)}</div>
+      <div class="text-sm mt-8"><span class="text-green">✓</span> ${esc(c.corrected)}</div>
+      <div class="text-xs text-muted mt-8">${esc(c.explanation)}</div>
+    </div>
+  `).join("") || '<div class="text-sm text-muted">特に修正点はありません！</div>';
+
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="revBack">←</button>
+      <div class="title">Session Review</div>
+    </div>
+
+    <div class="summary-header">
+      <div class="score" style="color:${scoreColor}">${fb.overallScore}</div>
+      <div class="label">Overall Score</div>
+    </div>
+
+    <div class="stats-grid mb-16">
+      <div class="stat-card"><div class="val" style="color:${fb.grammar?.score>=80?'var(--green)':fb.grammar?.score>=60?'var(--yellow)':'var(--red)'}">${fb.grammar?.score || '-'}</div><div class="lbl">Grammar</div></div>
+      <div class="stat-card"><div class="val" style="color:${fb.vocabulary?.score>=80?'var(--green)':fb.vocabulary?.score>=60?'var(--yellow)':'var(--red)'}">${fb.vocabulary?.score || '-'}</div><div class="lbl">Vocabulary</div></div>
+      <div class="stat-card"><div class="val" style="color:${fb.naturalness?.score>=80?'var(--green)':fb.naturalness?.score>=60?'var(--yellow)':'var(--red)'}">${fb.naturalness?.score || '-'}</div><div class="lbl">Naturalness</div></div>
+      <div class="stat-card"><div class="val text-accent">${S.ftTurnCount}</div><div class="lbl">Turns</div></div>
+    </div>
+
+    ${fb.grammar?.issues?.length ? `
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📝 Grammar Issues</div>
+      ${fb.grammar.issues.map(i => `<div class="text-sm" style="padding:6px 0;color:var(--yellow)">• ${esc(i)}</div>`).join("")}
+    </div>` : ''}
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">🔄 Corrections</div>
+      ${corrections}
+    </div>
+
+    ${fb.vocabulary?.suggestions?.length ? `
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📚 Vocabulary Tips</div>
+      ${fb.vocabulary.suggestions.map(s => `<div class="text-sm" style="padding:6px 0">💡 ${esc(s)}</div>`).join("")}
+    </div>` : ''}
+
+    ${fb.encouragement ? `
+    <div class="card card-glow" style="text-align:center;padding:24px">
+      <div style="font-size:24px;margin-bottom:8px">🎉</div>
+      <div class="text-sm">${esc(fb.encouragement)}</div>
+    </div>` : ''}
+
+    <button class="btn btn-primary w-full mt-16" id="revHome">ホームに戻る</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="revAgain">もう一度練習する</button>
+  `;
+  $("revBack").onclick = $("revHome").onclick = () => { S.screen = "home"; render(); };
+  $("revAgain").onclick = () => initFreeTalk();
+}
+
+// ═══════════════════════════════════
+// FLASH TRANSLATION (瞬間英作文)
+// ═══════════════════════════════════
+const FLASH_CATEGORIES = [
+  { id: "daily", label: "🏠 日常会話" },
+  { id: "business", label: "💼 ビジネス" },
+  { id: "travel", label: "✈️ 旅行" },
+  { id: "opinion", label: "💭 意見・感想" },
+];
+
+function initFlash() {
+  S.screen = "flash";
+  S.flashQuestions = [];
+  S.flashCurrent = 0;
+  S.flashResults = [];
+  renderFlashSetup();
+}
+
+function renderFlashSetup() {
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="flBack">←</button>
+      <div class="title">Flash Translation</div>
+    </div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${["beginner","intermediate","advanced"].map(l => `<div class="level-chip ${S.flashLevel===l?'active':''}" data-id="${l}">${l==='beginner'?'初級':l==='intermediate'?'中級':'上級'}</div>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📋 カテゴリ</div>
+      <div class="topic-grid">
+        ${FLASH_CATEGORIES.map(c => `<div class="topic-pill ${S.flashCategory===c.id?'selected':''}" data-id="${c.id}">${c.label}</div>`).join("")}
+      </div>
+    </div>
+    <button class="btn btn-primary w-full mt-16" id="flashStartBtn">10問スタート</button>
+    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：音声入力・読み上げ不可</p>' : ''}
+  `;
+  $("flBack").onclick = () => { S.screen = "home"; render(); };
+  document.querySelectorAll(".level-chip").forEach(el => {
+    el.onclick = () => { S.flashLevel = el.dataset.id; renderFlashSetup(); };
+  });
+  document.querySelectorAll(".topic-pill").forEach(el => {
+    el.onclick = () => { S.flashCategory = el.dataset.id; renderFlashSetup(); };
+  });
+  $("flashStartBtn").onclick = () => generateFlashQuestions();
+}
+
+async function generateFlashQuestions() {
+  // Flash用に音声自動選択
+  S.ftVoice = pickVoice("flash");
+  app.innerHTML = `
+    <div style="text-align:center;padding:80px 0">
+      <div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div>
+      <div class="text-sm text-muted">問題を生成中...</div>
+    </div>
+  `;
+  const cat = FLASH_CATEGORIES.find(c => c.id === S.flashCategory);
+  const prompt = `Generate 10 Japanese-to-English translation exercises.
+
+Level: ${S.flashLevel}
+Category: ${cat.label}
+
+Rules:
+- Each exercise has a Japanese sentence and its natural English translation
+- ${S.flashLevel === "beginner" ? "Use basic grammar (SVO, present/past tense). 5-8 words." : ""}
+- ${S.flashLevel === "intermediate" ? "Use various tenses, conditionals, relative clauses. 8-15 words." : ""}
+- ${S.flashLevel === "advanced" ? "Use complex structures, idioms, subjunctive, formal register. 10-20 words." : ""}
+- Make sentences practical and useful in real life
+- Provide 1-2 alternative correct answers when possible
+
+Respond ONLY in JSON:
+{"questions": [{"ja": "日本語文", "en": "English sentence", "alt": ["alternative answer 1"], "hint": "key grammar/vocab hint"}]}`;
+
+  try {
+    const raw = await geminiChat([{ role: "user", content: prompt }], "Generate translation exercises. JSON only.", true);
+    const data = JSON.parse(raw);
+    S.flashQuestions = data.questions || [];
+    if (S.flashQuestions.length === 0) throw new Error("問題が生成されませんでした");
+    S.flashCurrent = 0;
+    S.flashResults = [];
+    renderFlashQuestion();
+  } catch(e) {
+    app.innerHTML = `
+      <div class="card" style="text-align:center;padding:32px">
+        <div style="font-size:24px;margin-bottom:12px">❌</div>
+        <div class="text-sm">${esc(e.message)}</div>
+        <button class="btn btn-secondary mt-16" id="flashRetry">リトライ</button>
+        <button class="btn btn-ghost mt-8" id="flashBack">戻る</button>
+      </div>
+    `;
+    $("flashRetry").onclick = () => generateFlashQuestions();
+    $("flashBack").onclick = () => { S.screen = "home"; render(); };
+  }
+}
+
+function renderFlashQuestion() {
+  const q = S.flashQuestions[S.flashCurrent];
+  if (!q) { renderFlashSummary(); return; }
+  const progress = ((S.flashCurrent) / S.flashQuestions.length * 100).toFixed(0);
+
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="flqBack">←</button>
+      <div class="title">Flash Translation</div>
+      <div class="text-xs text-muted">${S.flashCurrent + 1}/${S.flashQuestions.length}</div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+
+    <div class="card flash-card">
+      <div class="flash-ja">${esc(q.ja)}</div>
+      <div class="flash-hint">💡 ${esc(q.hint || '')}</div>
+
+      <div id="flashInputArea">
+        ${S.azureKey ? `
+        <button class="mic-btn idle" id="flashMic" style="margin:0 auto 16px;display:flex">🎤</button>
+        <div class="text-xs text-muted mb-16">タップして英語で答える</div>
+        ` : ''}
+        <div class="flex gap-8">
+          <input class="input" id="flashTextInput" placeholder="Type your answer..." autocomplete="off" style="border-radius:24px">
+          <button class="btn btn-primary" id="flashSendBtn" style="padding:12px 16px;border-radius:50%;flex-shrink:0">↑</button>
+        </div>
+      </div>
+
+      <div id="flashResult" class="hidden"></div>
+    </div>
+
+    <button class="btn btn-ghost w-full" id="flashSkipBtn">スキップ →</button>
+  `;
+
+  $("flqBack").onclick = () => {
+    if (confirm("練習を中断しますか？")) { S.screen = "home"; render(); }
+  };
+  $("flashSkipBtn").onclick = () => {
+    S.flashResults.push({ ja: q.ja, en: q.en, userAnswer: "(skipped)", score: 0 });
+    S.flashCurrent++;
+    renderFlashQuestion();
+  };
+
+  const submitAnswer = (text) => evaluateFlashAnswer(text, q);
+  $("flashSendBtn").onclick = () => {
+    const t = $("flashTextInput")?.value?.trim();
+    if (t) submitAnswer(t);
+  };
+  $("flashTextInput").onkeydown = e => { if (e.key === "Enter") { const t = e.target.value.trim(); if (t) submitAnswer(t); } };
+
+  if ($("flashMic")) {
+    let rec = null;
+    $("flashMic").onclick = async () => {
+      if (rec) {
+        // Stop
+        $("flashMic").className = "mic-btn processing";
+        $("flashMic").textContent = "⏳";
+        try {
+          const wav = await rec.stop();
+          rec = null;
+          const text = await azureSTT(wav);
+          if (text) submitAnswer(text);
+          else { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
+        } catch(e) {
+          alert("認識エラー: " + e.message);
+          $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+        }
+      } else {
+        // Start
+        try {
+          rec = await recordWav(15000);
+          $("flashMic").className = "mic-btn recording";
+          $("flashMic").textContent = "⏹";
+        } catch(e) { alert("マイクエラー: " + e.message); }
+      }
+    };
+  }
+
+  // Focus input
+  setTimeout(() => $("flashTextInput")?.focus(), 100);
+}
+
+async function evaluateFlashAnswer(userAnswer, q) {
+  // Disable inputs
+  if ($("flashMic")) $("flashMic").disabled = true;
+  if ($("flashSendBtn")) $("flashSendBtn").disabled = true;
+  if ($("flashTextInput")) $("flashTextInput").disabled = true;
+
+  const resultEl = $("flashResult");
+  resultEl.classList.remove("hidden");
+  resultEl.innerHTML = '<div class="typing" style="justify-content:center"><span></span><span></span><span></span></div>';
+
+  try {
+    const evalPrompt = `Compare the user's English translation with the correct answer.
+
+Japanese: ${q.ja}
+Correct answer: ${q.en}
+${q.alt?.length ? `Alternative answers: ${q.alt.join(", ")}` : ""}
+User's answer: ${userAnswer}
+
+Evaluate and respond in JSON:
+{
+  "score": 85,
+  "isCorrect": true,
+  "feedback": "Brief feedback in Japanese about what was good/wrong",
+  "correctedVersion": "The ideal version if user was wrong, or their version if correct"
+}
+
+Scoring guide:
+- 90-100: Perfect or near-perfect
+- 70-89: Minor issues (article, preposition, etc.)
+- 50-69: Understandable but significant errors
+- 0-49: Major errors or wrong meaning`;
+
+    const raw = await geminiChat([{ role: "user", content: evalPrompt }], "English teacher evaluator. JSON only.", true);
+    const ev = JSON.parse(raw);
+
+    const scoreColor = ev.score >= 80 ? "var(--green)" : ev.score >= 60 ? "var(--yellow)" : "var(--red)";
+
+    resultEl.innerHTML = `
+      <div class="flash-answer">
+        <div style="font-size:32px;font-weight:800;color:${scoreColor};margin-bottom:8px">${ev.score}</div>
+        <div class="text-sm mb-8"><strong>あなた:</strong> ${esc(userAnswer)}</div>
+        <div class="text-sm mb-8"><strong>模範:</strong> <span class="correct">${esc(q.en)}</span></div>
+        ${!ev.isCorrect ? `<div class="text-sm mb-8"><strong>修正:</strong> ${esc(ev.correctedVersion)}</div>` : ''}
+        <div class="text-xs text-muted">${esc(ev.feedback)}</div>
+      </div>
+      <button class="btn btn-primary w-full mt-16" id="flashNextBtn">次の問題 →</button>
+    `;
+
+    S.flashResults.push({
+      ja: q.ja, en: q.en, userAnswer, score: ev.score,
+      isCorrect: ev.isCorrect, feedback: ev.feedback
+    });
+
+    $("flashNextBtn").onclick = () => { S.flashCurrent++; renderFlashQuestion(); };
+
+    // Speak correct answer
+    try { await speakText(q.en, S.ftVoice); } catch(e) { console.warn(e); }
+
+  } catch(e) {
+    resultEl.innerHTML = `<div class="text-sm text-red">評価エラー: ${esc(e.message)}</div>
+      <button class="btn btn-secondary mt-8" id="flashNextBtn">次へ →</button>`;
+    S.flashResults.push({ ja: q.ja, en: q.en, userAnswer, score: 0 });
+    $("flashNextBtn").onclick = () => { S.flashCurrent++; renderFlashQuestion(); };
+  }
+}
+
+function renderFlashSummary() {
+  const results = S.flashResults;
+  const avg = results.length > 0 ? Math.round(results.reduce((a, r) => a + r.score, 0) / results.length) : 0;
+  const perfect = results.filter(r => r.score >= 90).length;
+  const good = results.filter(r => r.score >= 60 && r.score < 90).length;
+  const poor = results.filter(r => r.score < 60).length;
+
+  S.totalSessions++;
+  S.totalMinutes += 5; // estimate
+  saveStats();
+
+  const scoreColor = avg >= 80 ? "var(--green)" : avg >= 60 ? "var(--yellow)" : "var(--red)";
+
+  const reviewItems = results.map((r, i) => `
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="flex justify-between items-center">
+        <div class="text-sm" style="flex:1">${esc(r.ja)}</div>
+        <div class="tag ${r.score>=80?'tag-green':r.score>=60?'tag-orange':'tag-accent'}">${r.score}</div>
+      </div>
+      <div class="text-xs text-muted mt-8">${esc(r.en)}</div>
+      ${r.userAnswer !== "(skipped)" ? `<div class="text-xs mt-8" style="color:${r.isCorrect?'var(--green)':'var(--red)'}">→ ${esc(r.userAnswer)}</div>` : '<div class="text-xs mt-8 text-muted">→ スキップ</div>'}
+    </div>
+  `).join("");
+
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="fsBck">←</button>
+      <div class="title">結果</div>
+    </div>
+
+    <div class="summary-header">
+      <div class="score" style="color:${scoreColor}">${avg}</div>
+      <div class="label">Average Score</div>
+    </div>
+
+    <div class="stats-grid mb-16">
+      <div class="stat-card"><div class="val text-green">${perfect}</div><div class="lbl">Perfect</div></div>
+      <div class="stat-card"><div class="val" style="color:var(--yellow)">${good}</div><div class="lbl">Good</div></div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📋 全問レビュー</div>
+      ${reviewItems}
+    </div>
+
+    <button class="btn btn-primary w-full mt-16" id="fsHome">ホームに戻る</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="fsAgain">もう10問</button>
+  `;
+  $("fsBck").onclick = $("fsHome").onclick = () => { S.screen = "home"; render(); };
+  $("fsAgain").onclick = () => initFlash();
+}
+
+// ── Service Worker ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+// ── Init ──
+render();
+</script>
+</body>
+</html>

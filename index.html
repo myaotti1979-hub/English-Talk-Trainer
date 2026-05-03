@@ -181,11 +181,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.04e";
+const VERSION = "v2026.05.04f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
-const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 // ── Azure TTS Neural Voices ──
 const TTS_VOICES = [
@@ -425,9 +425,29 @@ async function azurePronAssess(wavBlob, refText) {
 
 // ── Utility ──
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
-function saveStats() {
+
+// ── Session History ──
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem("ett_history") || "[]"); } catch { return []; }
+}
+function saveSession(entry) {
+  const hist = getHistory();
+  hist.push({ ...entry, date: new Date().toISOString() });
+  localStorage.setItem("ett_history", JSON.stringify(hist));
+  // Update totals
+  S.totalSessions = hist.length;
+  S.totalMinutes = hist.reduce((a, h) => a + (h.minutes || 0), 0);
   localStorage.setItem("ett_total_sessions", S.totalSessions);
   localStorage.setItem("ett_total_minutes", S.totalMinutes);
+}
+function clearAllData() {
+  if (!confirm("学習履歴・セッション数をすべて削除しますか？\nAPIキーは保持されます。")) return;
+  localStorage.removeItem("ett_history");
+  localStorage.removeItem("ett_total_sessions");
+  localStorage.removeItem("ett_total_minutes");
+  S.totalSessions = 0;
+  S.totalMinutes = 0;
+  S.screen = "home"; render();
 }
 
 // ═══════════════════════════════════
@@ -436,9 +456,71 @@ function saveStats() {
 function render() {
   if (S.screen === "apikey") renderApiKey();
   else if (S.screen === "home") renderHome();
+  else if (S.screen === "history") renderHistory();
   else if (S.screen === "freetalk") renderFreeTalkSetup();
   else if (S.screen === "flash") renderFlashSetup();
   else if (S.screen === "review") renderReview();
+}
+
+// ── History Screen ──
+function renderHistory() {
+  const hist = getHistory();
+  const reversed = [...hist].reverse();
+
+  // 分析データ
+  const ftSessions = hist.filter(h => h.mode === "freetalk");
+  const flSessions = hist.filter(h => h.mode === "flash");
+  const avgFT = ftSessions.length > 0 ? Math.round(ftSessions.reduce((a,h) => a + (h.score||0), 0) / ftSessions.length) : 0;
+  const avgFL = flSessions.length > 0 ? Math.round(flSessions.reduce((a,h) => a + (h.score||0), 0) / flSessions.length) : 0;
+
+  // 直近7セッションのスコア推移
+  const recentScores = hist.slice(-7).map(h => h.score || 0);
+
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="histBack">←</button>
+      <div class="title">学習履歴</div>
+    </div>
+
+    <div class="stats-grid mb-16">
+      <div class="stat-card"><div class="val text-accent">${S.totalSessions}</div><div class="lbl">総セッション</div></div>
+      <div class="stat-card"><div class="val text-green">${S.totalMinutes}</div><div class="lbl">総練習時間(分)</div></div>
+    </div>
+
+    ${ftSessions.length + flSessions.length > 0 ? `
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:12px">📊 平均スコア</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="val" style="color:${avgFT>=70?'var(--green)':'var(--yellow)'}">${avgFT || '-'}</div><div class="lbl">🗣️ Free Talk</div></div>
+        <div class="stat-card"><div class="val" style="color:${avgFL>=70?'var(--green)':'var(--yellow)'}">${avgFL || '-'}</div><div class="lbl">⚡ Flash</div></div>
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-top:8px">Free Talk ${ftSessions.length}回 / Flash ${flSessions.length}回</div>
+    </div>` : ''}
+
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:12px">📋 全セッション (${hist.length})</div>
+      ${reversed.length === 0 ? '<div class="text-sm text-muted" style="text-align:center;padding:24px">まだ履歴がありません</div>' :
+      reversed.map(h => {
+        const d = new Date(h.date);
+        const dateStr = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+        const icon = h.mode === 'freetalk' ? '🗣️' : '⚡';
+        const scoreColor = (h.score||0) >= 80 ? 'var(--green)' : (h.score||0) >= 60 ? 'var(--yellow)' : 'var(--muted)';
+        const voiceShort = (h.voice || '').replace('Neural','').replace('en-','').replace('-',' ');
+        return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+          '<div class="flex justify-between items-center">' +
+          '<div class="text-sm">' + icon + ' ' + esc(h.topic || h.mode) + '</div>' +
+          '<div style="font-weight:700;color:' + scoreColor + '">' + (h.score || '-') + '</div>' +
+          '</div>' +
+          '<div class="text-xs text-muted">' + dateStr + ' · ' + (h.minutes||0) + '分' + (voiceShort ? ' · ' + esc(voiceShort) : '') + '</div>' +
+          (h.level ? '<div class="text-xs text-muted">' + esc(h.level) + '</div>' : '') +
+          '</div>';
+      }).join('')}
+    </div>
+
+    <button class="btn btn-danger w-full mt-16 mb-16" id="histClear">🗑️ 履歴をすべてクリア</button>
+  `;
+  $("histBack").onclick = () => { S.screen = "home"; render(); };
+  $("histClear").onclick = clearAllData;
 }
 
 // ── API Key Screen ──
@@ -500,6 +582,9 @@ function renderApiKey() {
 
 // ── Home Screen ──
 function renderHome() {
+  const hist = getHistory();
+  const recent = hist.slice(-5).reverse(); // 最新5件
+
   app.innerHTML = `
     <div class="home-header">
       <div class="pre">AI-Powered English Training</div>
@@ -527,14 +612,38 @@ function renderHome() {
       <div class="arrow">→</div>
     </div>
 
+    ${recent.length > 0 ? `
+    <div class="card">
+      <div class="flex justify-between items-center mb-8">
+        <div style="font-size:15px;font-weight:600">📋 最近のセッション</div>
+        ${hist.length > 5 ? `<button class="btn-ghost text-xs" id="showAllHistory">すべて見る (${hist.length})</button>` : ''}
+      </div>
+      ${recent.map(h => {
+        const d = new Date(h.date);
+        const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+        const icon = h.mode === 'freetalk' ? '🗣️' : '⚡';
+        const scoreColor = (h.score||0) >= 80 ? 'var(--green)' : (h.score||0) >= 60 ? 'var(--yellow)' : 'var(--muted)';
+        return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
+          '<div class="flex justify-between items-center">' +
+          '<div class="text-sm">' + icon + ' ' + esc(h.topic || h.mode) + '</div>' +
+          '<div style="font-weight:700;color:' + scoreColor + '">' + (h.score || '-') + '</div>' +
+          '</div>' +
+          '<div class="text-xs text-muted">' + dateStr + ' · ' + (h.minutes || 0) + '分 · ' + esc(h.voice || '') + '</div>' +
+          '</div>';
+      }).join('')}
+    </div>` : ''}
+
     <div class="card" style="text-align:center">
       <button class="btn btn-ghost" id="settingsBtn">⚙️ APIキー設定</button>
+      ${S.totalSessions > 0 ? '<button class="btn btn-ghost" id="clearDataBtn" style="color:var(--red)">🗑️ 履歴をクリア</button>' : ''}
     </div>
     <div class="text-xs text-muted" style="text-align:center;margin-top:8px;padding-bottom:16px">${VERSION}</div>
   `;
   $("startFreeTalk").onclick = () => { initFreeTalk(); };
   $("startFlash").onclick = () => { initFlash(); };
   $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
+  if ($("clearDataBtn")) $("clearDataBtn").onclick = clearAllData;
+  if ($("showAllHistory")) $("showAllHistory").onclick = () => { S.screen = "history"; renderHistory(); };
 }
 
 // ═══════════════════════════════════
@@ -934,10 +1043,8 @@ ${level.id === "advanced" ? "Use idioms and complex structures." : ""}`;
 
 async function endFreeTalkSession() {
   S.ftSessionActive = false;
-  const elapsed = Math.round((Date.now() - (S.ftStartTime || Date.now())) / 60000);
-  S.totalSessions++;
-  S.totalMinutes += Math.max(1, elapsed);
-  saveStats();
+  const elapsed = Math.max(1, Math.round((Date.now() - (S.ftStartTime || Date.now())) / 60000));
+  const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
 
   showTyping();
   // Get feedback from Gemini
@@ -966,6 +1073,15 @@ Provide feedback in this JSON format:
     hideTyping();
     const fb = JSON.parse(raw);
     S._lastFeedback = fb;
+    saveSession({
+      mode: "freetalk",
+      topic: topic?.label || S.ftTopic,
+      level: S.ftLevel,
+      score: fb.overallScore || 0,
+      minutes: elapsed,
+      turns: S.ftTurnCount,
+      voice: S.ftVoice,
+    });
     S.screen = "review";
     render();
   } catch(e) {
@@ -1292,8 +1408,15 @@ function renderFlashSummary() {
   const poor = results.filter(r => r.score < 60).length;
 
   S.totalSessions++;
-  S.totalMinutes += 5; // estimate
-  saveStats();
+  S.totalMinutes += 5;
+  saveSession({
+    mode: "flash",
+    topic: FLASH_CATEGORIES.find(c => c.id === S.flashCategory)?.label || S.flashCategory,
+    level: S.flashLevel,
+    score: avg,
+    minutes: 5,
+    voice: S.ftVoice,
+  });
 
   const scoreColor = avg >= 80 ? "var(--green)" : avg >= 60 ? "var(--yellow)" : "var(--red)";
 

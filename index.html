@@ -181,7 +181,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.04f";
+const VERSION = "v2026.05.04j";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -416,6 +416,8 @@ const S = {
   // Recording
   isRecording: false,
   isProcessing: false,
+  // Cost tracking (per session)
+  cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 },
   // Stats
   totalSessions: parseInt(localStorage.getItem("ett_total_sessions") || "0"),
   totalMinutes: parseInt(localStorage.getItem("ett_total_minutes") || "0"),
@@ -444,7 +446,12 @@ async function geminiChat(messages, systemPrompt = "", json = false) {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Gemini API ${res.status}`);
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  // Track token usage (estimate: ~4 chars per token for English)
+  const inChars = messages.reduce((a, m) => a + m.content.length, 0) + (systemPrompt?.length || 0);
+  S.cost.geminiInTokens += Math.ceil(inChars / 4);
+  S.cost.geminiOutTokens += Math.ceil(output.length / 4);
+  return output;
 }
 
 // ── Azure TTS ──
@@ -454,6 +461,7 @@ function stopAudio() { if(_curAudio){_curAudio.pause();_curAudio=null;} }
 async function speakText(text, voiceId = "en-US-JennyNeural") {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
   stopAudio();
+  S.cost.ttsChars += text.length;
 
   const voiceInfo = TTS_VOICES.find(v => v.id === voiceId) || TTS_VOICES[0];
   const rate = TTS_RATE[S.ftLevel] || "medium";
@@ -490,21 +498,27 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
 }
 
 // ── WAV Recording ──
-async function recordWav(maxMs = 20000) {
+async function recordWav(maxMs = 60000) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
   const ctx = new AudioContext({ sampleRate: 16000 });
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
   const chunks = [];
-  proc.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  let stopped = false;
+  const recStartTime = Date.now();
+  proc.onaudioprocess = e => { if (!stopped) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
   src.connect(proc); proc.connect(ctx.destination);
-  let _timeout = setTimeout(() => recorder.stop(), maxMs);
   const recorder = {
     stop: async () => {
+      if (stopped) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"}); // already stopped
+      stopped = true;
+      S.cost.sttSeconds += Math.round((Date.now() - recStartTime) / 1000);
       clearTimeout(_timeout);
-      proc.disconnect(); src.disconnect();
+      try { proc.disconnect(); } catch(e){}
+      try { src.disconnect(); } catch(e){}
       stream.getTracks().forEach(t => t.stop());
-      await ctx.close();
+      if (ctx.state !== "closed") { try { await ctx.close(); } catch(e){} }
+      if (chunks.length === 0) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"});
       const samples = new Float32Array(chunks.reduce((a, c) => a + c.length, 0));
       let off = 0; for (const c of chunks) { samples.set(c, off); off += c.length; }
       const pcm = new Int16Array(samples.length);
@@ -522,12 +536,14 @@ async function recordWav(maxMs = 20000) {
       return new Blob([wavBuf],{type:"audio/wav"});
     }
   };
+  let _timeout = setTimeout(() => recorder.stop(), maxMs);
   return recorder;
 }
 
 // ── Azure STT (Speech-to-Text) ──
 async function azureSTT(wavBlob) {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
+  if (!wavBlob || wavBlob.size <= 44) return ""; // empty audio
   const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
   const res = await fetch(url, {
     method: "POST",
@@ -539,6 +555,7 @@ async function azureSTT(wavBlob) {
   });
   if (!res.ok) throw new Error(`Azure STT ${res.status}`);
   const data = await res.json();
+  if (data.RecognitionStatus === "InitialSilenceTimeout" || data.RecognitionStatus === "NoMatch") return "";
   if (data.RecognitionStatus !== "Success") throw new Error(`Recognition: ${data.RecognitionStatus}`);
   return data.DisplayText || "";
 }
@@ -569,6 +586,34 @@ async function azurePronAssess(wavBlob, refText) {
 
 // ── Utility ──
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+// ── Cost Estimation ──
+function calcCostHTML() {
+  const c = S.cost;
+  // Azure STT: $1.32/hour = $0.022/min
+  const sttCost = (c.sttSeconds / 3600) * 1.32;
+  // Azure TTS: $16/1M characters
+  const ttsCost = (c.ttsChars / 1000000) * 16;
+  // Gemini 2.5 Flash: Input $0.30/1M tokens, Output $2.50/1M tokens
+  const gemInCost = (c.geminiInTokens / 1000000) * 0.30;
+  const gemOutCost = (c.geminiOutTokens / 1000000) * 2.50;
+  const total = sttCost + ttsCost + gemInCost + gemOutCost;
+  const totalJPY = Math.round(total * 150 * 10) / 10; // 概算レート
+
+  return `<div class="card">
+    <div style="font-size:15px;font-weight:600;margin-bottom:12px">💰 API コスト概算</div>
+    <div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;font-size:13px;line-height:2">
+      <span class="text-muted">Azure STT</span><span class="text-muted">${c.sttSeconds}秒</span><span>$${sttCost.toFixed(4)}</span>
+      <span class="text-muted">Azure TTS</span><span class="text-muted">${c.ttsChars.toLocaleString()}文字</span><span>$${ttsCost.toFixed(4)}</span>
+      <span class="text-muted">Gemini (入力)</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}トークン</span><span>$${gemInCost.toFixed(4)}</span>
+      <span class="text-muted">Gemini (出力)</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}トークン</span><span>$${gemOutCost.toFixed(4)}</span>
+    </div>
+    <div class="divider"></div>
+    <div class="flex justify-between" style="font-size:15px;font-weight:700">
+      <span>合計</span><span>$${total.toFixed(4)}（約${totalJPY}円）</span>
+    </div>
+  </div>`;
+}
 
 // ── Session History ──
 function getHistory() {
@@ -998,6 +1043,7 @@ async function startFreeTalkSession() {
   if (!topic) return;
   S.ftSessionActive = true;
   S.ftStartTime = Date.now();
+  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
 
   // 音声自動選択
   S.ftVoice = pickVoice(topic.id);
@@ -1134,7 +1180,7 @@ async function toggleRecording() {
   } else {
     // Start
     try {
-      _recorder = await recordWav(20000);
+      _recorder = await recordWav(60000);
       S.isRecording = true;
       renderFreeTalkChat();
     } catch(e) {
@@ -1293,6 +1339,9 @@ function renderReview() {
     <button class="btn btn-primary w-full mt-16" id="revHome">ホームに戻る</button>
     <button class="btn btn-secondary w-full mt-8 mb-16" id="revAgain">もう一度練習する</button>
   `;
+  // Insert cost card before buttons
+  const costPos = app.querySelector('#revHome');
+  if (costPos) costPos.insertAdjacentHTML('beforebegin', calcCostHTML());
   $("revBack").onclick = $("revHome").onclick = () => { S.screen = "home"; render(); };
   $("revAgain").onclick = () => initFreeTalk();
 }
@@ -1347,8 +1396,9 @@ function renderFlashSetup() {
 }
 
 async function generateFlashQuestions() {
-  // Flash用に音声自動選択
+  // Flash用に音声自動選択 & コストリセット
   S.ftVoice = pickVoice("flash");
+  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
   app.innerHTML = `
     <div style="text-align:center;padding:80px 0">
       <div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div>
@@ -1460,7 +1510,7 @@ function renderFlashQuestion() {
       } else {
         // Start
         try {
-          rec = await recordWav(15000);
+          rec = await recordWav(20000);
           $("flashMic").className = "mic-btn recording";
           $("flashMic").textContent = "⏹";
         } catch(e) { alert("マイクエラー: " + e.message); }
@@ -1593,6 +1643,9 @@ function renderFlashSummary() {
     <button class="btn btn-primary w-full mt-16" id="fsHome">ホームに戻る</button>
     <button class="btn btn-secondary w-full mt-8 mb-16" id="fsAgain">もう10問</button>
   `;
+  // Insert cost card
+  const fsCostPos = app.querySelector('#fsHome');
+  if (fsCostPos) fsCostPos.insertAdjacentHTML('beforebegin', calcCostHTML());
   $("fsBck").onclick = $("fsHome").onclick = () => { S.screen = "home"; render(); };
   $("fsAgain").onclick = () => initFlash();
 }

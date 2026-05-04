@@ -218,7 +218,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05d";
+const VERSION = "v2026.05.05e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -583,7 +583,7 @@ async function geminiChat(messages, systemPrompt = "", json = false) {
     contents,
     generationConfig: {
       temperature: json ? 0.3 : 0.8,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096,
       ...(json ? { responseMimeType: "application/json" } : {})
     }
   };
@@ -748,6 +748,32 @@ async function azurePronAssess(wavBlob, refText) {
 
 // ── Utility ──
 function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+// ── Safe JSON Parse (repair truncated/malformed JSON) ──
+function safeJSON(raw) {
+  // Strip markdown fences
+  let s = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  try { return JSON.parse(s); } catch(e1) {
+    // Try fixing unterminated strings: add closing quote
+    let fixed = s;
+    // Count quotes - if odd, add one
+    const quotes = (fixed.match(/"/g) || []).length;
+    if (quotes % 2 !== 0) fixed += '"';
+    // Try closing brackets/braces
+    const opens = (fixed.match(/\{/g) || []).length;
+    const closes = (fixed.match(/\}/g) || []).length;
+    for (let i = 0; i < opens - closes; i++) fixed += '}';
+    const openB = (fixed.match(/\[/g) || []).length;
+    const closeB = (fixed.match(/\]/g) || []).length;
+    for (let i = 0; i < openB - closeB; i++) fixed += ']';
+    // Remove trailing commas before } or ]
+    fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+    try { return JSON.parse(fixed); } catch(e2) {
+      console.warn("JSON repair failed:", e2.message, "\nRaw:", s.slice(0, 200));
+      throw e1; // throw original error
+    }
+  }
+}
 
 // ── Cost Estimation ──
 function calcCostHTML() {
@@ -1404,7 +1430,7 @@ async function toggleRecording() {
 async function generateChallengeExpressions(levelId) {
   try {
     const raw = await geminiChat([{ role: "user", content: `Generate 3 useful English expressions for a ${levelId} level learner to try using in conversation. Return JSON: {"expressions": [{"en": "expression", "ja": "Japanese meaning", "example": "example sentence"}]}` }], "JSON only.", true);
-    const data = JSON.parse(raw);
+    const data = safeJSON(raw);
     S.ftChallengeExprs = data.expressions || [];
     S.ftChallengeUsed = new Array(S.ftChallengeExprs.length).fill(false);
     // Show challenge card in chat
@@ -1495,7 +1521,7 @@ Provide feedback in this JSON format:
       true
     );
     hideTyping();
-    const fb = JSON.parse(raw);
+    const fb = safeJSON(raw);
     S._lastFeedback = fb;
 
     // Save session
@@ -1680,7 +1706,7 @@ Respond ONLY in JSON:
 
   try {
     const raw = await geminiChat([{ role: "user", content: prompt }], "Generate translation exercises. JSON only.", true);
-    const data = JSON.parse(raw);
+    const data = safeJSON(raw);
     S.flashQuestions = data.questions || [];
     if (S.flashQuestions.length === 0) throw new Error("問題が生成されませんでした");
     S.flashCurrent = 0;
@@ -1815,7 +1841,7 @@ Scoring guide:
 - 0-49: Major errors or wrong meaning`;
 
     const raw = await geminiChat([{ role: "user", content: evalPrompt }], "English teacher evaluator. JSON only.", true);
-    const ev = JSON.parse(raw);
+    const ev = safeJSON(raw);
 
     const scoreColor = ev.score >= 80 ? "var(--green)" : ev.score >= 60 ? "var(--yellow)" : "var(--red)";
 
@@ -1925,7 +1951,7 @@ AI said: ${aiMsgs}
 User said: ${userMsgs}
 
 Return JSON: {"vocab": [{"en": "expression", "ja": "Japanese meaning", "context": "example from the conversation"}]}` }], "JSON only.", true);
-    const data = JSON.parse(raw);
+    const data = safeJSON(raw);
     if (data.vocab?.length) addVocabEntries(data.vocab);
   } catch(e) { console.warn("Vocab extract:", e); }
 }
@@ -1974,7 +2000,7 @@ async function generateShadowSentences() {
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
     const raw = await geminiChat([{ role: "user", content: `Generate 5 natural English sentences for shadowing practice at ${lvl.id} level. ${lvl.flashRules}\nReturn JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
-    S.shadowSentences = JSON.parse(raw).sentences || [];
+    S.shadowSentences = safeJSON(raw).sentences || [];
     if (!S.shadowSentences.length) throw new Error("No sentences");
     S.shadowCurrent = 0;
     S.shadowResults = [];

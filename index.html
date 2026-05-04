@@ -223,7 +223,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05m";
+const VERSION = "v2026.05.05r";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -457,7 +457,7 @@ const S = {
   // Recording
   isRecording: false, isProcessing: false,
   // Cost tracking
-  cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 },
+  cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
   // Stats
   totalSessions: parseInt(localStorage.getItem("ett_total_sessions") || "0"),
   totalMinutes: parseInt(localStorage.getItem("ett_total_minutes") || "0"),
@@ -578,7 +578,7 @@ function assessCEFRLevel() {
 }
 
 // ── Gemini API ──
-async function geminiChat(messages, systemPrompt = "", json = false) {
+async function geminiChat(messages, systemPrompt = "", json = false, useSearch = false) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`;
   const contents = messages.map(m => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -595,14 +595,19 @@ async function geminiChat(messages, systemPrompt = "", json = false) {
   if (systemPrompt) {
     body.systemInstruction = { parts: [{ text: systemPrompt }] };
   }
+  // Google Search Grounding for real-time information
+  if (useSearch) {
+    body.tools = [{ google_search_retrieval: { dynamic_retrieval_config: { mode: "MODE_DYNAMIC", dynamic_threshold: 0.3 } } }];
+  }
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Gemini API ${res.status}`);
   const data = await res.json();
   const output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  // Track token usage (estimate: ~4 chars per token for English)
+  // Track token usage
   const inChars = messages.reduce((a, m) => a + m.content.length, 0) + (systemPrompt?.length || 0);
   S.cost.geminiInTokens += Math.ceil(inChars / 4);
   S.cost.geminiOutTokens += Math.ceil(output.length / 4);
+  if (useSearch) S.cost.searchCalls = (S.cost.searchCalls || 0) + 1;
   return output;
 }
 
@@ -783,14 +788,12 @@ function safeJSON(raw) {
 // ── Cost Estimation ──
 function calcCostHTML() {
   const c = S.cost;
-  // Azure STT: $1.32/hour (only Shadowing uses this now)
   const sttCost = (c.sttSeconds / 3600) * 1.32;
-  // Azure TTS: $16/1M characters
   const ttsCost = (c.ttsChars / 1000000) * 16;
-  // Gemini 2.5 Flash: Input $0.30/1M, Output $2.50/1M
   const gemInCost = (c.geminiInTokens / 1000000) * 0.30;
   const gemOutCost = (c.geminiOutTokens / 1000000) * 2.50;
-  const total = sttCost + ttsCost + gemInCost + gemOutCost;
+  const searchCost = (c.searchCalls || 0) * 0.035;
+  const total = sttCost + ttsCost + gemInCost + gemOutCost + searchCost;
   const totalJPY = Math.round(total * 150 * 10) / 10;
 
   return `<div class="card">
@@ -800,6 +803,7 @@ function calcCostHTML() {
       <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars.toLocaleString()}文字 (Azure)</span><span>$${ttsCost.toFixed(4)}</span>
       <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}トークン</span><span>$${gemInCost.toFixed(4)}</span>
       <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}トークン</span><span>$${gemOutCost.toFixed(4)}</span>
+      ${c.searchCalls ? `<span class="text-muted">Web検索</span><span class="text-muted">${c.searchCalls}回 (Google)</span><span>$${searchCost.toFixed(4)}</span>` : ''}
     </div>
     <div class="divider"></div>
     <div class="flex justify-between" style="font-size:15px;font-weight:700">
@@ -1073,6 +1077,12 @@ const FT_CATEGORIES = [
     { id: "d_commute", label: "通勤・通学", prompt: "Talk about commuting — transportation, traffic, and the daily journey." },
     { id: "d_weekend", label: "週末の過ごし方", prompt: "Talk about weekend plans, relaxation, and how to spend days off." },
     { id: "d_pets", label: "ペット・動物", prompt: "Talk about pets, animals, pet care, and favorite animals." },
+    { id: "si_shop", label: "🎭 ショッピング", prompt: "Role-play: You are shopping at a store. The AI plays the shop assistant. Practice asking about sizes, prices, returns." },
+    { id: "si_complaint", label: "🎭 クレーム対応", prompt: "Role-play: You need to make a complaint about a product or service. The AI plays customer service. Practice expressing dissatisfaction politely." },
+    { id: "si_post", label: "🎭 郵便局・宅配", prompt: "Role-play: You are at a post office sending a package overseas. The AI plays the clerk. Practice asking about shipping options, rates, and customs forms." },
+    { id: "si_library", label: "🎭 図書館", prompt: "Role-play: You are at a library. The AI plays the librarian. Practice getting a library card, finding books, and asking about borrowing rules." },
+    { id: "si_cleaning", label: "🎭 クリーニング店", prompt: "Role-play: You are dropping off clothes at a dry cleaner. The AI plays the staff. Practice explaining stains, asking about turnaround time and prices." },
+    { id: "si_online_shop", label: "🎭 ネット通販の問合せ", prompt: "Role-play: You have an issue with an online order (wrong item, delayed delivery). The AI plays customer support via chat. Practice explaining and resolving." },
     { id: "d_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "travel", icon: "✈️", label: "旅行", topics: [
@@ -1084,6 +1094,16 @@ const FT_CATEGORIES = [
     { id: "t_trouble", label: "旅先のトラブル", prompt: "Talk about travel troubles — lost luggage, missed flights, getting lost, and how to handle them." },
     { id: "t_souvenir", label: "お土産・思い出", prompt: "Talk about souvenirs, travel photos, and sharing travel memories." },
     { id: "t_dream", label: "行きたい場所", prompt: "Talk about dream destinations and bucket list travel experiences." },
+    { id: "si_checkin", label: "🎭 ホテルチェックイン", prompt: "Role-play: You are checking into a hotel. The AI plays the front desk staff. Practice requesting rooms, asking about amenities." },
+    { id: "si_customs", label: "🎭 入国審査", prompt: "Role-play: You are going through immigration/customs. The AI plays the officer. Practice answering questions about your visit." },
+    { id: "si_airport", label: "🎭 空港トラブル", prompt: "Role-play: Your flight is delayed/canceled or your luggage is lost. The AI plays airline staff. Practice explaining the situation and asking for solutions." },
+    { id: "si_cancel", label: "🎭 予約変更・キャンセル", prompt: "Role-play: You need to change or cancel a reservation (hotel, restaurant, flight). The AI plays the service staff. Practice polite requests and handling fees." },
+    { id: "si_rental_car", label: "🎭 レンタカー", prompt: "Role-play: You are renting a car. The AI plays the rental agent. Practice asking about rates, insurance, GPS, and returning the car." },
+    { id: "si_directions", label: "🎭 道案内", prompt: "Role-play: You are asking for or giving directions. Practice location vocabulary and navigation." },
+    { id: "si_taxi", label: "🎭 タクシー", prompt: "Role-play: You are taking a taxi. The AI plays the driver. Practice giving directions, asking about fares, and making small talk." },
+    { id: "si_train", label: "🎭 電車・バス", prompt: "Role-play: You are trying to buy a ticket and navigate public transport. The AI plays a station staff member or fellow passenger. Practice asking about routes, transfers, and schedules." },
+    { id: "si_tour", label: "🎭 ツアーガイド", prompt: "Role-play: You are on a guided tour. The AI plays the tour guide. Practice asking questions about sights, history, and recommendations." },
+    { id: "si_emergency", label: "🎭 緊急事態", prompt: "Role-play: You are in an emergency situation abroad. Practice asking for help, calling emergency services, and explaining your situation." },
     { id: "t_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "food", icon: "🍕", label: "食べ物・料理", topics: [
@@ -1094,6 +1114,10 @@ const FT_CATEGORIES = [
     { id: "f_sweets", label: "スイーツ・カフェ", prompt: "Talk about desserts, sweets, coffee shops, and cafe culture." },
     { id: "f_home", label: "おふくろの味", prompt: "Talk about home cooking, comfort food, and food memories from childhood." },
     { id: "f_trend", label: "食のトレンド", prompt: "Talk about food trends — viral recipes, food influencers, and new food experiences." },
+    { id: "si_cafe", label: "🎭 カフェ注文", prompt: "Role-play: You are ordering at a coffee shop. The AI plays the barista. Practice ordering drinks with customizations (size, milk type, extra shot)." },
+    { id: "si_takeout", label: "🎭 テイクアウト/デリバリー", prompt: "Role-play: You are ordering takeout by phone or at a counter. The AI plays the staff. Practice ordering, specifying pickup time, and payment." },
+    { id: "si_allergy", label: "🎭 食物アレルギー説明", prompt: "Role-play: You have food allergies and are dining out. The AI plays the waiter. Practice explaining your allergies, asking about ingredients, and finding safe options." },
+    { id: "si_order", label: "🎭 レストラン注文", prompt: "Role-play: You are ordering at a restaurant. The AI plays the waiter. Practice ordering, asking about the menu, dietary restrictions." },
     { id: "f_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "work", icon: "💼", label: "仕事・ビジネス", topics: [
@@ -1115,6 +1139,14 @@ const FT_CATEGORIES = [
     { id: "w_strategy", label: "経営戦略", prompt: "Talk about business strategy — competitive advantage, market analysis, growth plans, and business models." },
     { id: "w_startup_biz", label: "起業・新規事業", prompt: "Talk about starting a business — business plans, funding, MVP, market validation, and scaling." },
     { id: "w_global", label: "海外ビジネス", prompt: "Talk about international business — cross-cultural communication, overseas expansion, trade, and localization." },
+    { id: "si_salary", label: "🎭 給与交渉", prompt: "Role-play: You are negotiating your salary or a raise. The AI plays your manager or HR. Practice presenting your case, countering offers, and reaching agreement." },
+    { id: "si_resign", label: "🎭 退職・転職相談", prompt: "Role-play: You are resigning from your job. The AI plays your boss. Practice delivering the news professionally, handling counteroffers, and discussing transition." },
+    { id: "si_feedback", label: "🎭 部下への指導", prompt: "Role-play: You are giving feedback to a team member. The AI plays the subordinate. Practice delivering constructive criticism, setting goals, and motivating." },
+    { id: "si_apology", label: "🎭 クライアントへの謝罪", prompt: "Role-play: You need to apologize to a client for a mistake or delay. The AI plays the client. Practice taking responsibility, explaining what happened, and proposing solutions." },
+    { id: "si_online_mtg", label: "🎭 オンライン会議", prompt: "Role-play: You are leading or participating in a video conference. The AI plays a colleague. Practice screen sharing narration, asking for opinions, and summarizing action items." },
+    { id: "si_phone", label: "🎭 電話応対", prompt: "Role-play: You are making/receiving a phone call. Practice phone etiquette, taking messages, and scheduling." },
+    { id: "si_biz_dinner", label: "🎭 ビジネスディナー", prompt: "Role-play: You are at a business dinner with clients. The AI plays a client. Practice professional small talk, toasting, and building rapport." },
+    { id: "si_conference", label: "🎭 カンファレンス", prompt: "Role-play: You are attending a conference or trade show. The AI plays another attendee. Practice networking, exchanging business cards, and discussing industry topics." },
     { id: "w_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "finance", icon: "💹", label: "経済・金融", topics: [
@@ -1128,6 +1160,10 @@ const FT_CATEGORIES = [
     { id: "fn_personal", label: "家計・資産管理", prompt: "Talk about personal finance — budgeting, saving, retirement planning, and financial goals." },
     { id: "fn_trade", label: "国際貿易", prompt: "Talk about international trade — imports/exports, tariffs, trade agreements, supply chains, and currency exchange." },
     { id: "fn_fintech", label: "フィンテック", prompt: "Talk about fintech — digital payments, online banking, robo-advisors, and financial innovation." },
+    { id: "si_insurance", label: "🎭 保険の相談", prompt: "Role-play: You are consulting about insurance (health, car, travel). The AI plays the insurance agent. Practice asking about coverage, premiums, and claims." },
+    { id: "si_advisor", label: "🎭 投資アドバイザー", prompt: "Role-play: You are meeting with a financial advisor. The AI plays the advisor. Practice discussing investment goals, risk tolerance, and portfolio options." },
+    { id: "si_loan", label: "🎭 ローン申請", prompt: "Role-play: You are applying for a loan (housing, car, business). The AI plays the loan officer. Practice discussing terms, interest rates, and required documents." },
+    { id: "si_bank", label: "🎭 銀行・両替", prompt: "Role-play: You are at a bank or currency exchange. Practice financial transactions and asking about rates." },
     { id: "fn_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "hobby", icon: "🎮", label: "趣味・エンタメ", topics: [
@@ -1139,6 +1175,8 @@ const FT_CATEGORIES = [
     { id: "h_fitness", label: "フィットネス", prompt: "Talk about fitness — gym routines, running, yoga, and staying motivated." },
     { id: "h_art", label: "アート・写真", prompt: "Talk about art, photography, museums, and creative hobbies." },
     { id: "h_outdoor", label: "アウトドア", prompt: "Talk about outdoor activities — hiking, camping, fishing, and nature." },
+    { id: "si_ticket", label: "🎭 チケット購入", prompt: "Role-play: You are buying tickets for a concert, sports event, or theater. The AI plays the box office staff. Practice asking about availability, seat selection, and prices." },
+    { id: "si_sportsbar", label: "🎭 スポーツ観戦", prompt: "Role-play: You are watching a live sports game and chatting with the person next to you. The AI plays a fellow spectator. Practice discussing the game, teams, and players." },
     { id: "h_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "tech", icon: "💻", label: "テクノロジー", topics: [
@@ -1149,6 +1187,8 @@ const FT_CATEGORIES = [
     { id: "tc_future", label: "未来のテクノロジー", prompt: "Talk about future technology — self-driving cars, space travel, VR/AR, and tech predictions." },
     { id: "tc_security", label: "セキュリティ", prompt: "Talk about cybersecurity, passwords, privacy, and staying safe online." },
     { id: "tc_startup", label: "スタートアップ", prompt: "Talk about startups, entrepreneurship, and tech industry trends." },
+    { id: "si_techsupport", label: "🎭 テクサポート", prompt: "Role-play: You are calling tech support for a computer/internet problem. The AI plays the support agent. Practice describing technical issues and following troubleshooting steps." },
+    { id: "si_phonestore", label: "🎭 スマホショップ", prompt: "Role-play: You are at a phone store buying or upgrading your phone. The AI plays the sales staff. Practice comparing plans, asking about features, and negotiating." },
     { id: "tc_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "society", icon: "🌍", label: "社会・時事", topics: [
@@ -1161,6 +1201,30 @@ const FT_CATEGORIES = [
     { id: "s_work_life", label: "ワークライフバランス", prompt: "Talk about work-life balance, burnout, mental health, and quality of life." },
     { id: "s_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
+  { id: "news", icon: "📰", label: "ニュース議論", topics: [
+    { id: "nw_world", label: "国際ニュース", prompt: "__NEWS__:Find and summarize a real recent international news story about global events, diplomacy, or international relations." },
+    { id: "nw_politics", label: "政治", prompt: "__NEWS__:Find and summarize a real recent political news story — elections, policy changes, or government decisions." },
+    { id: "nw_business", label: "ビジネス", prompt: "__NEWS__:Find and summarize a real recent business news story about a company, merger, product launch, or industry trend." },
+    { id: "nw_economy", label: "経済・金融", prompt: "__NEWS__:Find and summarize a real recent economics/finance news story — GDP, inflation, interest rates, stock markets, or trade." },
+    { id: "nw_tech", label: "テクノロジー", prompt: "__NEWS__:Find and summarize a real recent technology news story about smartphones, social media, software, or tech companies." },
+    { id: "nw_ai", label: "AI・ロボット", prompt: "__NEWS__:Find and summarize a real recent news story about artificial intelligence, machine learning, robotics, or AI regulation." },
+    { id: "nw_science", label: "科学", prompt: "__NEWS__:Find and summarize a real recent science news story — research breakthroughs, discoveries, or academic findings." },
+    { id: "nw_space", label: "宇宙", prompt: "__NEWS__:Find and summarize a real recent space news story — launches, exploration, satellites, NASA, SpaceX, or astronomy." },
+    { id: "nw_health", label: "医療・健康", prompt: "__NEWS__:Find and summarize a real recent health/medical news story — new treatments, disease outbreaks, drug approvals, or public health." },
+    { id: "nw_climate", label: "気候変動・環境", prompt: "__NEWS__:Find and summarize a real recent news story about climate change, environmental policy, renewable energy, or sustainability." },
+    { id: "nw_energy", label: "エネルギー", prompt: "__NEWS__:Find and summarize a real recent energy news story — oil prices, renewable energy, nuclear power, or energy policy." },
+    { id: "nw_sports", label: "スポーツ", prompt: "__NEWS__:Find and summarize a real recent sports news story about a major event, transfer, record, or tournament." },
+    { id: "nw_entertain", label: "エンタメ", prompt: "__NEWS__:Find and summarize a real recent entertainment news story — movies, music, streaming, awards, or celebrity news." },
+    { id: "nw_auto", label: "自動車・EV", prompt: "__NEWS__:Find and summarize a real recent automotive news story — electric vehicles, self-driving cars, or car industry trends." },
+    { id: "nw_startup", label: "スタートアップ", prompt: "__NEWS__:Find and summarize a real recent startup news story — funding rounds, IPOs, unicorns, or startup ecosystem trends." },
+    { id: "nw_education", label: "教育", prompt: "__NEWS__:Find and summarize a real recent education news story — school policy, university rankings, EdTech, or learning trends." },
+    { id: "nw_law", label: "法律・規制", prompt: "__NEWS__:Find and summarize a real recent legal/regulatory news story — new laws, court cases, antitrust, or data privacy regulations." },
+    { id: "nw_realestate", label: "不動産", prompt: "__NEWS__:Find and summarize a real recent real estate news story — housing market, property prices, construction, or urban development." },
+    { id: "nw_food", label: "食品・農業", prompt: "__NEWS__:Find and summarize a real recent food/agriculture news story — food industry trends, farming, food safety, or supply chain." },
+    { id: "nw_japan", label: "日本関連（英語圏視点）", prompt: "__NEWS__:Find and summarize a real recent English-language news story about Japan — economy, culture, politics, or society as reported by international media." },
+    { id: "nw_lifestyle", label: "ライフスタイル", prompt: "__NEWS__:Find and summarize a real recent lifestyle trend news story — remote work, wellness, social changes, or consumer behavior." },
+    { id: "nw_custom", label: "✏️ フリーワード", prompt: "__NEWS_CUSTOM__" },
+  ]},
   { id: "culture", icon: "🏛️", label: "文化・異文化", topics: [
     { id: "c_japan", label: "日本文化の紹介", prompt: "Practice explaining Japanese culture to a foreigner — festivals, food, customs, and traditions." },
     { id: "c_diff", label: "文化の違い", prompt: "Talk about cultural differences between Japan and other countries." },
@@ -1169,35 +1233,13 @@ const FT_CATEGORIES = [
     { id: "c_language", label: "言語学習", prompt: "Talk about learning languages — tips, challenges, funny mistakes, and motivation." },
     { id: "c_living", label: "海外生活", prompt: "Talk about living abroad — challenges, discoveries, and advice for expats." },
     { id: "c_stereotype", label: "偏見・ステレオタイプ", prompt: "Talk about stereotypes and misconceptions about different cultures." },
+    { id: "si_temple", label: "🎭 寺社で外国人に説明", prompt: "Role-play: A foreign tourist asks you about a Japanese temple/shrine. The AI plays the tourist. Practice explaining Japanese religious customs, manners, and history in English." },
+    { id: "si_exchange", label: "🎭 国際交流イベント", prompt: "Role-play: You are at an international exchange event or language cafe. The AI plays a foreign participant. Practice introducing yourself, finding common interests, and cultural exchange." },
+    { id: "si_homestay", label: "🎭 ホームステイ", prompt: "Role-play: You are staying with a host family. The AI plays the host. Practice daily conversation, house rules, and cultural exchange." },
+    { id: "si_party", label: "🎭 パーティー・社交", prompt: "Role-play: You are at a party or social gathering. The AI plays other guests. Practice small talk, introductions, and mingling." },
     { id: "c_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
-  { id: "situation", icon: "🎭", label: "シチュエーション", topics: [
-    { id: "si_checkin", label: "ホテルチェックイン", prompt: "Role-play: You are checking into a hotel. The AI plays the front desk staff. Practice requesting rooms, asking about amenities." },
-    { id: "si_order", label: "レストラン注文", prompt: "Role-play: You are ordering at a restaurant. The AI plays the waiter. Practice ordering, asking about the menu, dietary restrictions." },
-    { id: "si_doctor", label: "病院・薬局", prompt: "Role-play: You are visiting a doctor or pharmacy. The AI plays the medical staff. Practice describing symptoms and understanding instructions." },
-    { id: "si_shop", label: "ショッピング", prompt: "Role-play: You are shopping at a store. The AI plays the shop assistant. Practice asking about sizes, prices, returns." },
-    { id: "si_phone", label: "電話応対", prompt: "Role-play: You are making/receiving a phone call. Practice phone etiquette, taking messages, and scheduling." },
-    { id: "si_complaint", label: "クレーム対応", prompt: "Role-play: You need to make a complaint about a product or service. The AI plays customer service. Practice expressing dissatisfaction politely." },
-    { id: "si_directions", label: "道案内", prompt: "Role-play: You are asking for or giving directions. Practice location vocabulary and navigation." },
-    { id: "si_emergency", label: "緊急事態", prompt: "Role-play: You are in an emergency situation abroad. Practice asking for help, calling emergency services, and explaining your situation." },
-    { id: "si_bank", label: "銀行・両替", prompt: "Role-play: You are at a bank or currency exchange. Practice financial transactions and asking about rates." },
-    { id: "si_customs", label: "入国審査", prompt: "Role-play: You are going through immigration/customs. The AI plays the officer. Practice answering questions about your visit." },
-    { id: "si_realestate", label: "不動産・物件探し", prompt: "Role-play: You are looking for an apartment/house. The AI plays the real estate agent. Practice asking about rent, facilities, neighborhood, and lease terms." },
-    { id: "si_salon", label: "美容室・理髪店", prompt: "Role-play: You are at a hair salon/barber. The AI plays the stylist. Practice describing the hairstyle you want, length, color." },
-    { id: "si_repair", label: "修理依頼", prompt: "Role-play: You need something repaired (car, appliance, phone). The AI plays the technician. Practice explaining the problem and asking about cost/time." },
-    { id: "si_cancel", label: "予約変更・キャンセル", prompt: "Role-play: You need to change or cancel a reservation (hotel, restaurant, flight). The AI plays the service staff. Practice polite requests and handling fees." },
-    { id: "si_party", label: "パーティー・社交", prompt: "Role-play: You are at a party or social gathering. The AI plays other guests. Practice small talk, introductions, and mingling." },
-    { id: "si_airport", label: "空港トラブル", prompt: "Role-play: Your flight is delayed/canceled or your luggage is lost. The AI plays airline staff. Practice explaining the situation and asking for solutions." },
-    { id: "si_gym", label: "ジム・スポーツクラブ", prompt: "Role-play: You are joining a gym or sports club. The AI plays the staff. Practice asking about memberships, facilities, and classes." },
-    { id: "si_school", label: "学校（保護者面談）", prompt: "Role-play: You are a parent meeting your child's teacher. The AI plays the teacher. Practice discussing your child's progress and behavior." },
-    { id: "si_online_shop", label: "ネット通販の問合せ", prompt: "Role-play: You have an issue with an online order (wrong item, delayed delivery). The AI plays customer support via chat. Practice explaining and resolving." },
-    { id: "si_homestay", label: "ホームステイ", prompt: "Role-play: You are staying with a host family. The AI plays the host. Practice daily conversation, house rules, and cultural exchange." },
-    { id: "si_biz_dinner", label: "ビジネスディナー", prompt: "Role-play: You are at a business dinner with clients. The AI plays a client. Practice professional small talk, toasting, and building rapport." },
-    { id: "si_conference", label: "カンファレンス", prompt: "Role-play: You are attending a conference or trade show. The AI plays another attendee. Practice networking, exchanging business cards, and discussing industry topics." },
-    { id: "si_rental_car", label: "レンタカー", prompt: "Role-play: You are renting a car. The AI plays the rental agent. Practice asking about rates, insurance, GPS, and returning the car." },
-    { id: "si_neighbor", label: "近所付き合い", prompt: "Role-play: You are talking to your neighbor. The AI plays the neighbor. Practice casual conversation about the neighborhood, noise, packages, etc." },
-    { id: "si_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
-  ]},
+
   { id: "health", icon: "🏥", label: "健康・医療", topics: [
     { id: "hl_symptom", label: "症状を伝える", prompt: "Talk about describing symptoms to a doctor — headache, fever, pain, allergies, and medical history." },
     { id: "hl_exercise", label: "運動・フィットネス", prompt: "Talk about exercise routines, gym workouts, yoga, running, and staying in shape." },
@@ -1205,6 +1247,11 @@ const FT_CATEGORIES = [
     { id: "hl_mental", label: "メンタルヘルス", prompt: "Talk about mental health, stress management, work-life balance, and self-care." },
     { id: "hl_sleep", label: "睡眠", prompt: "Talk about sleep habits, insomnia, sleep quality, and tips for better sleep." },
     { id: "hl_checkup", label: "健康診断", prompt: "Talk about health checkups, test results, preventive care, and vaccinations." },
+    { id: "si_dentist", label: "🎭 歯医者", prompt: "Role-play: You are at the dentist. The AI plays the dentist. Practice describing tooth pain, understanding treatment options, and discussing dental care." },
+    { id: "si_er", label: "🎭 救急外来", prompt: "Role-play: You are at an emergency room. The AI plays the ER nurse/doctor. Practice describing urgent symptoms, explaining what happened, and understanding treatment." },
+    { id: "si_trainer", label: "🎭 パーソナルトレーナー", prompt: "Role-play: You are meeting with a personal trainer. The AI plays the trainer. Practice discussing fitness goals, explaining physical limitations, and understanding workout plans." },
+    { id: "si_doctor", label: "🎭 病院・薬局", prompt: "Role-play: You are visiting a doctor or pharmacy. The AI plays the medical staff. Practice describing symptoms and understanding instructions." },
+    { id: "si_gym", label: "🎭 ジム入会", prompt: "Role-play: You are joining a gym or sports club. The AI plays the staff. Practice asking about memberships, facilities, and classes." },
     { id: "hl_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "family", icon: "👨‍👩‍👧", label: "家族・子育て", topics: [
@@ -1213,6 +1260,9 @@ const FT_CATEGORIES = [
     { id: "fm_relationship", label: "家族関係", prompt: "Talk about family relationships — communication, conflicts, support, and family traditions." },
     { id: "fm_event", label: "家族行事", prompt: "Talk about family events — birthdays, anniversaries, reunions, and holiday celebrations." },
     { id: "fm_elderly", label: "介護・高齢の親", prompt: "Talk about caring for elderly parents — health care, living arrangements, and support systems." },
+    { id: "si_babysitter", label: "🎭 ベビーシッター", prompt: "Role-play: You are briefing a babysitter before going out. The AI plays the babysitter. Practice explaining routines, emergency contacts, rules, and food instructions." },
+    { id: "si_school_call", label: "🎭 学校への電話", prompt: "Role-play: You are calling your child's school about an absence or issue. The AI plays the school receptionist/teacher. Practice explaining the situation formally." },
+    { id: "si_school", label: "🎭 保護者面談", prompt: "Role-play: You are a parent meeting your child's teacher. The AI plays the teacher. Practice discussing your child's progress and behavior." },
     { id: "fm_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "housing", icon: "🏡", label: "住まい・暮らし", topics: [
@@ -1221,6 +1271,11 @@ const FT_CATEGORIES = [
     { id: "hs_repair", label: "住宅メンテナンス", prompt: "Talk about home repairs, maintenance, plumbing, electrical issues, and hiring contractors." },
     { id: "hs_neighbor", label: "ご近所・コミュニティ", prompt: "Talk about neighborhood life, community events, local facilities, and neighbor relations." },
     { id: "hs_garden", label: "ガーデニング", prompt: "Talk about gardening — plants, flowers, vegetables, tools, and seasonal gardening tips." },
+    { id: "si_mover", label: "🎭 引っ越し業者", prompt: "Role-play: You are getting a quote from a moving company. The AI plays the mover. Practice describing what needs to be moved, discussing dates, prices, and insurance." },
+    { id: "si_landlord", label: "🎭 管理会社への連絡", prompt: "Role-play: You are reporting a problem to your landlord or property management. The AI plays the manager. Practice describing maintenance issues, requesting repairs, and discussing timelines." },
+    { id: "si_realestate", label: "🎭 不動産・物件探し", prompt: "Role-play: You are looking for an apartment/house. The AI plays the real estate agent. Practice asking about rent, facilities, neighborhood, and lease terms." },
+    { id: "si_repair", label: "🎭 修理依頼", prompt: "Role-play: You need something repaired (car, appliance, phone). The AI plays the technician. Practice explaining the problem and asking about cost/time." },
+    { id: "si_neighbor", label: "🎭 近所付き合い", prompt: "Role-play: You are talking to your neighbor. The AI plays the neighbor. Practice casual conversation about the neighborhood, noise, packages, etc." },
     { id: "hs_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "fashion", icon: "👗", label: "ファッション・美容", topics: [
@@ -1228,6 +1283,7 @@ const FT_CATEGORIES = [
     { id: "fa_beauty", label: "美容・スキンケア", prompt: "Talk about beauty routines, skincare, makeup, and beauty products." },
     { id: "fa_hair", label: "ヘアスタイル", prompt: "Talk about hairstyles, hair care, coloring, and salon experiences." },
     { id: "fa_occasion", label: "TPOに合った服装", prompt: "Talk about dressing for occasions — business, casual, formal events, and dress codes." },
+    { id: "si_salon", label: "🎭 美容室・理髪店", prompt: "Role-play: You are at a hair salon/barber. The AI plays the stylist. Practice describing the hairstyle you want, length, color." },
     { id: "fa_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "nature", icon: "🌿", label: "自然・季節", topics: [
@@ -1298,9 +1354,9 @@ function renderFreeTalkSetup() {
       <div class="topic-grid" id="topicGrid">
         ${activeCat.topics.map(t => `<div class="topic-pill ${selTopic===t.id?'selected':''}" data-id="${t.id}">${t.label}</div>`).join("")}
       </div>
-      ${selTopic && (FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt === '__CUSTOM__') ? `
+      ${selTopic && (FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt === '__CUSTOM__' || FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt === '__NEWS_CUSTOM__') ? `
       <div class="mt-16">
-        <input class="input" id="customTopicInput" placeholder="トピックを入力（例: 契約交渉、M&A、為替...）" value="${esc(S.ftCustomTopic || '')}" autocomplete="off">
+        <input class="input" id="customTopicInput" placeholder="${FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt === '__NEWS_CUSTOM__' ? 'ニュースのテーマ（例: 半導体、AI規制、円安...）' : 'トピックを入力（例: 契約交渉、M&A、為替...）'}" value="${esc(S.ftCustomTopic || '')}" autocomplete="off">
       </div>` : ''}
     </div>` : `
     <div class="card" style="text-align:center;padding:32px;color:var(--muted)">
@@ -1326,7 +1382,7 @@ function renderFreeTalkSetup() {
       </div>
     </div>
 
-    <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic || (FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt==='__CUSTOM__' && !S.ftCustomTopic)?'disabled':''}>会話をスタート</button>
+    <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic || ((FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt==='__CUSTOM__' || FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt==='__NEWS_CUSTOM__') && !S.ftCustomTopic)?'disabled':''}>会話をスタート</button>
     ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：AI音声読み上げが使えません</p>' : ''}
   `;
   $("ftBack").onclick = () => { S.screen = "home"; render(); };
@@ -1383,24 +1439,58 @@ async function startFreeTalkSession() {
   const level = FT_LEVELS.find(l => l.id === S.ftLevel);
   if (!topic) return;
 
-  // Handle custom topic
-  const topicPrompt = topic.prompt === '__CUSTOM__'
-    ? `Talk about "${S.ftCustomTopic}" in the context of ${topic.catLabel || 'general'}. Discuss it naturally and ask questions.`
-    : topic.prompt;
-  const topicDisplay = topic.prompt === '__CUSTOM__' ? S.ftCustomTopic : topic.label;
+  // Handle custom topic and news topics
+  const isNews = topic.prompt.startsWith('__NEWS__') || topic.prompt === '__NEWS_CUSTOM__';
+  let topicPrompt, topicDisplay;
+
+  if (topic.prompt === '__CUSTOM__') {
+    topicPrompt = `Talk about "${S.ftCustomTopic}" in the context of ${topic.catLabel || 'general'}. Discuss it naturally and ask questions.`;
+    topicDisplay = S.ftCustomTopic;
+  } else if (topic.prompt === '__NEWS_CUSTOM__') {
+    topicPrompt = `__NEWS__:Generate a short English news article (80-120 words) about "${S.ftCustomTopic}". Then discuss it with the learner.`;
+    topicDisplay = `📰 ${S.ftCustomTopic}`;
+  } else if (isNews) {
+    topicPrompt = topic.prompt;
+    topicDisplay = topic.label;
+  } else {
+    topicPrompt = topic.prompt;
+    topicDisplay = topic.label;
+  }
 
   S.ftSessionActive = true;
   S.ftStartTime = Date.now();
-  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
+  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
 
   // 音声自動選択
   S.ftVoice = pickVoice(topic.id);
   const voiceLabel = getVoiceLabel(S.ftVoice);
 
   // For situation/role-play topics, add role-play instructions
-  const isRolePlay = topic.catId === "situation";
+  const isRolePlay = topic.id.startsWith("si_");
 
-  const sysPrompt = `You are a friendly English conversation partner.
+  // Build system prompt
+  let sysPrompt;
+  if (isNews) {
+    const newsInstruction = topicPrompt.replace('__NEWS__:', '');
+    sysPrompt = `You are an English conversation partner who discusses REAL current news.
+
+${level.sysRules}
+
+IMPORTANT: Use Google Search to find a REAL, RECENT news story. DO NOT invent or fabricate any news.
+${newsInstruction}
+
+Format your FIRST response like this:
+📰 [Real headline from a real source]
+Source: [actual news source name]
+
+[Summarize the real article in 80-120 words, adapted to ${level.id} level English]
+
+---
+Then ask 1-2 discussion questions about this real news story.
+
+After the first message, continue the discussion naturally. Ask follow-up questions, challenge opinions, and introduce relevant vocabulary.`;
+  } else {
+    sysPrompt = `You are a friendly English conversation partner.
 
 ${level.sysRules}
 
@@ -1410,8 +1500,9 @@ ${isRolePlay ? "This is a ROLE-PLAY scenario. Stay in character throughout." : "
 CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified level.
 
 Start the conversation with a friendly greeting related to the topic.`;
+  }
 
-  S.chatHistory = [{ role: "user", content: "Start the conversation." }];
+  S.chatHistory = [{ role: "user", content: isNews ? "Give me a news article to discuss." : "Start the conversation." }];
   S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topicDisplay} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}\n🔊 ${voiceLabel}` }];
 
   // Generate challenge expressions (async, don't block start)
@@ -1422,7 +1513,8 @@ Start the conversation with a friendly greeting related to the topic.`;
   showTyping();
 
   try {
-    const reply = await geminiChat(S.chatHistory, sysPrompt);
+    // Use Google Search grounding for news topics to get real current news
+    const reply = await geminiChat(S.chatHistory, sysPrompt, false, isNews);
     S.chatHistory.push({ role: "assistant", content: reply });
     S.chatMessages.push({ type: "ai", text: reply });
     hideTyping();
@@ -1685,8 +1777,8 @@ async function handleUserMessage(text) {
 
   const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
   const level = FT_LEVELS.find(l => l.id === S.ftLevel);
-  const isRolePlay = topic?.catId === "situation";
-  const resolvedPrompt = topic?.prompt === '__CUSTOM__' ? `Talk about "${S.ftCustomTopic}"` : (topic?.prompt || "Free conversation");
+  const isRolePlay = topic?.id?.startsWith("si_");
+  const resolvedPrompt = topic?.prompt === '__CUSTOM__' ? `Talk about "${S.ftCustomTopic}"` : topic?.prompt?.startsWith('__NEWS__') ? 'Discuss the news article you presented' : (topic?.prompt || "Free conversation");
   const sysPrompt = `You are a friendly English conversation partner.
 ${level?.sysRules || "Speak naturally."}
 Topic: ${resolvedPrompt}.
@@ -1923,7 +2015,7 @@ function renderFlashSetup() {
 async function generateFlashQuestions() {
   // Flash用に音声自動選択 & コストリセット
   S.ftVoice = pickVoice("flash");
-  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
+  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
   app.innerHTML = `
     <div style="text-align:center;padding:80px 0">
       <div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div>
@@ -2244,7 +2336,7 @@ function renderShadowSetup() {
 
 async function generateShadowSentences() {
   S.ftVoice = pickVoice("shadow");
-  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
+  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
   app.innerHTML = `<div style="text-align:center;padding:80px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">文を生成中...</div></div>`;
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;

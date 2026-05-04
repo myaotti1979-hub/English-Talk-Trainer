@@ -200,9 +200,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .vocab-ctx{font-size:12px;color:var(--muted);font-style:italic;margin-top:4px}
 
 /* ── Challenge Expressions ── */
-.challenge-card{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border:1.5px solid #c4b5fd;border-radius:14px;padding:16px;margin-bottom:12px}
-.challenge-expr{font-size:15px;font-weight:500;padding:6px 0;color:#3b2e8a}
-.challenge-used{text-decoration:line-through;color:var(--green)}
+.challenge-card{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border:2px solid #c4b5fd;border-radius:16px;padding:20px;margin-bottom:12px;align-self:stretch}
+.challenge-title{font-size:16px;font-weight:700;color:#3b2e8a;margin-bottom:12px}
+.challenge-expr{padding:10px 14px;margin:6px 0;background:rgba(255,255,255,.6);border-radius:10px;border:1px solid #c4b5fd}
+.challenge-expr .expr-en{font-size:17px;font-weight:700;color:#3b2e8a}
+.challenge-expr .expr-ja{font-size:14px;color:#5b4e9a;margin-top:2px}
+.challenge-expr .expr-ex{font-size:12px;color:#7c6fbf;margin-top:4px;font-style:italic}
+.challenge-expr.used{background:rgba(5,150,105,.1);border-color:var(--green)}
+.challenge-expr.used .expr-en{color:var(--green);text-decoration:line-through}
 
 /* ── Review Quiz ── */
 .review-prompt{background:#fef3c7;border:1.5px solid #fde68a;border-radius:14px;padding:16px;margin-bottom:14px;cursor:pointer;touch-action:manipulation}
@@ -218,7 +223,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05f";
+const VERSION = "v2026.05.05m";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -826,6 +831,7 @@ function clearAllData() {
   localStorage.removeItem("ett_mistakes");
   localStorage.removeItem("ett_vocab");
   localStorage.removeItem("ett_convlogs");
+  localStorage.removeItem("ett_challenge_used");
   S.totalSessions = 0;
   S.totalMinutes = 0;
   S.screen = "home"; render();
@@ -1067,6 +1073,7 @@ const FT_CATEGORIES = [
     { id: "d_commute", label: "通勤・通学", prompt: "Talk about commuting — transportation, traffic, and the daily journey." },
     { id: "d_weekend", label: "週末の過ごし方", prompt: "Talk about weekend plans, relaxation, and how to spend days off." },
     { id: "d_pets", label: "ペット・動物", prompt: "Talk about pets, animals, pet care, and favorite animals." },
+    { id: "d_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "travel", icon: "✈️", label: "旅行", topics: [
     { id: "t_plan", label: "旅行計画", prompt: "Talk about planning trips — choosing destinations, booking, and budgeting." },
@@ -1077,6 +1084,7 @@ const FT_CATEGORIES = [
     { id: "t_trouble", label: "旅先のトラブル", prompt: "Talk about travel troubles — lost luggage, missed flights, getting lost, and how to handle them." },
     { id: "t_souvenir", label: "お土産・思い出", prompt: "Talk about souvenirs, travel photos, and sharing travel memories." },
     { id: "t_dream", label: "行きたい場所", prompt: "Talk about dream destinations and bucket list travel experiences." },
+    { id: "t_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "food", icon: "🍕", label: "食べ物・料理", topics: [
     { id: "f_cooking", label: "料理・レシピ", prompt: "Talk about cooking — favorite recipes, cooking techniques, and kitchen tips." },
@@ -1086,6 +1094,7 @@ const FT_CATEGORIES = [
     { id: "f_sweets", label: "スイーツ・カフェ", prompt: "Talk about desserts, sweets, coffee shops, and cafe culture." },
     { id: "f_home", label: "おふくろの味", prompt: "Talk about home cooking, comfort food, and food memories from childhood." },
     { id: "f_trend", label: "食のトレンド", prompt: "Talk about food trends — viral recipes, food influencers, and new food experiences." },
+    { id: "f_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "work", icon: "💼", label: "仕事・ビジネス", topics: [
     { id: "w_intro", label: "自己紹介(仕事)", prompt: "Practice introducing yourself in a business context — your role, company, and responsibilities." },
@@ -1096,6 +1105,30 @@ const FT_CATEGORIES = [
     { id: "w_remote", label: "リモートワーク", prompt: "Talk about remote work — pros/cons, productivity tips, and work-life balance." },
     { id: "w_colleague", label: "同僚との雑談", prompt: "Practice small talk with colleagues — weekend plans, office life, and water cooler chat." },
     { id: "w_negotiate", label: "交渉・商談", prompt: "Practice business negotiation — making proposals, compromising, and closing deals." },
+    { id: "w_contract", label: "契約・法務", prompt: "Talk about contracts — terms, conditions, NDA, SLA, reviewing and signing agreements." },
+    { id: "w_hr", label: "人事・採用", prompt: "Talk about HR topics — hiring, onboarding, performance reviews, team building, and company culture." },
+    { id: "w_marketing", label: "マーケティング", prompt: "Talk about marketing — campaigns, branding, target audience, social media strategy, and ROI." },
+    { id: "w_project", label: "プロジェクト管理", prompt: "Talk about project management — deadlines, milestones, agile/scrum, risk management, and stakeholders." },
+    { id: "w_leadership", label: "リーダーシップ", prompt: "Talk about leadership — management styles, motivation, delegation, conflict resolution, and decision-making." },
+    { id: "w_sales", label: "営業・セールス", prompt: "Talk about sales — pitching, client relationships, closing deals, CRM, and sales targets." },
+    { id: "w_report", label: "報告・レポート", prompt: "Talk about writing and presenting reports — quarterly results, KPIs, data analysis, and executive summaries." },
+    { id: "w_strategy", label: "経営戦略", prompt: "Talk about business strategy — competitive advantage, market analysis, growth plans, and business models." },
+    { id: "w_startup_biz", label: "起業・新規事業", prompt: "Talk about starting a business — business plans, funding, MVP, market validation, and scaling." },
+    { id: "w_global", label: "海外ビジネス", prompt: "Talk about international business — cross-cultural communication, overseas expansion, trade, and localization." },
+    { id: "w_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
+  ]},
+  { id: "finance", icon: "💹", label: "経済・金融", topics: [
+    { id: "fn_market", label: "株式市場", prompt: "Talk about stock markets — investing, market trends, bull/bear markets, and portfolio management." },
+    { id: "fn_economy", label: "景気・経済動向", prompt: "Talk about economic trends — GDP, inflation, recession, interest rates, and economic indicators." },
+    { id: "fn_banking", label: "銀行・融資", prompt: "Talk about banking — savings, loans, mortgages, interest rates, and financial services." },
+    { id: "fn_crypto", label: "暗号資産・ブロックチェーン", prompt: "Talk about cryptocurrency and blockchain — Bitcoin, DeFi, NFTs, and digital currencies." },
+    { id: "fn_insurance", label: "保険", prompt: "Talk about insurance — life, health, car insurance, claims, premiums, and coverage." },
+    { id: "fn_tax", label: "税金・確定申告", prompt: "Talk about taxes — income tax, deductions, tax filing, and tax planning strategies." },
+    { id: "fn_realestate", label: "不動産", prompt: "Talk about real estate — buying/selling property, mortgages, rent, and property investment." },
+    { id: "fn_personal", label: "家計・資産管理", prompt: "Talk about personal finance — budgeting, saving, retirement planning, and financial goals." },
+    { id: "fn_trade", label: "国際貿易", prompt: "Talk about international trade — imports/exports, tariffs, trade agreements, supply chains, and currency exchange." },
+    { id: "fn_fintech", label: "フィンテック", prompt: "Talk about fintech — digital payments, online banking, robo-advisors, and financial innovation." },
+    { id: "fn_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "hobby", icon: "🎮", label: "趣味・エンタメ", topics: [
     { id: "h_sports", label: "スポーツ", prompt: "Talk about sports — favorite teams, playing sports, and recent games." },
@@ -1106,6 +1139,7 @@ const FT_CATEGORIES = [
     { id: "h_fitness", label: "フィットネス", prompt: "Talk about fitness — gym routines, running, yoga, and staying motivated." },
     { id: "h_art", label: "アート・写真", prompt: "Talk about art, photography, museums, and creative hobbies." },
     { id: "h_outdoor", label: "アウトドア", prompt: "Talk about outdoor activities — hiking, camping, fishing, and nature." },
+    { id: "h_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "tech", icon: "💻", label: "テクノロジー", topics: [
     { id: "tc_ai", label: "AI・ChatGPT", prompt: "Talk about artificial intelligence — ChatGPT, AI tools, and how AI is changing our lives." },
@@ -1115,6 +1149,7 @@ const FT_CATEGORIES = [
     { id: "tc_future", label: "未来のテクノロジー", prompt: "Talk about future technology — self-driving cars, space travel, VR/AR, and tech predictions." },
     { id: "tc_security", label: "セキュリティ", prompt: "Talk about cybersecurity, passwords, privacy, and staying safe online." },
     { id: "tc_startup", label: "スタートアップ", prompt: "Talk about startups, entrepreneurship, and tech industry trends." },
+    { id: "tc_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "society", icon: "🌍", label: "社会・時事", topics: [
     { id: "s_env", label: "環境問題", prompt: "Talk about environmental issues — climate change, recycling, and sustainability." },
@@ -1124,6 +1159,7 @@ const FT_CATEGORIES = [
     { id: "s_volunteer", label: "ボランティア", prompt: "Talk about volunteering, community service, and giving back to society." },
     { id: "s_aging", label: "高齢化社会", prompt: "Talk about aging societies, elderly care, and generational differences." },
     { id: "s_work_life", label: "ワークライフバランス", prompt: "Talk about work-life balance, burnout, mental health, and quality of life." },
+    { id: "s_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "culture", icon: "🏛️", label: "文化・異文化", topics: [
     { id: "c_japan", label: "日本文化の紹介", prompt: "Practice explaining Japanese culture to a foreigner — festivals, food, customs, and traditions." },
@@ -1133,6 +1169,7 @@ const FT_CATEGORIES = [
     { id: "c_language", label: "言語学習", prompt: "Talk about learning languages — tips, challenges, funny mistakes, and motivation." },
     { id: "c_living", label: "海外生活", prompt: "Talk about living abroad — challenges, discoveries, and advice for expats." },
     { id: "c_stereotype", label: "偏見・ステレオタイプ", prompt: "Talk about stereotypes and misconceptions about different cultures." },
+    { id: "c_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "situation", icon: "🎭", label: "シチュエーション", topics: [
     { id: "si_checkin", label: "ホテルチェックイン", prompt: "Role-play: You are checking into a hotel. The AI plays the front desk staff. Practice requesting rooms, asking about amenities." },
@@ -1145,6 +1182,61 @@ const FT_CATEGORIES = [
     { id: "si_emergency", label: "緊急事態", prompt: "Role-play: You are in an emergency situation abroad. Practice asking for help, calling emergency services, and explaining your situation." },
     { id: "si_bank", label: "銀行・両替", prompt: "Role-play: You are at a bank or currency exchange. Practice financial transactions and asking about rates." },
     { id: "si_customs", label: "入国審査", prompt: "Role-play: You are going through immigration/customs. The AI plays the officer. Practice answering questions about your visit." },
+    { id: "si_realestate", label: "不動産・物件探し", prompt: "Role-play: You are looking for an apartment/house. The AI plays the real estate agent. Practice asking about rent, facilities, neighborhood, and lease terms." },
+    { id: "si_salon", label: "美容室・理髪店", prompt: "Role-play: You are at a hair salon/barber. The AI plays the stylist. Practice describing the hairstyle you want, length, color." },
+    { id: "si_repair", label: "修理依頼", prompt: "Role-play: You need something repaired (car, appliance, phone). The AI plays the technician. Practice explaining the problem and asking about cost/time." },
+    { id: "si_cancel", label: "予約変更・キャンセル", prompt: "Role-play: You need to change or cancel a reservation (hotel, restaurant, flight). The AI plays the service staff. Practice polite requests and handling fees." },
+    { id: "si_party", label: "パーティー・社交", prompt: "Role-play: You are at a party or social gathering. The AI plays other guests. Practice small talk, introductions, and mingling." },
+    { id: "si_airport", label: "空港トラブル", prompt: "Role-play: Your flight is delayed/canceled or your luggage is lost. The AI plays airline staff. Practice explaining the situation and asking for solutions." },
+    { id: "si_gym", label: "ジム・スポーツクラブ", prompt: "Role-play: You are joining a gym or sports club. The AI plays the staff. Practice asking about memberships, facilities, and classes." },
+    { id: "si_school", label: "学校（保護者面談）", prompt: "Role-play: You are a parent meeting your child's teacher. The AI plays the teacher. Practice discussing your child's progress and behavior." },
+    { id: "si_online_shop", label: "ネット通販の問合せ", prompt: "Role-play: You have an issue with an online order (wrong item, delayed delivery). The AI plays customer support via chat. Practice explaining and resolving." },
+    { id: "si_homestay", label: "ホームステイ", prompt: "Role-play: You are staying with a host family. The AI plays the host. Practice daily conversation, house rules, and cultural exchange." },
+    { id: "si_biz_dinner", label: "ビジネスディナー", prompt: "Role-play: You are at a business dinner with clients. The AI plays a client. Practice professional small talk, toasting, and building rapport." },
+    { id: "si_conference", label: "カンファレンス", prompt: "Role-play: You are attending a conference or trade show. The AI plays another attendee. Practice networking, exchanging business cards, and discussing industry topics." },
+    { id: "si_rental_car", label: "レンタカー", prompt: "Role-play: You are renting a car. The AI plays the rental agent. Practice asking about rates, insurance, GPS, and returning the car." },
+    { id: "si_neighbor", label: "近所付き合い", prompt: "Role-play: You are talking to your neighbor. The AI plays the neighbor. Practice casual conversation about the neighborhood, noise, packages, etc." },
+    { id: "si_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
+  ]},
+  { id: "health", icon: "🏥", label: "健康・医療", topics: [
+    { id: "hl_symptom", label: "症状を伝える", prompt: "Talk about describing symptoms to a doctor — headache, fever, pain, allergies, and medical history." },
+    { id: "hl_exercise", label: "運動・フィットネス", prompt: "Talk about exercise routines, gym workouts, yoga, running, and staying in shape." },
+    { id: "hl_diet", label: "食事・栄養", prompt: "Talk about diet, nutrition, vitamins, meal planning, and healthy eating habits." },
+    { id: "hl_mental", label: "メンタルヘルス", prompt: "Talk about mental health, stress management, work-life balance, and self-care." },
+    { id: "hl_sleep", label: "睡眠", prompt: "Talk about sleep habits, insomnia, sleep quality, and tips for better sleep." },
+    { id: "hl_checkup", label: "健康診断", prompt: "Talk about health checkups, test results, preventive care, and vaccinations." },
+    { id: "hl_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
+  ]},
+  { id: "family", icon: "👨‍👩‍👧", label: "家族・子育て", topics: [
+    { id: "fm_parenting", label: "育児", prompt: "Talk about raising children — routines, challenges, milestones, and parenting styles." },
+    { id: "fm_education", label: "子供の教育", prompt: "Talk about children's education — school choice, tutoring, homework, and extracurricular activities." },
+    { id: "fm_relationship", label: "家族関係", prompt: "Talk about family relationships — communication, conflicts, support, and family traditions." },
+    { id: "fm_event", label: "家族行事", prompt: "Talk about family events — birthdays, anniversaries, reunions, and holiday celebrations." },
+    { id: "fm_elderly", label: "介護・高齢の親", prompt: "Talk about caring for elderly parents — health care, living arrangements, and support systems." },
+    { id: "fm_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
+  ]},
+  { id: "housing", icon: "🏡", label: "住まい・暮らし", topics: [
+    { id: "hs_moving", label: "引っ越し", prompt: "Talk about moving — finding apartments, packing, movers, and setting up a new home." },
+    { id: "hs_interior", label: "インテリア", prompt: "Talk about home decoration, furniture, interior design, and DIY projects." },
+    { id: "hs_repair", label: "住宅メンテナンス", prompt: "Talk about home repairs, maintenance, plumbing, electrical issues, and hiring contractors." },
+    { id: "hs_neighbor", label: "ご近所・コミュニティ", prompt: "Talk about neighborhood life, community events, local facilities, and neighbor relations." },
+    { id: "hs_garden", label: "ガーデニング", prompt: "Talk about gardening — plants, flowers, vegetables, tools, and seasonal gardening tips." },
+    { id: "hs_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
+  ]},
+  { id: "fashion", icon: "👗", label: "ファッション・美容", topics: [
+    { id: "fa_style", label: "ファッション", prompt: "Talk about fashion — clothing styles, trends, favorite brands, and shopping for clothes." },
+    { id: "fa_beauty", label: "美容・スキンケア", prompt: "Talk about beauty routines, skincare, makeup, and beauty products." },
+    { id: "fa_hair", label: "ヘアスタイル", prompt: "Talk about hairstyles, hair care, coloring, and salon experiences." },
+    { id: "fa_occasion", label: "TPOに合った服装", prompt: "Talk about dressing for occasions — business, casual, formal events, and dress codes." },
+    { id: "fa_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
+  ]},
+  { id: "nature", icon: "🌿", label: "自然・季節", topics: [
+    { id: "na_season", label: "四季の楽しみ", prompt: "Talk about enjoying the four seasons — cherry blossoms, summer festivals, autumn leaves, and winter activities." },
+    { id: "na_outdoor", label: "アウトドア", prompt: "Talk about outdoor activities — hiking, camping, fishing, BBQ, and nature exploration." },
+    { id: "na_garden", label: "花・植物", prompt: "Talk about flowers, plants, and gardening." },
+    { id: "na_animal", label: "動物・野生生物", prompt: "Talk about animals, wildlife, zoos, aquariums, and animal conservation." },
+    { id: "na_disaster", label: "天災・防災", prompt: "Talk about natural disasters — earthquakes, typhoons, emergency preparation, and evacuation." },
+    { id: "na_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "personal", icon: "👤", label: "自分のこと", topics: [
     { id: "p_intro", label: "自己紹介", prompt: "Practice self-introduction — name, hometown, occupation, interests, and personality." },
@@ -1154,6 +1246,7 @@ const FT_CATEGORIES = [
     { id: "p_opinion", label: "意見を述べる", prompt: "Practice expressing opinions on various topics — agree, disagree, and explain reasoning." },
     { id: "p_recommend", label: "おすすめ紹介", prompt: "Practice recommending things — movies, books, restaurants, places, and explaining why." },
     { id: "p_experience", label: "体験談", prompt: "Talk about personal experiences — memorable moments, challenges overcome, and lessons learned." },
+    { id: "p_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
 ];
 
@@ -1165,6 +1258,7 @@ const FT_LEVELS = Object.values(CEFR_LEVELS);
 function initFreeTalk() {
   S.ftTopic = "";
   S.ftCategory = "";
+  S.ftCustomTopic = "";
   S.screen = "freetalk";
   S.chatHistory = [];
   S.chatMessages = [];
@@ -1204,6 +1298,10 @@ function renderFreeTalkSetup() {
       <div class="topic-grid" id="topicGrid">
         ${activeCat.topics.map(t => `<div class="topic-pill ${selTopic===t.id?'selected':''}" data-id="${t.id}">${t.label}</div>`).join("")}
       </div>
+      ${selTopic && (FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt === '__CUSTOM__') ? `
+      <div class="mt-16">
+        <input class="input" id="customTopicInput" placeholder="トピックを入力（例: 契約交渉、M&A、為替...）" value="${esc(S.ftCustomTopic || '')}" autocomplete="off">
+      </div>` : ''}
     </div>` : `
     <div class="card" style="text-align:center;padding:32px;color:var(--muted)">
       <div style="font-size:24px;margin-bottom:8px">☝️</div>
@@ -1228,7 +1326,7 @@ function renderFreeTalkSetup() {
       </div>
     </div>
 
-    <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic?'disabled':''}>会話をスタート</button>
+    <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic || (FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt==='__CUSTOM__' && !S.ftCustomTopic)?'disabled':''}>会話をスタート</button>
     ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：AI音声読み上げが使えません</p>' : ''}
   `;
   $("ftBack").onclick = () => { S.screen = "home"; render(); };
@@ -1267,6 +1365,16 @@ function renderFreeTalkSetup() {
   // Quick mode toggle
   if ($("quickToggle")) $("quickToggle").onchange = (e) => { S.ftQuickMode = e.target.checked; renderFreeTalkSetup(); };
 
+  // Custom topic input
+  if ($("customTopicInput")) {
+    $("customTopicInput").oninput = (e) => { S.ftCustomTopic = e.target.value.trim(); };
+    $("customTopicInput").onkeyup = () => {
+      const btn = $("startChatBtn");
+      if (btn) btn.disabled = !S.ftCustomTopic;
+    };
+    setTimeout(() => $("customTopicInput")?.focus(), 100);
+  }
+
   $("startChatBtn").onclick = () => startFreeTalkSession();
 }
 
@@ -1274,6 +1382,13 @@ async function startFreeTalkSession() {
   const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
   const level = FT_LEVELS.find(l => l.id === S.ftLevel);
   if (!topic) return;
+
+  // Handle custom topic
+  const topicPrompt = topic.prompt === '__CUSTOM__'
+    ? `Talk about "${S.ftCustomTopic}" in the context of ${topic.catLabel || 'general'}. Discuss it naturally and ask questions.`
+    : topic.prompt;
+  const topicDisplay = topic.prompt === '__CUSTOM__' ? S.ftCustomTopic : topic.label;
+
   S.ftSessionActive = true;
   S.ftStartTime = Date.now();
   S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
@@ -1289,7 +1404,7 @@ async function startFreeTalkSession() {
 
 ${level.sysRules}
 
-TOPIC: ${topic.prompt}
+TOPIC: ${topicPrompt}
 ${isRolePlay ? "This is a ROLE-PLAY scenario. Stay in character throughout." : ""}
 
 CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified level.
@@ -1297,10 +1412,11 @@ CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified leve
 Start the conversation with a friendly greeting related to the topic.`;
 
   S.chatHistory = [{ role: "user", content: "Start the conversation." }];
-  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topic.label} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}\n🔊 ${voiceLabel}` }];
+  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topicDisplay} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}\n🔊 ${voiceLabel}` }];
 
   // Generate challenge expressions (async, don't block start)
-  generateChallengeExpressions(level.id).catch(()=>{});
+  const challengeTopic = { ...topic, prompt: topicPrompt, label: topicDisplay };
+  generateChallengeExpressions(level.id, challengeTopic).catch(()=>{});
 
   renderFreeTalkChat();
   showTyping();
@@ -1323,6 +1439,19 @@ Start the conversation with a friendly greeting related to the topic.`;
 function renderFreeTalkChat() {
   const msgs = S.chatMessages.map(m => {
     if (m.type === "system") return `<div class="msg msg-system">${esc(m.text)}</div>`;
+    if (m.type === "challenge") {
+      const exprs = m.expressions || [];
+      const cat = m.category || '';
+      return `<div class="challenge-card">
+        <div class="challenge-title">🎯 チャレンジ: ${esc(cat)}</div>
+        <div class="text-xs" style="color:#5b4e9a;margin-bottom:10px">会話で使ってみよう！</div>
+        ${exprs.map((e, i) => `<div class="challenge-expr ${S.ftChallengeUsed[i]?'used':''}">
+          <div class="expr-en">${S.ftChallengeUsed[i]?'✅ ':''}${esc(e.en)}</div>
+          <div class="expr-ja">${esc(e.ja)}</div>
+          ${e.example ? `<div class="expr-ex">例: ${esc(e.example)}</div>` : ''}
+        </div>`).join('')}
+      </div>`;
+    }
     if (m.type === "ai") return `<div class="msg msg-ai">
       ${esc(m.text)}
       <div style="margin-top:8px"><button class="btn-ghost text-xs replay-btn" data-text="${esc(m.text).replace(/"/g,'&quot;')}">🔊 再生</button></div>
@@ -1411,14 +1540,16 @@ async function toggleRecording() {
     _recognition = new SR();
     _recognition.lang = 'en-US';
     _recognition.interimResults = false;
-    _recognition.continuous = false;
+    _recognition.continuous = true; // ポーズで止まらず聞き続ける
+    let fullText = '';
 
     _recognition.onresult = (e) => {
-      const text = e.results[0][0].transcript;
-      S.isRecording = false;
-      _recognition = null;
-      if (text) handleUserMessage(text);
-      else renderFreeTalkChat();
+      // continuous=trueでは複数のresultが来る
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          fullText += e.results[i][0].transcript + ' ';
+        }
+      }
     };
     _recognition.onerror = (e) => {
       S.isRecording = false;
@@ -1427,8 +1558,12 @@ async function toggleRecording() {
       renderFreeTalkChat();
     };
     _recognition.onend = () => {
-      if (S.isRecording) { S.isRecording = false; renderFreeTalkChat(); }
+      // continuous=trueでもブラウザが止めることがある（タイムアウト等）
+      S.isRecording = false;
       _recognition = null;
+      const text = fullText.trim();
+      if (text) handleUserMessage(text);
+      else renderFreeTalkChat();
     };
 
     try {
@@ -1441,16 +1576,86 @@ async function toggleRecording() {
   }
 }
 
-async function generateChallengeExpressions(levelId) {
+// ── Challenge Expression Skill Categories per CEFR Level ──
+const CHALLENGE_CATEGORIES = {
+  A1: [
+    { id: "greeting", name: "挨拶・自己紹介", focus: "Greetings and self-introduction phrases" },
+    { id: "request", name: "お願い・依頼", focus: "Simple requests: Can I have..., I want..., Please..." },
+    { id: "feeling", name: "気持ち・好み", focus: "Expressing feelings and preferences: I like..., I'm happy/tired/hungry" },
+  ],
+  A2: [
+    { id: "frequency", name: "頻度を伝える", focus: "Frequency expressions: usually, sometimes, always, every day" },
+    { id: "comparison", name: "比較する", focus: "Comparisons: bigger than, the best, prefer A to B, as...as" },
+    { id: "opinion_basic", name: "意見を言う（基本）", focus: "Simple opinions: I think..., I prefer..., I believe..." },
+    { id: "description", name: "描写・説明", focus: "Describing things: It looks like..., It sounds..., There is/are..." },
+  ],
+  B1: [
+    { id: "reason", name: "理由を説明する", focus: "Giving reasons: because, since, that's why, the reason is..." },
+    { id: "agree_disagree", name: "同意・反論する", focus: "Agreeing/disagreeing: I agree, I see your point but..., I'm not sure about that" },
+    { id: "narration", name: "経験を語る", focus: "Narrating experiences: First... then... finally, I remember when..." },
+    { id: "connector", name: "文をつなぐ", focus: "Connectors: however, although, on the other hand, in addition" },
+    { id: "suggest", name: "提案・アドバイス", focus: "Suggestions: How about..., Why don't we..., I'd suggest..., You should..." },
+  ],
+  B2: [
+    { id: "hedging", name: "断定を避ける", focus: "Hedging: It seems to me, I tend to think, to some extent, arguably" },
+    { id: "conditional", name: "仮定法を使う", focus: "Conditionals: If I were..., Had I known..., Suppose that..., What if..." },
+    { id: "discourse", name: "議論を構成する", focus: "Discourse markers: nevertheless, furthermore, in contrast, as a result" },
+    { id: "idiom", name: "イディオム", focus: "Common idioms: It's a no-brainer, on the same page, at the end of the day" },
+    { id: "nuance", name: "ニュアンスを加える", focus: "Adding nuance: rather, somewhat, slightly, to a certain degree" },
+  ],
+  C1: [
+    { id: "rhetoric", name: "修辞表現", focus: "Rhetorical devices: What I find interesting is..., The thing is..., Not only...but also" },
+    { id: "academic", name: "知的な語彙", focus: "Academic/sophisticated vocabulary: implication, perspective, significantly, fundamental" },
+    { id: "collocation", name: "コロケーション", focus: "Advanced collocations: make a decision, raise a concern, draw a conclusion, take into account" },
+    { id: "register", name: "格式の使い分け", focus: "Register shifting: formal vs casual phrasing for the same idea" },
+    { id: "advanced_hedge", name: "高度な留保表現", focus: "Advanced hedging: One could argue that, It's debatable whether, There's a case to be made" },
+  ],
+};
+
+function getUsedChallengeCategories() {
+  try { return JSON.parse(localStorage.getItem("ett_challenge_used") || "[]"); } catch { return []; }
+}
+function markChallengeCategory(catId) {
+  const used = getUsedChallengeCategories();
+  used.push(catId);
+  // Keep last 20 to allow rotation
+  while (used.length > 20) used.shift();
+  localStorage.setItem("ett_challenge_used", JSON.stringify(used));
+}
+
+async function generateChallengeExpressions(levelId, topic) {
   try {
-    const raw = await geminiChat([{ role: "user", content: `Generate 3 useful English expressions for a ${levelId} level learner to try using in conversation. Return JSON: {"expressions": [{"en": "expression", "ja": "Japanese meaning", "example": "example sentence"}]}` }], "JSON only.", true);
+    const cats = CHALLENGE_CATEGORIES[levelId] || CHALLENGE_CATEGORIES.B1;
+    const usedCats = getUsedChallengeCategories();
+
+    // Pick category not recently used, or least recently used
+    let pick = cats.find(c => !usedCats.includes(c.id));
+    if (!pick) pick = cats[Math.floor(Math.random() * cats.length)];
+    markChallengeCategory(pick.id);
+
+    const topicDesc = topic?.prompt || "general conversation";
+    const topicLabel = topic?.label || "フリートーク";
+    const raw = await geminiChat([{ role: "user", content: `You are helping a ${levelId} level English learner practice.
+
+SKILL CATEGORY: "${pick.name}" — ${pick.focus}
+CONVERSATION TOPIC: "${topicDesc}"
+
+Generate exactly 3 expressions from this skill category that the learner can naturally use in a conversation about "${topicLabel}".
+
+Rules:
+- All 3 expressions MUST belong to the category "${pick.name}" (${pick.focus})
+- Each expression MUST be usable in a conversation about "${topicLabel}"
+- Appropriate complexity for ${levelId} level
+- Include a realistic example sentence in the context of this topic
+
+Return JSON: {"category": "${pick.name}", "expressions": [{"en": "expression or phrase", "ja": "Japanese meaning", "example": "example sentence in context of ${topicLabel}"}]}` }], "JSON only.", true);
     const data = safeJSON(raw);
     S.ftChallengeExprs = data.expressions || [];
     S.ftChallengeUsed = new Array(S.ftChallengeExprs.length).fill(false);
+    S._challengeCategory = data.category || pick.name;
     // Show challenge card in chat
     if (S.ftChallengeExprs.length > 0) {
-      const exprHTML = S.ftChallengeExprs.map((e,i) => `<div class="challenge-expr" id="chexpr${i}">💡 ${esc(e.en)} — ${esc(e.ja)}</div>`).join('');
-      S.chatMessages.splice(1, 0, { type: "system", text: `🎯 今日のチャレンジ表現:\n${S.ftChallengeExprs.map(e => e.en).join('\n')}` });
+      S.chatMessages.splice(1, 0, { type: "challenge", expressions: S.ftChallengeExprs, category: S._challengeCategory });
       renderFreeTalkChat();
     }
   } catch(e) { console.warn("Challenge expr:", e); }
@@ -1481,9 +1686,10 @@ async function handleUserMessage(text) {
   const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
   const level = FT_LEVELS.find(l => l.id === S.ftLevel);
   const isRolePlay = topic?.catId === "situation";
+  const resolvedPrompt = topic?.prompt === '__CUSTOM__' ? `Talk about "${S.ftCustomTopic}"` : (topic?.prompt || "Free conversation");
   const sysPrompt = `You are a friendly English conversation partner.
 ${level?.sysRules || "Speak naturally."}
-Topic: ${topic?.prompt || "Free conversation"}.
+Topic: ${resolvedPrompt}.
 ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
 
   try {
@@ -1517,6 +1723,12 @@ ${level.feedbackCriteria}
 The student said these sentences during a conversation:
 ${userMsgs.map((m,i) => `${i+1}. "${m}"`).join("\n")}
 
+${S.ftChallengeExprs.length > 0 ? `
+CHALLENGE EXPRESSIONS: The student was asked to try using these expressions:
+${S.ftChallengeExprs.map((e,i) => `${i+1}. "${e.en}" (${e.ja})`).join("\n")}
+For each expression, evaluate: did the student use it (or a close variation)? Was the usage natural and correct?
+` : ''}
+
 Provide feedback in this JSON format:
 {
   "overallScore": 75,
@@ -1524,6 +1736,7 @@ Provide feedback in this JSON format:
   "vocabulary": {"score": 70, "level": "${level.id}", "suggestions": ["better word choices or expressions the student could have used"]},
   "naturalness": {"score": 75, "notes": ["what sounded natural", "what sounded unnatural"]},
   "corrections": [{"original": "what user said", "corrected": "better version", "explanation": "why"}],
+  ${S.ftChallengeExprs.length > 0 ? `"challengeResults": [{"expression": "the expression", "used": true, "natural": true, "comment": "Brief comment in Japanese on usage"}],` : ''}
   "cefrAssessment": "Brief assessment: does the student seem to be at ${level.id} level, or should they move up/down?",
   "encouragement": "A brief encouraging message in Japanese"
 }`;
@@ -1622,6 +1835,18 @@ function renderReview() {
     <div class="card">
       <div style="font-size:14px;font-weight:600;margin-bottom:12px">📚 Vocabulary Tips</div>
       ${fb.vocabulary.suggestions.map(s => `<div class="text-sm" style="padding:6px 0">💡 ${esc(s)}</div>`).join("")}
+    </div>` : ''}
+
+    ${fb.challengeResults?.length ? `
+    <div class="challenge-card">
+      <div class="challenge-title">🎯 チャレンジ表現の結果</div>
+      ${fb.challengeResults.map(cr => `<div class="challenge-expr ${cr.used?'used':''}">
+        <div class="expr-en">${cr.used ? (cr.natural ? '✅' : '⚠️') : '❌'} ${esc(cr.expression)}</div>
+        <div class="expr-ja">${esc(cr.comment || '')}</div>
+      </div>`).join('')}
+      <div class="text-sm" style="margin-top:12px;text-align:center;font-weight:600;color:#3b2e8a">
+        ${fb.challengeResults.filter(c=>c.used).length} / ${fb.challengeResults.length} 使用
+      </div>
     </div>` : ''}
 
     ${fb.cefrAssessment ? `
@@ -1802,11 +2027,12 @@ function renderFlashQuestion() {
       _recognition = new SR();
       _recognition.lang = 'en-US';
       _recognition.interimResults = false;
+      _recognition.continuous = true;
+      let fullText = '';
       _recognition.onresult = (e) => {
-        const text = e.results[0][0].transcript;
-        _recognition = null;
-        $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-        if (text) submitAnswer(text);
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) fullText += e.results[i][0].transcript + ' ';
+        }
       };
       _recognition.onerror = (e) => {
         _recognition = null;
@@ -1816,6 +2042,8 @@ function renderFlashQuestion() {
       _recognition.onend = () => {
         _recognition = null;
         if ($("flashMic")) { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
+        const text = fullText.trim();
+        if (text) submitAnswer(text);
       };
       try {
         _recognition.start();

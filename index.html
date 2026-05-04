@@ -170,7 +170,44 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .stat-card{background:var(--surface);border:1.5px solid var(--border);border-radius:12px;padding:16px;text-align:center}
 .stat-card .val{font-size:28px;font-weight:700}
 .stat-card .lbl{font-size:13px;color:var(--muted);margin-top:4px}
+
 </style>
+
+/* ── Streak Calendar ── */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin:8px 0}
+.cal-day{aspect-ratio:1;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+.cal-day.empty{background:transparent}
+.cal-day.no{background:var(--bg);color:var(--muted)}
+.cal-day.yes{background:#d1fae5;color:var(--green)}
+.cal-day.today{border:2px solid var(--accent)}
+.cal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.streak-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;font-weight:700;font-size:14px}
+
+/* ── Waveform ── */
+.waveform{display:flex;align-items:center;justify-content:center;gap:3px;height:40px;margin:8px 0}
+.waveform .bar{width:4px;background:var(--red);border-radius:2px;transition:height .05s;min-height:4px}
+
+/* ── Shadowing ── */
+.shadow-card{text-align:center;padding:28px 20px}
+.shadow-text{font-size:20px;font-weight:600;line-height:1.7;margin:20px 0;color:var(--text)}
+.shadow-status{font-size:14px;color:var(--muted);margin-bottom:16px}
+.mode-shadow{background:#fef3c7;border:1.5px solid #fde68a;color:#78350f}
+.mode-shadow h3{color:#78350f}
+
+/* ── Vocab Notebook ── */
+.vocab-entry{padding:12px 0;border-bottom:1px solid var(--border)}
+.vocab-en{font-size:16px;font-weight:600;color:var(--accent)}
+.vocab-ja{font-size:14px;color:var(--muted);margin-top:2px}
+.vocab-ctx{font-size:12px;color:var(--muted);font-style:italic;margin-top:4px}
+
+/* ── Challenge Expressions ── */
+.challenge-card{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border:1.5px solid #c4b5fd;border-radius:14px;padding:16px;margin-bottom:12px}
+.challenge-expr{font-size:15px;font-weight:500;padding:6px 0;color:#3b2e8a}
+.challenge-used{text-decoration:line-through;color:var(--green)}
+
+/* ── Review Quiz ── */
+.review-prompt{background:#fef3c7;border:1.5px solid #fde68a;border-radius:14px;padding:16px;margin-bottom:14px;cursor:pointer;touch-action:manipulation}
+.review-prompt:active{transform:scale(.98)}
 </head>
 <body>
 <div id="app"></div>
@@ -181,7 +218,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.04j";
+const VERSION = "v2026.05.05a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -395,28 +432,26 @@ function getVoiceLabel(voiceId) {
 
 // ── State ──
 const S = {
-  screen: "apikey",       // apikey | home | freetalk | flash | review
+  screen: "apikey",
   geminiKey: localStorage.getItem("gemini_api_key") || "",
   azureKey: localStorage.getItem("azure_speech_key") || "",
   azureRegion: localStorage.getItem("azure_speech_region") || "eastus",
   // Free Talk
-  chatHistory: [],        // {role, content}
-  chatMessages: [],       // UI messages {type, text, ...}
-  ftTopic: "",
-  ftLevel: "B1",
-  ftVoice: "en-US-JennyNeural",  // auto-selected per session
-  ftTurnCount: 0,
-  ftSessionActive: false,
+  chatHistory: [], chatMessages: [],
+  ftTopic: "", ftLevel: "B1", ftCategory: "",
+  ftVoice: "en-US-JennyNeural",
+  ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false,
+  ftChallengeExprs: [], ftChallengeUsed: [],
+  ftPronScores: [], // pronunciation scores per turn
   // Flash Translation
-  flashQuestions: [],
-  flashCurrent: 0,
-  flashResults: [],
-  flashLevel: "A2",
-  flashCategory: "daily",
+  flashQuestions: [], flashCurrent: 0, flashResults: [],
+  flashLevel: "A2", flashCategory: "daily",
+  // Shadowing
+  shadowSentences: [], shadowCurrent: 0, shadowResults: [],
+  shadowLevel: "B1",
   // Recording
-  isRecording: false,
-  isProcessing: false,
-  // Cost tracking (per session)
+  isRecording: false, isProcessing: false,
+  // Cost tracking
   cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 },
   // Stats
   totalSessions: parseInt(localStorage.getItem("ett_total_sessions") || "0"),
@@ -424,6 +459,118 @@ const S = {
 };
 
 if (S.geminiKey) S.screen = "home";
+
+// ── Streak System ──
+function getStreak() {
+  try { return JSON.parse(localStorage.getItem("ett_streak") || "{}"); } catch { return {}; }
+}
+function updateStreak() {
+  const s = getStreak();
+  const today = new Date().toISOString().slice(0, 10);
+  s[today] = (s[today] || 0) + 1;
+  localStorage.setItem("ett_streak", JSON.stringify(s));
+}
+function getStreakDays() {
+  const s = getStreak();
+  let count = 0;
+  const d = new Date();
+  while (true) {
+    const key = d.toISOString().slice(0, 10);
+    if (!s[key]) break;
+    count++;
+    d.setDate(d.getDate() - 1);
+  }
+  return count;
+}
+function renderCalendarHTML() {
+  const s = getStreak();
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const first = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const startDow = first.getDay();
+  const today = now.getDate();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let html = `<div class="cal-header"><span class="text-sm" style="font-weight:600">${months[month]} ${year}</span>`;
+  const streak = getStreakDays();
+  if (streak > 0) html += `<span class="streak-badge">🔥 ${streak}日連続</span>`;
+  html += '</div><div class="cal-grid">';
+  ['日','月','火','水','木','金','土'].forEach(d => { html += `<div class="cal-day empty" style="font-size:10px;color:var(--muted)">${d}</div>`; });
+  for (let i = 0; i < startDow; i++) html += '<div class="cal-day empty"></div>';
+  for (let d = 1; d <= lastDay; d++) {
+    const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const done = !!s[key];
+    const isToday = d === today;
+    html += `<div class="cal-day ${done?'yes':'no'} ${isToday?'today':''}">${d}</div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// ── Review System (Mistakes) ──
+function getMistakes() {
+  try { return JSON.parse(localStorage.getItem("ett_mistakes") || "[]"); } catch { return []; }
+}
+function addMistake(entry) {
+  const m = getMistakes();
+  m.push({ ...entry, date: new Date().toISOString(), reviewed: 0 });
+  // Keep max 200
+  while (m.length > 200) m.shift();
+  localStorage.setItem("ett_mistakes", JSON.stringify(m));
+}
+function getReviewQueue() {
+  const m = getMistakes();
+  const now = Date.now();
+  return m.filter(e => {
+    const age = (now - new Date(e.date).getTime()) / 86400000; // days
+    // Spaced repetition: review at 1, 3, 7, 14, 30 days
+    const intervals = [1, 3, 7, 14, 30];
+    const nextReview = intervals[Math.min(e.reviewed, intervals.length - 1)] || 30;
+    return age >= nextReview;
+  }).slice(0, 5);
+}
+function markReviewed(idx) {
+  const m = getMistakes();
+  if (m[idx]) { m[idx].reviewed++; m[idx].date = new Date().toISOString(); }
+  localStorage.setItem("ett_mistakes", JSON.stringify(m));
+}
+
+// ── Vocabulary Notebook ──
+function getVocabNotebook() {
+  try { return JSON.parse(localStorage.getItem("ett_vocab") || "[]"); } catch { return []; }
+}
+function addVocabEntries(entries) {
+  const v = getVocabNotebook();
+  entries.forEach(e => {
+    if (!v.some(x => x.en === e.en)) v.push({ ...e, date: new Date().toISOString() });
+  });
+  while (v.length > 500) v.shift();
+  localStorage.setItem("ett_vocab", JSON.stringify(v));
+}
+
+// ── Conversation Log ──
+function saveConversationLog(sessionData) {
+  const logs = getConversationLogs();
+  logs.push({ ...sessionData, date: new Date().toISOString() });
+  while (logs.length > 50) logs.shift();
+  localStorage.setItem("ett_convlogs", JSON.stringify(logs));
+}
+function getConversationLogs() {
+  try { return JSON.parse(localStorage.getItem("ett_convlogs") || "[]"); } catch { return []; }
+}
+
+// ── Auto CEFR Assessment ──
+function assessCEFRLevel() {
+  const hist = getHistory();
+  const recent = hist.slice(-10);
+  if (recent.length < 3) return null;
+  const avg = Math.round(recent.reduce((a, h) => a + (h.score || 0), 0) / recent.length);
+  if (avg >= 85) return { suggest: "C1", msg: "スコアが高いです。C1に挑戦してみましょう！" };
+  if (avg >= 75) return { suggest: "B2", msg: "安定しています。B2が適切です。" };
+  if (avg >= 65) return { suggest: "B1", msg: "B1レベルで着実に伸びています。" };
+  if (avg >= 50) return { suggest: "A2", msg: "基礎を固めましょう。A2がおすすめです。" };
+  return { suggest: "A1", msg: "まずはA1でしっかり基礎を作りましょう。" };
+}
 
 // ── Gemini API ──
 async function geminiChat(messages, systemPrompt = "", json = false) {
@@ -503,18 +650,33 @@ async function recordWav(maxMs = 60000) {
   const ctx = new AudioContext({ sampleRate: 16000 });
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
   const chunks = [];
-  let stopped = false;
+  let stopped = false, silentFrames = 0;
   const recStartTime = Date.now();
-  proc.onaudioprocess = e => { if (!stopped) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
-  src.connect(proc); proc.connect(ctx.destination);
+  proc.onaudioprocess = e => {
+    if (stopped) return;
+    const data = new Float32Array(e.inputBuffer.getChannelData(0));
+    chunks.push(data);
+    const rms = Math.sqrt(data.reduce((a,v)=>a+v*v,0)/data.length);
+    if (rms < 0.01) silentFrames++; else silentFrames = 0;
+    if (silentFrames >= 60 && chunks.length > 10) recorder.stop();
+  };
+  src.connect(analyser); src.connect(proc); proc.connect(ctx.destination);
+  // Waveform animation
+  let _af = 0;
+  const fd = new Uint8Array(analyser.frequencyBinCount);
+  (function anim(){if(stopped)return;analyser.getByteFrequencyData(fd);document.querySelectorAll(".waveform .bar").forEach((b,i)=>{b.style.height=Math.max(4,fd[i*Math.floor(fd.length/8)]||0)/6+"px";});_af=requestAnimationFrame(anim);})();
   const recorder = {
     stop: async () => {
       if (stopped) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"}); // already stopped
       stopped = true;
       S.cost.sttSeconds += Math.round((Date.now() - recStartTime) / 1000);
+      cancelAnimationFrame(_af);
       clearTimeout(_timeout);
       try { proc.disconnect(); } catch(e){}
+      try { analyser.disconnect(); } catch(e){}
       try { src.disconnect(); } catch(e){}
       stream.getTracks().forEach(t => t.stop());
       if (ctx.state !== "closed") { try { await ctx.close(); } catch(e){} }
@@ -630,10 +792,14 @@ function saveSession(entry) {
   localStorage.setItem("ett_total_minutes", S.totalMinutes);
 }
 function clearAllData() {
-  if (!confirm("学習履歴・セッション数をすべて削除しますか？\nAPIキーは保持されます。")) return;
+  if (!confirm("学習履歴・ストリーク・単語帳・会話ログをすべて削除しますか？\nAPIキーは保持されます。")) return;
   localStorage.removeItem("ett_history");
   localStorage.removeItem("ett_total_sessions");
   localStorage.removeItem("ett_total_minutes");
+  localStorage.removeItem("ett_streak");
+  localStorage.removeItem("ett_mistakes");
+  localStorage.removeItem("ett_vocab");
+  localStorage.removeItem("ett_convlogs");
   S.totalSessions = 0;
   S.totalMinutes = 0;
   S.screen = "home"; render();
@@ -648,7 +814,11 @@ function render() {
   else if (S.screen === "history") renderHistory();
   else if (S.screen === "freetalk") renderFreeTalkSetup();
   else if (S.screen === "flash") renderFlashSetup();
+  else if (S.screen === "shadow") renderShadowSetup();
   else if (S.screen === "review") renderReview();
+  else if (S.screen === "vocab") renderVocabNotebook();
+  else if (S.screen === "convlog") renderConvLog();
+  else if (S.screen === "reviewquiz") renderReviewQuiz();
 }
 
 // ── History Screen ──
@@ -772,7 +942,11 @@ function renderApiKey() {
 // ── Home Screen ──
 function renderHome() {
   const hist = getHistory();
-  const recent = hist.slice(-5).reverse(); // 最新5件
+  const recent = hist.slice(-5).reverse();
+  const reviewQ = getReviewQueue();
+  const cefrSuggest = assessCEFRLevel();
+  const vocabCount = getVocabNotebook().length;
+  const logCount = getConversationLogs().length;
 
   app.innerHTML = `
     <div class="home-header">
@@ -780,6 +954,27 @@ function renderHome() {
       <h1>English Talk Trainer</h1>
       <div class="sub">Gemini AI × Azure Speech</div>
     </div>
+
+    <div class="card">
+      ${renderCalendarHTML()}
+    </div>
+
+    ${cefrSuggest ? `
+    <div class="card" style="background:#f0fdf4;border-color:#86efac">
+      <div class="text-sm"><strong>🎯 おすすめレベル: ${cefrSuggest.suggest}</strong></div>
+      <div class="text-xs text-muted mt-8">${cefrSuggest.msg}</div>
+    </div>` : ''}
+
+    ${reviewQ.length > 0 ? `
+    <div class="review-prompt" id="startReview">
+      <div class="flex items-center gap-8">
+        <span style="font-size:24px">📝</span>
+        <div>
+          <div class="text-sm" style="font-weight:600">復習問題あり（${reviewQ.length}問）</div>
+          <div class="text-xs text-muted">前回の間違いを復習しましょう</div>
+        </div>
+      </div>
+    </div>` : ''}
 
     ${S.totalSessions > 0 ? `
     <div class="stats-grid mb-16">
@@ -790,49 +985,43 @@ function renderHome() {
     <div class="mode-card mode-freetalk mb-16" id="startFreeTalk">
       <div class="icon">🗣️</div>
       <h3>Free Talk</h3>
-      <p>AIと自由に英会話。会話後に文法・語彙・自然さをフィードバック</p>
+      <p>AIと自由に英会話。フィードバック付き</p>
       <div class="arrow">→</div>
     </div>
 
     <div class="mode-card mode-flash mb-16" id="startFlash">
       <div class="icon">⚡</div>
       <h3>Flash Translation</h3>
-      <p>日本語を見て3秒以内に英語で言う。瞬間英作文トレーニング</p>
+      <p>瞬間英作文トレーニング</p>
       <div class="arrow">→</div>
     </div>
 
-    ${recent.length > 0 ? `
-    <div class="card">
-      <div class="flex justify-between items-center mb-8">
-        <div style="font-size:15px;font-weight:600">📋 最近のセッション</div>
-        ${hist.length > 5 ? `<button class="btn-ghost text-xs" id="showAllHistory">すべて見る (${hist.length})</button>` : ''}
-      </div>
-      ${recent.map(h => {
-        const d = new Date(h.date);
-        const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-        const icon = h.mode === 'freetalk' ? '🗣️' : '⚡';
-        const scoreColor = (h.score||0) >= 80 ? 'var(--green)' : (h.score||0) >= 60 ? 'var(--yellow)' : 'var(--muted)';
-        return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
-          '<div class="flex justify-between items-center">' +
-          '<div class="text-sm">' + icon + ' ' + esc(h.topic || h.mode) + '</div>' +
-          '<div style="font-weight:700;color:' + scoreColor + '">' + (h.score || '-') + '</div>' +
-          '</div>' +
-          '<div class="text-xs text-muted">' + dateStr + ' · ' + (h.minutes || 0) + '分 · ' + esc(h.voice || '') + '</div>' +
-          '</div>';
-      }).join('')}
-    </div>` : ''}
-
-    <div class="card" style="text-align:center">
-      <button class="btn btn-ghost" id="settingsBtn">⚙️ APIキー設定</button>
-      ${S.totalSessions > 0 ? '<button class="btn btn-ghost" id="clearDataBtn" style="color:var(--red)">🗑️ 履歴をクリア</button>' : ''}
+    <div class="mode-card mode-shadow mb-16" id="startShadow">
+      <div class="icon">🎧</div>
+      <h3>Shadowing</h3>
+      <p>AIの発話を聞いて繰り返す。発音矯正</p>
+      <div class="arrow">→</div>
     </div>
+
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">
+      ${vocabCount > 0 ? `<button class="btn btn-ghost" id="vocabBtn">📚 単語帳 (${vocabCount})</button>` : ''}
+      ${logCount > 0 ? `<button class="btn btn-ghost" id="convlogBtn">💬 会話ログ (${logCount})</button>` : ''}
+      ${hist.length > 0 ? `<button class="btn btn-ghost" id="histBtn">📋 履歴 (${hist.length})</button>` : ''}
+      <button class="btn btn-ghost" id="settingsBtn">⚙️ 設定</button>
+      <a href="manual.html" class="btn btn-ghost" style="text-decoration:none">📘 マニュアル</a>
+    </div>
+    ${S.totalSessions > 0 ? `<div style="text-align:center"><button class="btn btn-ghost" id="clearDataBtn" style="color:var(--red);font-size:13px">🗑️ データクリア</button></div>` : ''}
     <div class="text-xs text-muted" style="text-align:center;margin-top:8px;padding-bottom:16px">${VERSION}</div>
   `;
-  $("startFreeTalk").onclick = () => { initFreeTalk(); };
-  $("startFlash").onclick = () => { initFlash(); };
+  $("startFreeTalk").onclick = () => initFreeTalk();
+  $("startFlash").onclick = () => initFlash();
+  $("startShadow").onclick = () => initShadow();
   $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
   if ($("clearDataBtn")) $("clearDataBtn").onclick = clearAllData;
-  if ($("showAllHistory")) $("showAllHistory").onclick = () => { S.screen = "history"; renderHistory(); };
+  if ($("startReview")) $("startReview").onclick = () => { S.screen = "reviewquiz"; render(); };
+  if ($("vocabBtn")) $("vocabBtn").onclick = () => { S.screen = "vocab"; render(); };
+  if ($("convlogBtn")) $("convlogBtn").onclick = () => { S.screen = "convlog"; render(); };
+  if ($("histBtn")) $("histBtn").onclick = () => { S.screen = "history"; renderHistory(); };
 }
 
 // ═══════════════════════════════════
@@ -955,6 +1144,10 @@ function initFreeTalk() {
   S.chatMessages = [];
   S.ftTurnCount = 0;
   S.ftSessionActive = false;
+  S.ftQuickMode = false;
+  S.ftChallengeExprs = [];
+  S.ftChallengeUsed = [];
+  S.ftPronScores = [];
   renderFreeTalkSetup();
 }
 
@@ -998,6 +1191,17 @@ function renderFreeTalkSetup() {
       </div>
     </div>
 
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <div><div class="text-sm" style="font-weight:600">⚡ クイックモード</div><div class="text-xs text-muted">3ターンで終了</div></div>
+        <label style="position:relative;width:50px;height:28px;display:inline-block">
+          <input type="checkbox" id="quickToggle" ${S.ftQuickMode?'checked':''} style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:${S.ftQuickMode?'var(--accent)':'#cbd5e1'};border-radius:14px;transition:.3s"></span>
+          <span style="position:absolute;height:22px;width:22px;left:${S.ftQuickMode?'25px':'3px'};bottom:3px;background:#fff;border-radius:50%;transition:.3s"></span>
+        </label>
+      </div>
+    </div>
+
     <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic?'disabled':''}>会話をスタート</button>
     ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：音声入力・読み上げが使えません</p>' : ''}
   `;
@@ -1034,6 +1238,9 @@ function renderFreeTalkSetup() {
     el.onclick = () => { S.ftLevel = el.dataset.id; renderFreeTalkSetup(); };
   });
 
+  // Quick mode toggle
+  if ($("quickToggle")) $("quickToggle").onchange = (e) => { S.ftQuickMode = e.target.checked; renderFreeTalkSetup(); };
+
   $("startChatBtn").onclick = () => startFreeTalkSession();
 }
 
@@ -1064,7 +1271,11 @@ CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified leve
 Start the conversation with a friendly greeting related to the topic.`;
 
   S.chatHistory = [{ role: "user", content: "Start the conversation." }];
-  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topic.label} — ${level.label}\n🔊 ${voiceLabel}` }];
+  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topic.label} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}\n🔊 ${voiceLabel}` }];
+
+  // Generate challenge expressions (async, don't block start)
+  generateChallengeExpressions(level.id).catch(()=>{});
+
   renderFreeTalkChat();
   showTyping();
 
@@ -1105,6 +1316,7 @@ function renderFreeTalkChat() {
     <div class="chat-input-bar">
       <div class="inner">
         <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
+        ${S.isRecording ? '<div class="waveform"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>' : ''}
         ${S.azureKey ? `<button class="mic-btn ${S.isRecording?'recording':S.isProcessing?'processing':'idle'}" id="micBtn">${S.isRecording?'⏹':S.isProcessing?'⏳':'🎤'}</button>` : ''}
         <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%">↑</button>
       </div>
@@ -1189,10 +1401,40 @@ async function toggleRecording() {
   }
 }
 
+async function generateChallengeExpressions(levelId) {
+  try {
+    const raw = await geminiChat([{ role: "user", content: `Generate 3 useful English expressions for a ${levelId} level learner to try using in conversation. Return JSON: {"expressions": [{"en": "expression", "ja": "Japanese meaning", "example": "example sentence"}]}` }], "JSON only.", true);
+    const data = JSON.parse(raw);
+    S.ftChallengeExprs = data.expressions || [];
+    S.ftChallengeUsed = new Array(S.ftChallengeExprs.length).fill(false);
+    // Show challenge card in chat
+    if (S.ftChallengeExprs.length > 0) {
+      const exprHTML = S.ftChallengeExprs.map((e,i) => `<div class="challenge-expr" id="chexpr${i}">💡 ${esc(e.en)} — ${esc(e.ja)}</div>`).join('');
+      S.chatMessages.splice(1, 0, { type: "system", text: `🎯 今日のチャレンジ表現:\n${S.ftChallengeExprs.map(e => e.en).join('\n')}` });
+      renderFreeTalkChat();
+    }
+  } catch(e) { console.warn("Challenge expr:", e); }
+}
+
 async function handleUserMessage(text) {
   S.chatMessages.push({ type: "user", text });
   S.chatHistory.push({ role: "user", content: text });
   S.ftTurnCount++;
+
+  // Check if user used challenge expressions
+  S.ftChallengeExprs.forEach((expr, i) => {
+    if (text.toLowerCase().includes(expr.en.toLowerCase().split(' ').slice(0,3).join(' '))) {
+      S.ftChallengeUsed[i] = true;
+    }
+  });
+
+  // Quick mode: auto-end after 3 turns
+  if (S.ftQuickMode && S.ftTurnCount >= 3) {
+    renderFreeTalkChat();
+    setTimeout(() => endFreeTalkSession(), 500);
+    return;
+  }
+
   renderFreeTalkChat();
   showTyping();
 
@@ -1255,15 +1497,33 @@ Provide feedback in this JSON format:
     hideTyping();
     const fb = JSON.parse(raw);
     S._lastFeedback = fb;
+
+    // Save session
     saveSession({
-      mode: "freetalk",
-      topic: topic?.label || S.ftTopic,
-      level: S.ftLevel,
-      score: fb.overallScore || 0,
-      minutes: elapsed,
-      turns: S.ftTurnCount,
-      voice: S.ftVoice,
+      mode: "freetalk", topic: topic?.label || S.ftTopic,
+      level: S.ftLevel, score: fb.overallScore || 0,
+      minutes: elapsed, turns: S.ftTurnCount, voice: S.ftVoice,
     });
+
+    // Update streak
+    updateStreak();
+
+    // Save conversation log
+    saveConversationLog({
+      mode: "freetalk", topic: topic?.label || S.ftTopic,
+      level: S.ftLevel, voice: S.ftVoice,
+      messages: S.chatMessages.map(m => ({type: m.type, text: m.text})),
+      feedback: fb,
+    });
+
+    // Save mistakes for review
+    (fb.corrections || []).forEach(c => {
+      addMistake({ original: c.original, corrected: c.corrected, explanation: c.explanation, mode: "freetalk" });
+    });
+
+    // Extract vocabulary from AI responses (async, don't block)
+    extractVocabulary(S.chatHistory).catch(()=>{});
+
     S.screen = "review";
     render();
   } catch(e) {
@@ -1600,10 +1860,12 @@ function renderFlashSummary() {
   saveSession({
     mode: "flash",
     topic: FLASH_CATEGORIES.find(c => c.id === S.flashCategory)?.label || S.flashCategory,
-    level: S.flashLevel,
-    score: avg,
-    minutes: 5,
-    voice: S.ftVoice,
+    level: S.flashLevel, score: avg, minutes: 5, voice: S.ftVoice,
+  });
+  updateStreak();
+  // Save mistakes for review
+  results.filter(r => !r.isCorrect && r.userAnswer !== "(skipped)").forEach(r => {
+    addMistake({ original: r.userAnswer, corrected: r.en, explanation: r.feedback || "", mode: "flash" });
   });
 
   const scoreColor = avg >= 80 ? "var(--green)" : avg >= 60 ? "var(--yellow)" : "var(--red)";
@@ -1648,6 +1910,266 @@ function renderFlashSummary() {
   if (fsCostPos) fsCostPos.insertAdjacentHTML('beforebegin', calcCostHTML());
   $("fsBck").onclick = $("fsHome").onclick = () => { S.screen = "home"; render(); };
   $("fsAgain").onclick = () => initFlash();
+}
+
+// ═══════════════════════════════════
+// VOCABULARY EXTRACTION
+// ═══════════════════════════════════
+async function extractVocabulary(chatHistory) {
+  const aiMsgs = chatHistory.filter(m => m.role === "assistant").map(m => m.content).join("\n");
+  const userMsgs = chatHistory.filter(m => m.role === "user" && m.content !== "Start the conversation.").map(m => m.content).join("\n");
+  try {
+    const raw = await geminiChat([{ role: "user", content: `Compare these AI responses and user responses. Extract 3-5 useful English expressions that the AI used but the user did NOT use. These are expressions the user should learn.
+
+AI said: ${aiMsgs}
+User said: ${userMsgs}
+
+Return JSON: {"vocab": [{"en": "expression", "ja": "Japanese meaning", "context": "example from the conversation"}]}` }], "JSON only.", true);
+    const data = JSON.parse(raw);
+    if (data.vocab?.length) addVocabEntries(data.vocab);
+  } catch(e) { console.warn("Vocab extract:", e); }
+}
+
+// ═══════════════════════════════════
+// SHADOWING MODE
+// ═══════════════════════════════════
+function initShadow() {
+  S.screen = "shadow";
+  S.shadowSentences = [];
+  S.shadowCurrent = 0;
+  S.shadowResults = [];
+  renderShadowSetup();
+}
+
+function renderShadowSetup() {
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="shBack">←</button>
+      <div class="title">Shadowing</div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">🎧 シャドーイングとは</div>
+      <div class="text-xs text-muted">AIの英語を聞く → 同じ文を繰り返す → 発音を評価。リスニング力と発音を同時に鍛えます。</div>
+    </div>
+    <div class="card">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${Object.values(CEFR_LEVELS).map(l => `<div class="level-chip ${S.shadowLevel===l.id?'active':''}" data-id="${l.id}">${l.label}</div>`).join("")}
+      </div>
+    </div>
+    <button class="btn btn-primary w-full mt-16" id="shStartBtn">5文スタート</button>
+    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech必須</p>' : ''}
+  `;
+  $("shBack").onclick = () => { S.screen = "home"; render(); };
+  document.querySelectorAll(".level-chip").forEach(el => {
+    el.onclick = () => { S.shadowLevel = el.dataset.id; renderShadowSetup(); };
+  });
+  $("shStartBtn").onclick = () => generateShadowSentences();
+}
+
+async function generateShadowSentences() {
+  S.ftVoice = pickVoice("shadow");
+  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0 };
+  app.innerHTML = `<div style="text-align:center;padding:80px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">文を生成中...</div></div>`;
+  try {
+    const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
+    const raw = await geminiChat([{ role: "user", content: `Generate 5 natural English sentences for shadowing practice at ${lvl.id} level. ${lvl.flashRules}\nReturn JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
+    S.shadowSentences = JSON.parse(raw).sentences || [];
+    if (!S.shadowSentences.length) throw new Error("No sentences");
+    S.shadowCurrent = 0;
+    S.shadowResults = [];
+    renderShadowPractice();
+  } catch(e) {
+    app.innerHTML = `<div class="card" style="text-align:center;padding:32px"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-16" onclick="initShadow()">リトライ</button></div>`;
+  }
+}
+
+async function renderShadowPractice() {
+  const sent = S.shadowSentences[S.shadowCurrent];
+  if (!sent) { renderShadowSummary(); return; }
+  const progress = (S.shadowCurrent / S.shadowSentences.length * 100).toFixed(0);
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="shpBack">←</button>
+      <div class="title">Shadowing</div>
+      <div class="text-xs text-muted">${S.shadowCurrent+1}/${S.shadowSentences.length}</div>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+    <div class="card shadow-card">
+      <div class="shadow-status" id="shStatus">🔊 まずAIの音声を聞きましょう</div>
+      <div class="shadow-text" id="shText" style="filter:blur(4px)">${esc(sent.en)}</div>
+      <div class="text-xs text-muted mb-16">${esc(sent.ja)}</div>
+      <button class="btn btn-primary" id="shListenBtn">🔊 AIの音声を聞く</button>
+      <button class="btn btn-secondary mt-8 hidden" id="shRecordBtn">🎤 自分で言ってみる</button>
+      <button class="btn btn-ghost mt-8 hidden" id="shNextBtn">次の文 →</button>
+      <div id="shResult" class="hidden mt-16"></div>
+    </div>
+  `;
+  $("shpBack").onclick = () => { if(confirm("中断しますか？")) { stopAudio(); S.screen="home"; render(); } };
+  $("shListenBtn").onclick = async () => {
+    $("shListenBtn").disabled = true;
+    $("shListenBtn").textContent = "⏳ 再生中...";
+    try { await speakText(sent.en, S.ftVoice); } catch(e) { console.warn(e); }
+    $("shText").style.filter = "none";
+    $("shStatus").textContent = "🎤 同じ文を繰り返してください";
+    $("shRecordBtn").classList.remove("hidden");
+    $("shListenBtn").textContent = "🔊 もう一度聞く";
+    $("shListenBtn").disabled = false;
+  };
+  $("shRecordBtn").onclick = async () => {
+    $("shRecordBtn").disabled = true;
+    $("shRecordBtn").textContent = "⏹ 録音中...";
+    $("shRecordBtn").className = "btn btn-danger mt-8";
+    try {
+      const rec = await recordWav(15000);
+      // Wait a moment then stop (or user presses again)
+      $("shRecordBtn").onclick = async () => {
+        $("shRecordBtn").disabled = true;
+        $("shRecordBtn").textContent = "⏳ 評価中...";
+        const wav = await rec.stop();
+        if (S.azureKey && wav.size > 44) {
+          try {
+            const result = await azurePronAssess(wav, sent.en);
+            const nb = result?.NBest?.[0];
+            const pron = nb?.PronunciationAssessment || {};
+            const score = pron.PronScore || 0;
+            const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+            S.shadowResults.push({ en: sent.en, score, accuracy: pron.AccuracyScore||0, fluency: pron.FluencyScore||0, completeness: pron.CompletenessScore||0 });
+            $("shResult").classList.remove("hidden");
+            $("shResult").innerHTML = `
+              <div style="font-size:36px;font-weight:800;color:${scoreColor}">${score}</div>
+              <div class="stats-grid mt-8">
+                <div class="stat-card"><div class="val text-sm">${pron.AccuracyScore||'-'}</div><div class="lbl">正確さ</div></div>
+                <div class="stat-card"><div class="val text-sm">${pron.FluencyScore||'-'}</div><div class="lbl">流暢さ</div></div>
+              </div>
+              <div class="text-xs text-muted mt-8">認識: ${esc(nb?.Display || '')}</div>
+            `;
+          } catch(e) {
+            S.shadowResults.push({ en: sent.en, score: 0 });
+            $("shResult").classList.remove("hidden");
+            $("shResult").innerHTML = `<div class="text-xs text-red">${esc(e.message)}</div>`;
+          }
+        }
+        $("shNextBtn").classList.remove("hidden");
+        $("shRecordBtn").classList.add("hidden");
+      };
+    } catch(e) { alert("マイクエラー: " + e.message); $("shRecordBtn").disabled = false; }
+  };
+  $("shNextBtn").onclick = () => { S.shadowCurrent++; renderShadowPractice(); };
+}
+
+function renderShadowSummary() {
+  const results = S.shadowResults;
+  const avg = results.length > 0 ? Math.round(results.reduce((a,r) => a+r.score, 0) / results.length) : 0;
+  updateStreak();
+  saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: avg, minutes: 3, voice: S.ftVoice });
+  const scoreColor = avg >= 80 ? 'var(--green)' : avg >= 60 ? 'var(--yellow)' : 'var(--red)';
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="shsBack">←</button><div class="title">Shadowing 結果</div></div>
+    <div class="summary-header"><div class="score" style="color:${scoreColor}">${avg}</div><div class="label">発音スコア平均</div></div>
+    <div class="card">
+      ${results.map(r => `<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div class="flex justify-between"><div class="text-sm" style="flex:1">${esc(r.en)}</div><div style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=60?'var(--yellow)':'var(--red)'}">${r.score}</div></div></div>`).join('')}
+    </div>
+    ${calcCostHTML()}
+    <button class="btn btn-primary w-full mt-16" id="shsHome">ホームに戻る</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="shsAgain">もう一度</button>
+  `;
+  $("shsBack").onclick = $("shsHome").onclick = () => { S.screen = "home"; render(); };
+  $("shsAgain").onclick = () => initShadow();
+}
+
+// ═══════════════════════════════════
+// REVIEW QUIZ
+// ═══════════════════════════════════
+function renderReviewQuiz() {
+  const queue = getReviewQueue();
+  if (queue.length === 0) {
+    app.innerHTML = `<div class="navbar"><button class="back" id="rqBack">←</button><div class="title">復習</div></div>
+      <div class="card" style="text-align:center;padding:40px"><div style="font-size:32px;margin-bottom:12px">✅</div><div class="text-sm">復習する問題はありません</div></div>
+      <button class="btn btn-primary w-full mt-16" id="rqHome">ホームに戻る</button>`;
+    $("rqBack").onclick = $("rqHome").onclick = () => { S.screen = "home"; render(); };
+    return;
+  }
+  const all = getMistakes();
+  let currentIdx = 0;
+  function showQuestion(i) {
+    if (i >= queue.length) { S.screen = "home"; render(); return; }
+    const m = queue[i];
+    const realIdx = all.findIndex(x => x.original === m.original && x.corrected === m.corrected);
+    app.innerHTML = `
+      <div class="navbar"><button class="back" id="rqBack">←</button><div class="title">復習 ${i+1}/${queue.length}</div></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${(i/queue.length*100).toFixed(0)}%"></div></div>
+      <div class="card" style="padding:28px">
+        <div class="text-xs text-muted mb-8">あなたが言った文:</div>
+        <div class="text-sm text-red" style="font-weight:600">${esc(m.original)}</div>
+        <div class="divider"></div>
+        <div class="text-xs text-muted mb-8">正しい表現:</div>
+        <div class="text-sm text-green" style="font-weight:600">${esc(m.corrected)}</div>
+        <div class="text-xs text-muted mt-16">${esc(m.explanation || '')}</div>
+      </div>
+      <div class="flex gap-8">
+        <button class="btn btn-secondary w-full" id="rqHard">😓 まだ覚えてない</button>
+        <button class="btn btn-primary w-full" id="rqEasy">✅ 覚えた！</button>
+      </div>
+    `;
+    $("rqBack").onclick = () => { S.screen = "home"; render(); };
+    $("rqHard").onclick = () => showQuestion(i + 1);
+    $("rqEasy").onclick = () => { if (realIdx >= 0) markReviewed(realIdx); showQuestion(i + 1); };
+  }
+  showQuestion(0);
+}
+
+// ═══════════════════════════════════
+// VOCABULARY NOTEBOOK
+// ═══════════════════════════════════
+function renderVocabNotebook() {
+  const vocab = getVocabNotebook().slice().reverse();
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="vnBack">←</button>
+      <div class="title">📚 単語帳 (${vocab.length})</div>
+    </div>
+    ${vocab.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Free Talkを始めると、AIが使った表現が自動的に記録されます</div></div>' :
+    `<div class="card">${vocab.map(v => `<div class="vocab-entry"><div class="vocab-en">${esc(v.en)}</div><div class="vocab-ja">${esc(v.ja)}</div>${v.context ? `<div class="vocab-ctx">"${esc(v.context)}"</div>` : ''}</div>`).join('')}</div>`}
+    ${vocab.length > 0 ? `<button class="btn btn-danger w-full mt-16 mb-16" id="vnClear">単語帳をクリア</button>` : ''}
+  `;
+  $("vnBack").onclick = () => { S.screen = "home"; render(); };
+  if ($("vnClear")) $("vnClear").onclick = () => { if(confirm("単語帳をクリアしますか？")) { localStorage.removeItem("ett_vocab"); S.screen="home"; render(); } };
+}
+
+// ═══════════════════════════════════
+// CONVERSATION LOG
+// ═══════════════════════════════════
+function renderConvLog() {
+  const logs = getConversationLogs().slice().reverse();
+  app.innerHTML = `
+    <div class="navbar">
+      <button class="back" id="clBack">←</button>
+      <div class="title">💬 会話ログ (${logs.length})</div>
+    </div>
+    ${logs.map((log, i) => {
+      const d = new Date(log.date);
+      const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
+      return `<div class="card" style="cursor:pointer" data-idx="${i}" class="log-card">
+        <div class="flex justify-between items-center">
+          <div class="text-sm" style="font-weight:600">🗣️ ${esc(log.topic || '')}</div>
+          <div class="text-xs text-muted">${dateStr}</div>
+        </div>
+        <div class="text-xs text-muted mt-8">${log.level || ''} · ${(log.messages||[]).filter(m=>m.type==='user').length} turns</div>
+        <div id="logDetail${i}" class="hidden mt-8" style="max-height:300px;overflow-y:auto">
+          ${(log.messages||[]).filter(m=>m.type==='ai'||m.type==='user').map(m => `<div style="padding:6px 0;font-size:13px;color:${m.type==='user'?'var(--accent)':'var(--text)'}"><strong>${m.type==='user'?'You':'AI'}:</strong> ${esc(m.text)}</div>`).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+  $("clBack").onclick = () => { S.screen = "home"; render(); };
+  // Toggle detail
+  document.querySelectorAll('.card[data-idx]').forEach(card => {
+    card.onclick = () => {
+      const det = $("logDetail" + card.dataset.idx);
+      if (det) det.classList.toggle("hidden");
+    };
+  });
 }
 
 // ── Service Worker ──

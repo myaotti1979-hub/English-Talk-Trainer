@@ -171,7 +171,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .stat-card .val{font-size:28px;font-weight:700}
 .stat-card .lbl{font-size:13px;color:var(--muted);margin-top:4px}
 
-</style>
 
 /* ── Streak Calendar ── */
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin:8px 0}
@@ -208,6 +207,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 /* ── Review Quiz ── */
 .review-prompt{background:#fef3c7;border:1.5px solid #fde68a;border-radius:14px;padding:16px;margin-bottom:14px;cursor:pointer;touch-action:manipulation}
 .review-prompt:active{transform:scale(.98)}
+</style>
 </head>
 <body>
 <div id="app"></div>
@@ -218,7 +218,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05a";
+const VERSION = "v2026.05.05b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");

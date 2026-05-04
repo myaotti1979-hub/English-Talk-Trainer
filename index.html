@@ -218,7 +218,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05b";
+const VERSION = "v2026.05.05c";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2172,9 +2172,31 @@ function renderConvLog() {
   });
 }
 
-// ── Service Worker ──
+// ── Service Worker + 強制更新 ──
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    // 新しいSWが見つかったら即座にアクティベート
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (nw) nw.addEventListener('statechange', () => {
+        if (nw.state === 'activated') location.reload();
+      });
+    });
+    // ページ読み込みごとにSW更新チェック
+    reg.update().catch(() => {});
+  }).catch(() => {});
+
+  // バージョン不一致時に強制リフレッシュ
+  const cachedVer = localStorage.getItem("ett_cached_version");
+  if (cachedVer && cachedVer !== VERSION) {
+    console.log(`Version mismatch: ${cachedVer} → ${VERSION}, clearing caches`);
+    caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).then(() => {
+      localStorage.setItem("ett_cached_version", VERSION);
+      location.reload();
+    });
+  } else {
+    localStorage.setItem("ett_cached_version", VERSION);
+  }
 }
 
 // ── Init ──

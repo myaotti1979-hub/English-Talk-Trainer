@@ -218,7 +218,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05e";
+const VERSION = "v2026.05.05f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -778,23 +778,23 @@ function safeJSON(raw) {
 // ── Cost Estimation ──
 function calcCostHTML() {
   const c = S.cost;
-  // Azure STT: $1.32/hour = $0.022/min
+  // Azure STT: $1.32/hour (only Shadowing uses this now)
   const sttCost = (c.sttSeconds / 3600) * 1.32;
   // Azure TTS: $16/1M characters
   const ttsCost = (c.ttsChars / 1000000) * 16;
-  // Gemini 2.5 Flash: Input $0.30/1M tokens, Output $2.50/1M tokens
+  // Gemini 2.5 Flash: Input $0.30/1M, Output $2.50/1M
   const gemInCost = (c.geminiInTokens / 1000000) * 0.30;
   const gemOutCost = (c.geminiOutTokens / 1000000) * 2.50;
   const total = sttCost + ttsCost + gemInCost + gemOutCost;
-  const totalJPY = Math.round(total * 150 * 10) / 10; // 概算レート
+  const totalJPY = Math.round(total * 150 * 10) / 10;
 
   return `<div class="card">
     <div style="font-size:15px;font-weight:600;margin-bottom:12px">💰 API コスト概算</div>
     <div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;font-size:13px;line-height:2">
-      <span class="text-muted">Azure STT</span><span class="text-muted">${c.sttSeconds}秒</span><span>$${sttCost.toFixed(4)}</span>
-      <span class="text-muted">Azure TTS</span><span class="text-muted">${c.ttsChars.toLocaleString()}文字</span><span>$${ttsCost.toFixed(4)}</span>
-      <span class="text-muted">Gemini (入力)</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}トークン</span><span>$${gemInCost.toFixed(4)}</span>
-      <span class="text-muted">Gemini (出力)</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}トークン</span><span>$${gemOutCost.toFixed(4)}</span>
+      <span class="text-muted">音声認識</span><span class="text-muted">${c.sttSeconds > 0 ? c.sttSeconds + '秒 (Azure)' : 'Web Speech API'}</span><span>${c.sttSeconds > 0 ? '$' + sttCost.toFixed(4) : '無料'}</span>
+      <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars.toLocaleString()}文字 (Azure)</span><span>$${ttsCost.toFixed(4)}</span>
+      <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}トークン</span><span>$${gemInCost.toFixed(4)}</span>
+      <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}トークン</span><span>$${gemOutCost.toFixed(4)}</span>
     </div>
     <div class="divider"></div>
     <div class="flex justify-between" style="font-size:15px;font-weight:700">
@@ -1229,7 +1229,7 @@ function renderFreeTalkSetup() {
     </div>
 
     <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic?'disabled':''}>会話をスタート</button>
-    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：音声入力・読み上げが使えません</p>' : ''}
+    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：AI音声読み上げが使えません</p>' : ''}
   `;
   $("ftBack").onclick = () => { S.screen = "home"; render(); };
 
@@ -1342,8 +1342,7 @@ function renderFreeTalkChat() {
     <div class="chat-input-bar">
       <div class="inner">
         <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
-        ${S.isRecording ? '<div class="waveform"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>' : ''}
-        ${S.azureKey ? `<button class="mic-btn ${S.isRecording?'recording':S.isProcessing?'processing':'idle'}" id="micBtn">${S.isRecording?'⏹':S.isProcessing?'⏳':'🎤'}</button>` : ''}
+        ${(window.SpeechRecognition||window.webkitSpeechRecognition) ? `<button class="mic-btn ${S.isRecording?'recording':'idle'}" id="micBtn">${S.isRecording?'⏹':'🎤'}</button>` : ''}
         <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%">↑</button>
       </div>
     </div>
@@ -1396,29 +1395,44 @@ function hideTyping() {
   if (el) el.classList.add("hidden");
 }
 
-let _recorder = null;
+let _recorder = null;   // for Shadowing (recordWav)
+let _recognition = null; // for Free Talk / Flash (Web Speech API)
+
 async function toggleRecording() {
   if (S.isRecording) {
     // Stop
     S.isRecording = false;
-    S.isProcessing = true;
+    if (_recognition) { _recognition.stop(); }
     renderFreeTalkChat();
-    try {
-      const wavBlob = await _recorder.stop();
-      _recorder = null;
-      const text = await azureSTT(wavBlob);
-      S.isProcessing = false;
-      if (text) handleUserMessage(text);
-      else { S.isProcessing = false; renderFreeTalkChat(); }
-    } catch(e) {
-      S.isProcessing = false;
-      alert("音声認識エラー: " + e.message);
-      renderFreeTalkChat();
-    }
   } else {
-    // Start
+    // Start Web Speech API
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("お使いのブラウザは音声認識に対応していません"); return; }
+    _recognition = new SR();
+    _recognition.lang = 'en-US';
+    _recognition.interimResults = false;
+    _recognition.continuous = false;
+
+    _recognition.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      S.isRecording = false;
+      _recognition = null;
+      if (text) handleUserMessage(text);
+      else renderFreeTalkChat();
+    };
+    _recognition.onerror = (e) => {
+      S.isRecording = false;
+      _recognition = null;
+      if (e.error !== 'no-speech' && e.error !== 'aborted') alert("音声認識エラー: " + e.error);
+      renderFreeTalkChat();
+    };
+    _recognition.onend = () => {
+      if (S.isRecording) { S.isRecording = false; renderFreeTalkChat(); }
+      _recognition = null;
+    };
+
     try {
-      _recorder = await recordWav(60000);
+      _recognition.start();
       S.isRecording = true;
       renderFreeTalkChat();
     } catch(e) {
@@ -1669,7 +1683,7 @@ function renderFlashSetup() {
       </div>
     </div>
     <button class="btn btn-primary w-full mt-16" id="flashStartBtn">10問スタート</button>
-    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：音声入力・読み上げ不可</p>' : ''}
+    ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：AI音声読み上げ不可</p>' : ''}
   `;
   $("flBack").onclick = () => { S.screen = "home"; render(); };
   document.querySelectorAll(".level-chip").forEach(el => {
@@ -1744,7 +1758,7 @@ function renderFlashQuestion() {
       <div class="flash-hint">💡 ${esc(q.hint || '')}</div>
 
       <div id="flashInputArea">
-        ${S.azureKey ? `
+        ${(window.SpeechRecognition||window.webkitSpeechRecognition) ? `
         <button class="mic-btn idle" id="flashMic" style="margin:0 auto 16px;display:flex">🎤</button>
         <div class="text-xs text-muted mb-16">タップして英語で答える</div>
         ` : ''}
@@ -1777,30 +1791,37 @@ function renderFlashQuestion() {
   $("flashTextInput").onkeydown = e => { if (e.key === "Enter") { const t = e.target.value.trim(); if (t) submitAnswer(t); } };
 
   if ($("flashMic")) {
-    let rec = null;
     $("flashMic").onclick = async () => {
-      if (rec) {
+      if (_recognition) {
         // Stop
-        $("flashMic").className = "mic-btn processing";
-        $("flashMic").textContent = "⏳";
-        try {
-          const wav = await rec.stop();
-          rec = null;
-          const text = await azureSTT(wav);
-          if (text) submitAnswer(text);
-          else { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
-        } catch(e) {
-          alert("認識エラー: " + e.message);
-          $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-        }
-      } else {
-        // Start
-        try {
-          rec = await recordWav(20000);
-          $("flashMic").className = "mic-btn recording";
-          $("flashMic").textContent = "⏹";
-        } catch(e) { alert("マイクエラー: " + e.message); }
+        _recognition.stop();
+        return;
       }
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { alert("音声認識非対応"); return; }
+      _recognition = new SR();
+      _recognition.lang = 'en-US';
+      _recognition.interimResults = false;
+      _recognition.onresult = (e) => {
+        const text = e.results[0][0].transcript;
+        _recognition = null;
+        $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+        if (text) submitAnswer(text);
+      };
+      _recognition.onerror = (e) => {
+        _recognition = null;
+        $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+        if (e.error !== 'no-speech' && e.error !== 'aborted') alert("認識エラー: " + e.error);
+      };
+      _recognition.onend = () => {
+        _recognition = null;
+        if ($("flashMic")) { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
+      };
+      try {
+        _recognition.start();
+        $("flashMic").className = "mic-btn recording";
+        $("flashMic").textContent = "⏹";
+      } catch(e) { alert("マイクエラー: " + e.message); }
     };
   }
 

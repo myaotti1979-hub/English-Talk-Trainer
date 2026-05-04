@@ -218,7 +218,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05c";
+const VERSION = "v2026.05.05d";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -952,7 +952,7 @@ function renderHome() {
     <div class="home-header">
       <div class="pre">AI-Powered English Training</div>
       <h1>English Talk Trainer</h1>
-      <div class="sub">Gemini AI × Azure Speech</div>
+      <div class="sub">Gemini AI × Azure Speech — ${VERSION}</div>
     </div>
 
     <div class="card">

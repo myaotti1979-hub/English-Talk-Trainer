@@ -83,6 +83,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .chat-input-bar{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(transparent,var(--bg) 20%);padding:12px 16px 20px;z-index:100}
 .chat-input-bar .inner{max-width:520px;margin:0 auto;display:flex;gap:8px;align-items:center}
 .chat-input-bar .inner .input{flex:1;border-radius:24px;padding:14px 20px;background:var(--surface);font-size:16px}
+.turn-indicator{max-width:520px;margin:0 auto 6px;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;text-align:center}
+.turn-ai{background:#e0e7ff;color:#4338ca}
+.turn-you{background:#d1fae5;color:#065f46}
 
 /* ── Mic Button ── */
 .mic-btn{width:64px;height:64px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:28px;transition:all .15s;touch-action:manipulation;flex-shrink:0;-webkit-user-select:none;user-select:none}
@@ -224,7 +227,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06i";
+const VERSION = "v2026.05.06l";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -451,6 +454,7 @@ const S = {
   ftTopic: "", ftLevel: "B1", ftCategory: "",
   ftVoice: "en-US-JennyNeural",
   ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false,
+  ftWhoseTurn: 'ai',  // 'ai' | 'you' — whose turn to speak
   ftChallengeExprs: [], ftChallengeUsed: [],
   ftPronScores: [], // pronunciation scores per turn
   // Flash Translation
@@ -594,7 +598,7 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
     contents,
     generationConfig: {
       temperature: json ? 0.3 : 0.8,
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
       ...(json ? { responseMimeType: "application/json" } : {})
     }
   };
@@ -795,14 +799,34 @@ function safeJSON(raw) {
 }
 
 // ── Cost Estimation ──
+function addToCumulativeCost(sessionCost) {
+  var total = parseFloat(localStorage.getItem("ett_total_cost") || "0");
+  total += sessionCost;
+  localStorage.setItem("ett_total_cost", total.toFixed(4));
+}
+function getCumulativeCost() {
+  return parseFloat(localStorage.getItem("ett_total_cost") || "0");
+}
+function calcSessionTotal() {
+  var c = S.cost;
+  var sttCost = (c.sttSeconds / 3600) * 1.32;
+  var ttsCost = (c.ttsChars / 1000000) * 16;
+  var gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
+  var gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
+  var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
+  var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
+  var searchCost = (c.searchCalls || 0) * 0.035;
+  return sttCost + ttsCost + gemInCost + gemOutCost + searchCost;
+}
+
 function calcCostHTML() {
-  const c = S.cost;
-  const sttCost = (c.sttSeconds / 3600) * 1.32;
-  const ttsCost = (c.ttsChars / 1000000) * 16;
-  const gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
-  const gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
-  const gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
-  const gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
+  var c = S.cost;
+  var sttCost = (c.sttSeconds / 3600) * 1.32;
+  var ttsCost = (c.ttsChars / 1000000) * 16;
+  var gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
+  var gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
+  var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
+  var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
   const searchCost = (c.searchCalls || 0) * 0.035;
   const total = sttCost + ttsCost + gemInCost + gemOutCost + searchCost;
   const totalJPY = Math.round(total * 150 * 10) / 10;
@@ -847,6 +871,7 @@ function clearAllData() {
   localStorage.removeItem("ett_vocab");
   localStorage.removeItem("ett_convlogs");
   localStorage.removeItem("ett_challenge_used");
+  localStorage.removeItem("ett_total_cost");
   S.totalSessions = 0;
   S.totalMinutes = 0;
   S.screen = "home"; render();
@@ -1066,6 +1091,7 @@ function renderHome() {
     <div class="stats-grid mb-16">
       <div class="stat-card"><div class="val text-accent">${S.totalSessions}</div><div class="lbl">セッション</div></div>
       <div class="stat-card"><div class="val text-green">${S.totalMinutes}</div><div class="lbl">練習時間(分)</div></div>
+      <div class="stat-card" style="grid-column:span 2"><div class="val" style="color:var(--orange);font-size:20px">$${getCumulativeCost().toFixed(3)}（約${Math.round(getCumulativeCost()*150)}円）</div><div class="lbl">累計APIコスト</div></div>
     </div>` : ''}
 
     <div class="mode-card mode-freetalk mb-16" id="startFreeTalk">
@@ -1090,7 +1116,7 @@ function renderHome() {
     </div>
 
     <div class="card" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">
-      ${vocabCount > 0 ? `<button class="btn btn-ghost" id="vocabBtn">📚 単語帳 (${vocabCount})</button>` : ''}
+      ${vocabCount > 0 ? `<button class="btn btn-ghost" id="vocabBtn">📚 フレーズ集 (${vocabCount})</button>` : ''}
       ${logCount > 0 ? `<button class="btn btn-ghost" id="convlogBtn">💬 会話ログ (${logCount})</button>` : ''}
       ${hist.length > 0 ? `<button class="btn btn-ghost" id="histBtn">📋 履歴 (${hist.length})</button>` : ''}
       <button class="btn btn-ghost" id="settingsBtn">⚙️ 設定</button>
@@ -1508,6 +1534,7 @@ async function startFreeTalkSession() {
   }
 
   S.ftSessionActive = true;
+  S.ftWhoseTurn = 'ai';
   S.ftStartTime = Date.now();
   S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
 
@@ -1540,7 +1567,34 @@ Then ask 1-2 discussion questions about this real news story.
 
 After the first message, continue the discussion naturally. Ask follow-up questions, challenge opinions, and introduce relevant vocabulary.`;
   } else {
-    sysPrompt = `You are a friendly English conversation partner.
+  const _openingStyles = [
+  "Start with a friendly greeting and ask an open-ended question about the topic.",
+  "Share a brief personal opinion or experience about the topic, then ask the learner about theirs.",
+  "Mention an interesting fact or statistic about the topic, then ask what the learner thinks.",
+  "Ask a 'would you rather' or hypothetical question related to the topic.",
+  "Describe a recent trend or change related to the topic, then ask the learner's opinion.",
+  "Share something surprising about the topic and ask if the learner has had a similar experience.",
+  "Start with a quote or saying related to the topic, then ask the learner to react.",
+  "Ask the learner to compare two things related to the topic (e.g., 'Which do you prefer, X or Y?').",
+  "Describe a common problem or challenge related to the topic and ask how the learner handles it.",
+  "Start by asking what the learner's earliest memory or first experience with the topic is.",
+  "Ask the learner to imagine a scenario related to the topic (e.g., 'Imagine you could...').",
+  "Mention how the topic is different in other countries, then ask about the learner's perspective.",
+  "Start with a 'did you know' fact, then transition into a discussion question.",
+  "Ask the learner to give advice to someone about the topic.",
+  "Share a dilemma related to the topic and ask what the learner would do.",
+  "Ask the learner to rank or prioritize things related to the topic.",
+  "Start by asking what the learner has been doing recently related to the topic.",
+  "Pose a 'what if' question about the future of the topic.",
+  "Ask the learner about the best and worst aspects of something related to the topic.",
+  "Start by disagreeing with a common opinion about the topic and ask the learner to respond.",
+  "Ask about a turning point or important moment related to the topic in the learner's life.",
+  "Describe two opposing viewpoints on the topic and ask which side the learner supports.",
+  "Ask the learner to explain the topic as if they were teaching someone about it.",
+  "Start with humor — a light joke or funny observation about the topic — then ask a question.",
+];
+
+  sysPrompt = `You are a friendly English conversation partner.
 
 ${level.sysRules}
 
@@ -1549,7 +1603,7 @@ ${isRolePlay ? "This is a ROLE-PLAY scenario. Stay in character throughout." : "
 
 CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified level.
 
-Start the conversation with a friendly greeting related to the topic.`;
+${_openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
   }
 
   S.chatHistory = [{ role: "user", content: isNews ? "Give me a news article to discuss." : "Start the conversation." }];
@@ -1557,7 +1611,7 @@ Start the conversation with a friendly greeting related to the topic.`;
 
   // Generate challenge expressions (async, don't block start)
   const challengeTopic = { ...topic, prompt: topicPrompt, label: topicDisplay };
-  generateChallengeExpressions(level.id, challengeTopic).catch(()=>{});
+  generateChallengeExpressions(level.id, challengeTopic, S.ftQuickMode).catch(()=>{});
 
   renderFreeTalkChat();
   showTyping();
@@ -1571,9 +1625,12 @@ Start the conversation with a friendly greeting related to the topic.`;
     renderFreeTalkChat();
     // Auto-speak AI response
     try { await speakText(reply, S.ftVoice); } catch(e) { console.warn("TTS:", e); }
+    S.ftWhoseTurn = 'you';
+    renderFreeTalkChat();
   } catch(e) {
     hideTyping();
     S.chatMessages.push({ type: "system", text: `❌ Error: ${e.message}` });
+    S.ftWhoseTurn = 'you';
     renderFreeTalkChat();
   }
 }
@@ -1611,11 +1668,12 @@ function renderFreeTalkChat() {
     </div>
     <div class="chat-area" id="chatArea">${msgs}<div id="typingIndicator" class="typing hidden"><span></span><span></span><span></span></div></div>
     <div class="chat-input-bar">
+      ${S.ftWhoseTurn === 'ai' ? '<div class="turn-indicator turn-ai">🔊 AIが話しています...</div>' : '<div class="turn-indicator turn-you">🎤 あなたのターンです</div>'}
       <div id="liveTranscript" style="display:${_srActive?'block':'none'};max-width:520px;margin:0 auto 6px;padding:8px 14px;background:rgba(220,38,38,.08);border-radius:12px;font-size:13px;color:var(--red);min-height:24px;word-break:break-word"><span style="animation:pulse 1.5s infinite;display:inline-block">🔴</span> <span id="liveText">${esc(_srBuf)}</span></div>
       <div class="inner">
-        <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
-        ${srSupported() ? `<button class="mic-btn ${_srActive?'recording':'idle'}" id="micBtn">${_srActive?'⏹':'🎤'}</button>` : ''}
-        <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%">↑</button>
+        <input class="input" id="chatInput" placeholder="${S.ftWhoseTurn==='ai'?'AIが話しています...':'Type in English...'}" autocomplete="off" ${S.ftWhoseTurn==='ai'?'disabled':''}>
+        ${srSupported() ? `<button class="mic-btn ${_srActive?'recording':'idle'}" id="micBtn" ${S.ftWhoseTurn==='ai'?'disabled':''}>${_srActive?'⏹':'🎤'}</button>` : ''}
+        <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%" ${S.ftWhoseTurn==='ai'?'disabled':''}>↑</button>
       </div>
     </div>
   `;
@@ -1899,7 +1957,7 @@ function markChallengeCategory(catId) {
   localStorage.setItem("ett_challenge_used", JSON.stringify(used));
 }
 
-async function generateChallengeExpressions(levelId, topic) {
+async function generateChallengeExpressions(levelId, topic, isQuick) {
   try {
     const cats = CHALLENGE_CATEGORIES[levelId] || CHALLENGE_CATEGORIES.B1;
     const usedCats = getUsedChallengeCategories();
@@ -1909,6 +1967,7 @@ async function generateChallengeExpressions(levelId, topic) {
     if (!pick) pick = cats[Math.floor(Math.random() * cats.length)];
     markChallengeCategory(pick.id);
 
+    const exprCount = isQuick ? 1 : 2;
     const topicDesc = topic?.prompt || "general conversation";
     const topicLabel = topic?.label || "フリートーク";
     const raw = await geminiChat([{ role: "user", content: `You are helping a ${levelId} level English learner practice.
@@ -1916,7 +1975,7 @@ async function generateChallengeExpressions(levelId, topic) {
 SKILL CATEGORY: "${pick.name}" — ${pick.focus}
 CONVERSATION TOPIC: "${topicDesc}"
 
-Generate exactly 3 expressions from this skill category that the learner can naturally use in a conversation about "${topicLabel}".
+Generate exactly ${exprCount} expression(s) from this skill category that the learner can naturally use in a conversation about "${topicLabel}".
 
 Rules:
 - All 3 expressions MUST belong to the category "${pick.name}" (${pick.focus})
@@ -1956,6 +2015,7 @@ async function handleUserMessage(text) {
     return;
   }
 
+  S.ftWhoseTurn = 'ai';
   renderFreeTalkChat();
   showTyping();
 
@@ -1975,9 +2035,12 @@ ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
     hideTyping();
     renderFreeTalkChat();
     try { await speakText(reply, S.ftVoice); } catch(e) { console.warn("TTS:", e); }
+    S.ftWhoseTurn = 'you';
+    renderFreeTalkChat();
   } catch(e) {
     hideTyping();
     S.chatMessages.push({ type: "system", text: `❌ ${e.message}` });
+    S.ftWhoseTurn = 'you';
     renderFreeTalkChat();
   }
 }
@@ -1993,31 +2056,15 @@ async function endFreeTalkSession() {
   // Get feedback from Gemini
   const userMsgs = S.chatHistory.filter(m => m.role === "user" && m.content !== "Start the conversation.").map(m => m.content);
   const level = CEFR_LEVELS[S.ftLevel] || CEFR_LEVELS.B1;
-  const feedbackPrompt = `You are an English teacher reviewing a student's conversation practice.
-The student's CEFR level: ${level.id} (${level.tag})
-
+  const feedbackPrompt = `Evaluate this ${level.id} (${level.tag}) student's English.
 ${level.feedbackCriteria}
 
-The student said these sentences during a conversation:
+Student said:
 ${userMsgs.map((m,i) => `${i+1}. "${m}"`).join("\n")}
+${S.ftChallengeExprs.length > 0 ? `\nChallenge expressions to use: ${S.ftChallengeExprs.map(e => e.en).join(", ")}` : ''}
 
-${S.ftChallengeExprs.length > 0 ? `
-CHALLENGE EXPRESSIONS: The student was asked to try using these expressions:
-${S.ftChallengeExprs.map((e,i) => `${i+1}. "${e.en}" (${e.ja})`).join("\n")}
-For each expression, evaluate: did the student use it (or a close variation)? Was the usage natural and correct?
-` : ''}
-
-Provide feedback in this JSON format:
-{
-  "overallScore": 75,
-  "grammar": {"score": 80, "issues": ["specific issue 1"]},
-  "vocabulary": {"score": 70, "level": "${level.id}", "suggestions": ["better word choices or expressions the student could have used"]},
-  "naturalness": {"score": 75, "notes": ["what sounded natural", "what sounded unnatural"]},
-  "corrections": [{"original": "what user said", "corrected": "better version", "explanation": "why"}],
-  ${S.ftChallengeExprs.length > 0 ? `"challengeResults": [{"expression": "the expression", "used": true, "natural": true, "comment": "Brief comment in Japanese on usage"}],` : ''}
-  "cefrAssessment": "Brief assessment: does the student seem to be at ${level.id} level, or should they move up/down?",
-  "encouragement": "A brief encouraging message in Japanese"
-}`;
+COMPACT JSON. Keep strings SHORT. Max 3 corrections.
+{"overallScore":75,"grammar":{"score":80,"issues":["issue"]},"vocabulary":{"score":70,"suggestions":["tip"]},"naturalness":{"score":75,"notes":["note"]},"corrections":[{"original":"x","corrected":"y","explanation":"z"}]${S.ftChallengeExprs.length > 0 ? ',"challengeResults":[{"expression":"e","used":true,"natural":true,"comment":"短評"}]' : ''},"cefrAssessment":"one sentence","encouragement":"日本語一言"}`;
 
   try {
     const raw = await geminiChat(
@@ -2035,6 +2082,7 @@ Provide feedback in this JSON format:
       level: S.ftLevel, score: fb.overallScore || 0,
       minutes: elapsed, turns: S.ftTurnCount, voice: S.ftVoice,
     });
+    addToCumulativeCost(calcSessionTotal());
 
     // Update streak
     updateStreak();
@@ -2394,6 +2442,7 @@ function renderFlashSummary() {
     topic: FLASH_CATEGORIES.find(c => c.id === S.flashCategory)?.label || S.flashCategory,
     level: S.flashLevel, score: avg, minutes: 5, voice: S.ftVoice,
   });
+  addToCumulativeCost(calcSessionTotal());
   updateStreak();
   // Save mistakes for review
   results.filter(r => !r.isCorrect && r.userAnswer !== "(skipped)").forEach(r => {
@@ -2448,18 +2497,18 @@ function renderFlashSummary() {
 // VOCABULARY EXTRACTION
 // ═══════════════════════════════════
 async function extractVocabulary(chatHistory) {
-  const aiMsgs = chatHistory.filter(m => m.role === "assistant").map(m => m.content).join("\n");
-  const userMsgs = chatHistory.filter(m => m.role === "user" && m.content !== "Start the conversation.").map(m => m.content).join("\n");
+  const userMsgs = chatHistory.filter(m => m.role === "user" && m.content !== "Start the conversation." && m.content !== "Give me a news article to discuss.").map(m => m.content).join("\n");
+  if (!userMsgs.trim()) return;
   try {
-    const raw = await geminiChat([{ role: "user", content: `Compare these AI responses and user responses. Extract 3-5 useful English expressions that the AI used but the user did NOT use. These are expressions the user should learn.
+    const raw = await geminiChat([{ role: "user", content: `From these English sentences the student said, extract 2-3 useful phrases or expressions they used well, or attempted but could be improved. Focus on phrases (2+ words), not single words.
 
-AI said: ${aiMsgs}
-User said: ${userMsgs}
+Student said:
+${userMsgs}
 
-Return JSON: {"vocab": [{"en": "expression", "ja": "Japanese meaning", "context": "example from the conversation"}]}` }], "JSON only.", true);
+Return JSON: {"vocab": [{"en": "phrase the student used", "ja": "Japanese meaning", "note": "Good usage / Could be improved: better alternative"}]}` }], "JSON only.", true);
     const data = safeJSON(raw);
     if (data.vocab?.length) addVocabEntries(data.vocab);
-  } catch(e) { console.warn("Vocab extract:", e); }
+  } catch(e) { console.warn("Phrase extract:", e); }
 }
 
 // ═══════════════════════════════════
@@ -2595,6 +2644,7 @@ function renderShadowSummary() {
   const avg = results.length > 0 ? Math.round(results.reduce((a,r) => a+r.score, 0) / results.length) : 0;
   updateStreak();
   saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: avg, minutes: 3, voice: S.ftVoice });
+  addToCumulativeCost(calcSessionTotal());
   const scoreColor = avg >= 80 ? 'var(--green)' : avg >= 60 ? 'var(--yellow)' : 'var(--red)';
   app.innerHTML = `
     <div class="navbar"><button class="back" id="shsBack">←</button><div class="title">Shadowing 結果</div></div>
@@ -2659,14 +2709,14 @@ function renderVocabNotebook() {
   app.innerHTML = `
     <div class="navbar">
       <button class="back" id="vnBack">←</button>
-      <div class="title">📚 単語帳 (${vocab.length})</div>
+      <div class="title">📚 フレーズ集 (${vocab.length})</div>
     </div>
-    ${vocab.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Free Talkを始めると、AIが使った表現が自動的に記録されます</div></div>' :
-    `<div class="card">${vocab.map(v => `<div class="vocab-entry"><div class="vocab-en">${esc(v.en)}</div><div class="vocab-ja">${esc(v.ja)}</div>${v.context ? `<div class="vocab-ctx">"${esc(v.context)}"</div>` : ''}</div>`).join('')}</div>`}
-    ${vocab.length > 0 ? `<button class="btn btn-danger w-full mt-16 mb-16" id="vnClear">単語帳をクリア</button>` : ''}
+    ${vocab.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Free Talkを始めると、あなたが使ったフレーズが自動記録されます</div></div>' :
+    `<div class="card">${vocab.map(v => `<div class="vocab-entry"><div class="vocab-en">${esc(v.en)}</div><div class="vocab-ja">${esc(v.ja)}</div>${(v.note||v.context) ? `<div class="vocab-ctx">${esc(v.note||v.context)}</div>` : ''}</div>`).join('')}</div>`}
+    ${vocab.length > 0 ? `<button class="btn btn-danger w-full mt-16 mb-16" id="vnClear">フレーズ集をクリア</button>` : ''}
   `;
   $("vnBack").onclick = () => { S.screen = "home"; render(); };
-  if ($("vnClear")) $("vnClear").onclick = () => { if(confirm("単語帳をクリアしますか？")) { localStorage.removeItem("ett_vocab"); S.screen="home"; render(); } };
+  if ($("vnClear")) $("vnClear").onclick = () => { if(confirm("フレーズ集をクリアしますか？")) { localStorage.removeItem("ett_vocab"); S.screen="home"; render(); } };
 }
 
 // ═══════════════════════════════════

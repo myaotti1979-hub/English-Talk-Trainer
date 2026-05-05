@@ -85,9 +85,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .chat-input-bar .inner .input{flex:1;border-radius:24px;padding:14px 20px;background:var(--surface);font-size:16px}
 
 /* ── Mic Button ── */
-.mic-btn{width:58px;height:58px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:26px;transition:all .2s;touch-action:manipulation;flex-shrink:0}
-.mic-btn.idle{background:var(--surface);border:2px solid var(--border);color:var(--muted)}
-.mic-btn.recording{background:var(--red);color:#fff;animation:pulse 1.5s infinite}
+.mic-btn{width:64px;height:64px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:28px;transition:all .15s;touch-action:manipulation;flex-shrink:0;-webkit-user-select:none;user-select:none}
+.mic-btn.idle{background:var(--surface);border:2.5px solid var(--border);color:var(--muted)}
+.mic-btn.idle:active{background:var(--border);transform:scale(.92)}
+.mic-btn.recording{background:var(--red);color:#fff;animation:pulse 1.5s infinite;border:2.5px solid var(--red)}
 .mic-btn.processing{background:var(--surface);border:2px solid var(--accent);color:var(--accent);animation:spin 1s linear infinite}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.3)}50%{box-shadow:0 0 0 14px rgba(220,38,38,0)}}
 @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
@@ -223,7 +224,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06f";
+const VERSION = "v2026.05.06g";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -723,7 +724,7 @@ async function recordWav(maxMs = 15000) {
 async function azureSTT(wavBlob) {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
   if (!wavBlob || wavBlob.size <= 44) return ""; // empty audio
-  const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
+  const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/dictation/cognitiveservices/v1?language=en-US&format=detailed&profanity=raw`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -736,7 +737,8 @@ async function azureSTT(wavBlob) {
   const data = await res.json();
   if (data.RecognitionStatus === "InitialSilenceTimeout" || data.RecognitionStatus === "NoMatch") return "";
   if (data.RecognitionStatus !== "Success") throw new Error(`Recognition: ${data.RecognitionStatus}`);
-  return data.DisplayText || "";
+  // Detailed format: use NBest[0].Display for best accuracy, fall back to DisplayText
+  return data.NBest?.[0]?.Display || data.DisplayText || "";
 }
 
 // ── Azure Pronunciation Assessment ──
@@ -1609,6 +1611,7 @@ function renderFreeTalkChat() {
     </div>
     <div class="chat-area" id="chatArea">${msgs}<div id="typingIndicator" class="typing hidden"><span></span><span></span><span></span></div></div>
     <div class="chat-input-bar">
+      <div id="liveTranscript" style="display:${_srActive?'block':'none'};max-width:520px;margin:0 auto 6px;padding:8px 14px;background:rgba(220,38,38,.08);border-radius:12px;font-size:13px;color:var(--red);min-height:24px;word-break:break-word"><span style="animation:pulse 1.5s infinite;display:inline-block">🔴</span> <span id="liveText">${esc(_srBuf + (_srInterim || ''))}</span></div>
       <div class="inner">
         <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
         ${srSupported() ? `<button class="mic-btn ${_srActive?'recording':'idle'}" id="micBtn">${_srActive?'⏹':'🎤'}</button>` : ''}
@@ -1679,6 +1682,7 @@ var _srRestartTimer = null;
 var _srUseAzure = false;
 var _srRecorder = null;
 var _srRetryCount = 0;
+var _srInterim = '';  // current interim result for live display
 
 function srSupported() {
   if (S.srMode === 'azure') return !!S.azureKey;
@@ -1690,6 +1694,7 @@ function srIsActive() { return _srActive; }
 function srStart(onComplete) {
   if (_srActive) return false;
   _srBuf = '';
+  _srInterim = '';
   _srActive = true;
   _srCallback = onComplete;
   _srUseAzure = false;
@@ -1760,12 +1765,21 @@ function _srDoStart() {
   _sr = new SR();
   _sr.lang = 'en-US';
   _sr.continuous = true;
-  _sr.interimResults = false;
-  _sr.maxAlternatives = 1;
+  _sr.interimResults = true;  // Show partial results for feedback
+  _sr.maxAlternatives = 3;    // Consider more alternatives for better accuracy
   _sr.onresult = function(e) {
+    _srInterim = '';
     for (var i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) _srBuf += e.results[i][0].transcript + ' ';
+      if (e.results[i].isFinal) {
+        _srBuf += e.results[i][0].transcript + ' ';
+        _srInterim = '';
+      } else {
+        _srInterim = e.results[i][0].transcript;
+      }
     }
+    // Update live transcript display
+    var lt = document.getElementById('liveText');
+    if (lt) lt.textContent = _srBuf + _srInterim;
   };
   _sr.onerror = function(e) {
     if (e.error === 'no-speech' || e.error === 'aborted') return;

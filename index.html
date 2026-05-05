@@ -223,11 +223,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06a";
+const VERSION = "v2026.05.06f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODELS = [
+  { id: "gemini-2.5-flash", label: "2.5 Flash（速い・安い）" },
+  { id: "gemini-2.5-pro", label: "2.5 Pro（高精度・安定）" },
+];
+let GEMINI_MODEL = localStorage.getItem("gemini_model") || "gemini-2.5-flash";
 
 // ── Azure TTS Neural Voices ──
 const TTS_VOICES = [
@@ -456,6 +460,7 @@ const S = {
   shadowLevel: "B1",
   // Recording
   isRecording: false,
+  srMode: localStorage.getItem("ett_sr_mode") || "auto",  // auto | webspeech | azure
   // Cost tracking
   cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
   // Stats
@@ -792,8 +797,10 @@ function calcCostHTML() {
   const c = S.cost;
   const sttCost = (c.sttSeconds / 3600) * 1.32;
   const ttsCost = (c.ttsChars / 1000000) * 16;
-  const gemInCost = (c.geminiInTokens / 1000000) * 0.30;
-  const gemOutCost = (c.geminiOutTokens / 1000000) * 2.50;
+  const gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
+  const gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
+  const gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
+  const gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
   const searchCost = (c.searchCalls || 0) * 0.035;
   const total = sttCost + ttsCost + gemInCost + gemOutCost + searchCost;
   const totalJPY = Math.round(total * 150 * 10) / 10;
@@ -801,10 +808,10 @@ function calcCostHTML() {
   return `<div class="card">
     <div style="font-size:15px;font-weight:600;margin-bottom:12px">💰 API コスト概算</div>
     <div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;font-size:13px;line-height:2">
-      <span class="text-muted">音声認識</span><span class="text-muted">${c.sttSeconds > 0 ? c.sttSeconds + '秒 (Azure)' : 'Web Speech API'}</span><span>${c.sttSeconds > 0 ? '$' + sttCost.toFixed(4) : '無料'}</span>
-      <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars.toLocaleString()}文字 (Azure)</span><span>$${ttsCost.toFixed(4)}</span>
-      <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}トークン</span><span>$${gemInCost.toFixed(4)}</span>
-      <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}トークン</span><span>$${gemOutCost.toFixed(4)}</span>
+      <span class="text-muted">音声認識</span><span class="text-muted">${c.sttSeconds > 0 ? c.sttSeconds + '秒 (Azure STT)' : 'Web Speech API'}</span><span>${c.sttSeconds > 0 ? '$' + sttCost.toFixed(4) : '無料'}</span>
+      <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars > 0 ? c.ttsChars.toLocaleString() + '文字 (Azure)' : '未使用'}</span><span>${c.ttsChars > 0 ? '$' + ttsCost.toFixed(4) : '$0'}</span>
+      <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}tk (${GEMINI_MODEL.includes('pro')?'Pro':'Flash'})</span><span>$${gemInCost.toFixed(4)}</span>
+      <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}tk</span><span>$${gemOutCost.toFixed(4)}</span>
       ${c.searchCalls ? `<span class="text-muted">Web検索</span><span class="text-muted">${c.searchCalls}回 (Google)</span><span>$${searchCost.toFixed(4)}</span>` : ''}
     </div>
     <div class="divider"></div>
@@ -945,6 +952,14 @@ function renderApiKey() {
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:13px;color:var(--accent);text-decoration:none">🔗 Google AI Studio でキーを取得 →</a>
       </div>
 
+      <div class="mb-16">
+        <label class="text-sm" style="display:block;margin-bottom:6px;font-weight:600">Gemini モデル</label>
+        <div class="level-select">
+          ${GEMINI_MODELS.map(m => `<div class="level-chip ${GEMINI_MODEL===m.id?'active':''}" data-model="${m.id}">${m.label}</div>`).join("")}
+        </div>
+        <div class="text-xs text-muted mt-8">Flashが503エラーになる場合はProに切り替えてください</div>
+      </div>
+
       <div class="divider"></div>
 
       <div class="mb-16" style="margin-top:16px">
@@ -958,12 +973,43 @@ function renderApiKey() {
         <input class="input" id="azureRegionInput" placeholder="eastus" value="${esc(S.azureRegion)}" autocomplete="off">
       </div>
 
+      <div class="divider"></div>
+
+      <div class="mb-16" style="margin-top:16px">
+        <label class="text-sm" style="display:block;margin-bottom:6px;font-weight:600">🎤 音声認識方式</label>
+        <div class="level-select">
+          <div class="level-chip ${S.srMode==='auto'?'active':''}" data-srmode="auto">自動</div>
+          <div class="level-chip ${S.srMode==='webspeech'?'active':''}" data-srmode="webspeech">Web Speech</div>
+          <div class="level-chip ${S.srMode==='azure'?'active':''}" data-srmode="azure">Azure STT</div>
+        </div>
+        <div class="text-xs text-muted mt-8">マイクが使えない場合は「Azure STT」に切り替えてください（Azure Key必須）</div>
+      </div>
+
       <button class="btn btn-primary w-full" id="saveKeysBtn">${fromHome ? 'キーを保存' : '保存してスタート'}</button>
       ${!fromHome && hasGemini ? '<button class="btn btn-ghost w-full mt-8" id="skipBtn">スキップ</button>' : ''}
     </div>
     <p class="text-xs text-muted" style="text-align:center;margin-top:12px;padding-bottom:16px">APIキーはブラウザ内にのみ保存されます</p>
   `;
   if ($("apiBack")) $("apiBack").onclick = () => { S.screen = "home"; render(); };
+
+  // Model selector
+  document.querySelectorAll("[data-model]").forEach(el => {
+    el.onclick = () => {
+      GEMINI_MODEL = el.dataset.model;
+      localStorage.setItem("gemini_model", GEMINI_MODEL);
+      renderApiKey();
+    };
+  });
+
+  // SR mode selector
+  document.querySelectorAll("[data-srmode]").forEach(el => {
+    el.onclick = () => {
+      S.srMode = el.dataset.srmode;
+      localStorage.setItem("ett_sr_mode", S.srMode);
+      renderApiKey();
+    };
+  });
+
   $("saveKeysBtn").onclick = () => {
     const gk = $("geminiKeyInput").value.trim();
     const ak = $("azureKeyInput").value.trim();
@@ -990,7 +1036,7 @@ function renderHome() {
     <div class="home-header">
       <div class="pre">AI-Powered English Training</div>
       <h1>English Talk Trainer</h1>
-      <div class="sub">Gemini AI × Azure Speech — ${VERSION}</div>
+      <div class="sub">Gemini ${GEMINI_MODEL.includes('pro') ? 'Pro' : 'Flash'} × Azure Speech — ${VERSION}</div>
     </div>
 
     <div class="card">
@@ -1565,14 +1611,14 @@ function renderFreeTalkChat() {
     <div class="chat-input-bar">
       <div class="inner">
         <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
-        ${Speech.supported ? `<button class="mic-btn ${Speech.isActive?'recording':'idle'}" id="micBtn">${Speech.isActive?'⏹':'🎤'}</button>` : ''}
+        ${srSupported() ? `<button class="mic-btn ${_srActive?'recording':'idle'}" id="micBtn">${_srActive?'⏹':'🎤'}</button>` : ''}
         <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%">↑</button>
       </div>
     </div>
   `;
 
   $("ftChatBack").onclick = () => {
-    Speech.stop(); stopAudio();
+    srStop(); stopAudio();
     if (S.ftSessionActive && S.chatHistory.length > 2) {
       if (confirm("会話を終了しますか？フィードバックを取得できます。")) endFreeTalkSession();
       else return;
@@ -1619,128 +1665,172 @@ function hideTyping() {
   if (el) el.classList.add("hidden");
 }
 
-let _recorder = null;   // for Shadowing (recordWav)
+let _recorder = null;   // for Shadowing (recordWav) & Azure STT fallback
 
 // ═══════════════════════════════════
-// WEB SPEECH RECOGNITION MODULE
-// Handles all Web Speech API interactions
-// with proper lifecycle management
+// SPEECH RECOGNITION
+// Web Speech API → Azure STT fallback
 // ═══════════════════════════════════
-const Speech = {
-  _instance: null,
-  _buffer: '',
-  _active: false,       // user intent to record
-  _restartTimer: null,
-  _onComplete: null,     // callback(text) when user stops
+var _sr = null;
+var _srBuf = '';
+var _srActive = false;
+var _srCallback = null;
+var _srRestartTimer = null;
+var _srUseAzure = false;
+var _srRecorder = null;
+var _srRetryCount = 0;
 
-  get isActive() { return this._active; },
-  get supported() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition); },
+function srSupported() {
+  if (S.srMode === 'azure') return !!S.azureKey;
+  if (S.srMode === 'webspeech') return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition) || !!S.azureKey;
+}
+function srIsActive() { return _srActive; }
 
-  start(onComplete) {
-    if (this._active) return;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert("お使いのブラウザは音声認識に対応していません"); return false; }
+function srStart(onComplete) {
+  if (_srActive) return false;
+  _srBuf = '';
+  _srActive = true;
+  _srCallback = onComplete;
+  _srUseAzure = false;
+  _srRetryCount = 0;
 
-    this._buffer = '';
-    this._active = true;
-    this._onComplete = onComplete;
-    this._createAndStart();
-    return true;
-  },
-
-  stop() {
-    this._active = false;
-    clearTimeout(this._restartTimer);
-    const text = this._buffer.trim();
-    this._buffer = '';
-
-    if (this._instance) {
-      // Remove all handlers before aborting to prevent callbacks
-      this._instance.onresult = null;
-      this._instance.onerror = null;
-      this._instance.onend = null;
-      try { this._instance.abort(); } catch(e) {}
-      this._instance = null;
-    }
-
-    if (this._onComplete) {
-      const cb = this._onComplete;
-      this._onComplete = null;
-      cb(text);
-    }
-  },
-
-  _createAndStart() {
-    // Clean up any existing instance
-    if (this._instance) {
-      this._instance.onresult = null;
-      this._instance.onerror = null;
-      this._instance.onend = null;
-      try { this._instance.abort(); } catch(e) {}
-    }
-
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    this._instance = new SR();
-    this._instance.lang = 'en-US';
-    this._instance.interimResults = false;  // final results only — simpler and more reliable
-    this._instance.continuous = true;
-    this._instance.maxAlternatives = 1;
-
-    this._instance.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          this._buffer += e.results[i][0].transcript + ' ';
-        }
-      }
-    };
-
-    this._instance.onerror = (e) => {
-      // These are normal on mobile — ignore silently
-      if (e.error === 'no-speech' || e.error === 'aborted') return;
-      console.warn("Speech error:", e.error);
-      // 'not-allowed' means permission denied — stop completely
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        this._active = false;
-        alert("マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。");
-      }
-    };
-
-    this._instance.onend = () => {
-      // Only restart if user hasn't pressed stop
-      if (!this._active) return;
-      // Delay restart to avoid "already started" error on Android
-      clearTimeout(this._restartTimer);
-      this._restartTimer = setTimeout(() => {
-        if (this._active) {
-          try {
-            this._createAndStart();
-          } catch(e) {
-            // If restart completely fails, deliver what we have
-            console.warn("Speech restart failed:", e);
-            this.stop();
-          }
-        }
-      }, 300);
-    };
-
-    try {
-      this._instance.start();
-    } catch(e) {
-      console.warn("Speech start failed:", e);
-      this._active = false;
-      this._instance = null;
+  // Respect user's choice of SR mode
+  if (S.srMode === 'azure') {
+    // Force Azure STT
+    if (!S.azureKey) { alert("Azure Speech キーを設定してください"); _srActive = false; return false; }
+    _srStartAzure();
+  } else if (S.srMode === 'webspeech') {
+    // Force Web Speech API
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("このブラウザはWeb Speech APIに対応していません"); _srActive = false; return false; }
+    _srDoStart();
+  } else {
+    // Auto: try Web Speech first, fall back to Azure
+    var SR2 = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR2) {
+      _srDoStart();
+    } else if (S.azureKey) {
+      _srStartAzure();
+    } else {
+      alert("音声認識が利用できません。");
+      _srActive = false;
+      return false;
     }
   }
-};
+  return true;
+}
+
+function srStop() {
+  _srActive = false;
+  clearTimeout(_srRestartTimer);
+  if (_srUseAzure && _srRecorder) {
+    _srRecorder.stop().then(function(wavBlob) {
+      _srRecorder = null;
+      if (wavBlob && wavBlob.size > 44 && S.azureKey) {
+        azureSTT(wavBlob).then(function(text) {
+          _srBuf = text || '';
+          _deliverResult();
+        }).catch(function() { _deliverResult(); });
+      } else { _deliverResult(); }
+    }).catch(function() { _deliverResult(); });
+  } else {
+    if (_sr) { try { _sr.abort(); } catch(e) {} _sr = null; }
+    _deliverResult();
+  }
+}
+
+function _deliverResult() {
+  var text = _srBuf.trim();
+  _srBuf = '';
+  if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(text); }
+}
+
+function _srDoStart() {
+  if (!_srActive) return;
+  // Clean up previous instance completely
+  if (_sr) {
+    _sr.onresult = null;
+    _sr.onerror = null;
+    _sr.onend = null;
+    try { _sr.abort(); } catch(e) {}
+    _sr = null;
+  }
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  _sr = new SR();
+  _sr.lang = 'en-US';
+  _sr.continuous = true;
+  _sr.interimResults = false;
+  _sr.maxAlternatives = 1;
+  _sr.onresult = function(e) {
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) _srBuf += e.results[i][0].transcript + ' ';
+    }
+  };
+  _sr.onerror = function(e) {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      _sr = null;
+      _srRetryCount++;
+      if (_srRetryCount <= 2) {
+        // Retry after delay — might be temporary
+        console.log("Speech not-allowed, retry " + _srRetryCount);
+        _srRestartTimer = setTimeout(function() { if (_srActive) _srDoStart(); }, 500);
+        return;
+      }
+      // Retries exhausted — try Azure fallback
+      if (S.azureKey && _srActive) {
+        console.log("Speech API failed, falling back to Azure STT");
+        _srStartAzure();
+        return;
+      }
+      _srActive = false;
+      alert("マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。");
+      if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(''); }
+      return;
+    }
+    console.warn("Speech error:", e.error);
+  };
+  _sr.onend = function() {
+    if (_srActive && !_srUseAzure) {
+      _srRestartTimer = setTimeout(function() { if (_srActive) _srDoStart(); }, 200);
+    }
+  };
+  try {
+    _sr.start();
+    _srRetryCount = 0; // Reset retry count on successful start
+  } catch(e) {
+    console.warn("SR start exception:", e.message);
+    _srRetryCount++;
+    if (_srRetryCount <= 2) {
+      _srRestartTimer = setTimeout(function() { if (_srActive) _srDoStart(); }, 500);
+    } else if (S.azureKey && _srActive) {
+      _srStartAzure();
+    } else {
+      _srActive = false;
+      if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(''); }
+    }
+  }
+}
+
+async function _srStartAzure() {
+  _srUseAzure = true;
+  try {
+    _srRecorder = await recordWav(60000);
+  } catch(e) {
+    _srActive = false; _srUseAzure = false;
+    alert("マイクアクセスエラー: " + e.message);
+    if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(''); }
+  }
+}
 
 // ── Free Talk Recording ──
 function toggleRecording() {
-  if (Speech.isActive) {
+  if (srIsActive()) {
     S.isRecording = false;
-    Speech.stop();
-    // Callback in Speech.stop → onComplete will call handleUserMessage or renderFreeTalkChat
+    srStop();
   } else {
-    const started = Speech.start((text) => {
+    var started = srStart(function(text) {
       S.isRecording = false;
       if (text) handleUserMessage(text);
       else renderFreeTalkChat();
@@ -1885,7 +1975,7 @@ ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
 async function endFreeTalkSession() {
   S.ftSessionActive = false;
   S.isRecording = false;
-  Speech.stop(); stopAudio();
+  srStop(); stopAudio();
   const elapsed = Math.max(1, Math.round((Date.now() - (S.ftStartTime || Date.now())) / 60000));
   const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
 
@@ -2161,7 +2251,7 @@ function renderFlashQuestion() {
       <div class="flash-hint">💡 ${esc(q.hint || '')}</div>
 
       <div id="flashInputArea">
-        ${Speech.supported ? `
+        ${srSupported() ? `
         <button class="mic-btn idle" id="flashMic" style="margin:0 auto 16px;display:flex">🎤</button>
         <div class="text-xs text-muted mb-16">タップして英語で答える</div>
         ` : ''}
@@ -2194,13 +2284,11 @@ function renderFlashQuestion() {
   $("flashTextInput").onkeydown = e => { if (e.key === "Enter") { const t = e.target.value.trim(); if (t) submitAnswer(t); } };
 
   if ($("flashMic")) {
-    $("flashMic").onclick = () => {
-      if (Speech.isActive) {
-        // Stop
-        Speech.stop();
-        // onComplete callback handles the result
+    $("flashMic").onclick = function() {
+      if (_srActive) {
+        srStop();  // callback handles result
       } else {
-        const started = Speech.start((text) => {
+        var started = srStart(function(text) {
           if ($("flashMic")) { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
           if (text) submitAnswer(text);
         });

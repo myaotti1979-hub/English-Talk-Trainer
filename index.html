@@ -224,7 +224,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06h";
+const VERSION = "v2026.05.06i";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -461,7 +461,7 @@ const S = {
   shadowLevel: "B1",
   // Recording
   isRecording: false,
-  srMode: localStorage.getItem("ett_sr_mode") || "auto",  // auto | webspeech | azure
+  srMode: localStorage.getItem("ett_sr_mode") || "azure",  // azure default for reliability
   // Cost tracking
   cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
   // Stats

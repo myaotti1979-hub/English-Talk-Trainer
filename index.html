@@ -223,7 +223,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05s";
+const VERSION = "v2026.05.05t";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1623,59 +1623,68 @@ async function toggleRecording() {
   if (S.isRecording) {
     // Stop
     S.isRecording = false;
-    if (_recognition) { _recognition.onend = null; _recognition.stop(); }
-    const text = S._speechBuffer.trim();
-    _recognition = null;
+    if (_recognition) {
+      _recognition.onend = null;
+      _recognition.onerror = null;
+      _recognition.onresult = null;
+      try { _recognition.abort(); } catch(e){}
+      _recognition = null;
+    }
+    const text = (S._speechBuffer || '').trim();
     S._speechBuffer = '';
     if (text) handleUserMessage(text);
     else renderFreeTalkChat();
   } else {
-    // Start Web Speech API
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert("お使いのブラウザは音声認識に対応していません"); return; }
     S._speechBuffer = '';
     S.isRecording = true;
 
-    function startRecognition() {
-      _recognition = new SR();
-      _recognition.lang = 'en-US';
-      _recognition.interimResults = false;
-      _recognition.continuous = true;
+    // Create ONE instance and reuse it
+    _recognition = new SR();
+    _recognition.lang = 'en-US';
+    _recognition.interimResults = true;  // Keep connection alive with partial results
+    _recognition.continuous = true;
+    _recognition.maxAlternatives = 1;
 
-      _recognition.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) {
-            S._speechBuffer += e.results[i][0].transcript + ' ';
-          }
+    _recognition.onresult = (e) => {
+      // Rebuild full text from all final results
+      let final = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript + ' ';
         }
-      };
-      _recognition.onerror = (e) => {
-        if (e.error === 'no-speech' || e.error === 'aborted') return;
-        S.isRecording = false;
-        _recognition = null;
-        alert("音声認識エラー: " + e.error);
-        renderFreeTalkChat();
-      };
-      _recognition.onend = () => {
-        // Auto-restart if user hasn't pressed stop
-        if (S.isRecording) {
-          try { startRecognition(); } catch(e) {
-            S.isRecording = false;
-            const text = S._speechBuffer.trim();
-            S._speechBuffer = '';
-            if (text) handleUserMessage(text);
-            else renderFreeTalkChat();
-          }
-        }
-      };
-      try { _recognition.start(); } catch(e) {
-        S.isRecording = false;
-        alert("マイクエラー: " + e.message);
       }
-    }
+      S._speechBuffer = final;
+    };
+    _recognition.onerror = (e) => {
+      // Ignore no-speech and aborted — just keep going
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      console.warn("Speech error:", e.error);
+    };
+    _recognition.onend = () => {
+      // Auto-restart using the SAME instance (no new permission prompt)
+      if (S.isRecording && _recognition) {
+        try { _recognition.start(); } catch(e) {
+          // If restart fails, stop gracefully
+          S.isRecording = false;
+          const text = (S._speechBuffer || '').trim();
+          S._speechBuffer = '';
+          _recognition = null;
+          if (text) handleUserMessage(text);
+          else renderFreeTalkChat();
+        }
+      }
+    };
 
-    startRecognition();
-    renderFreeTalkChat();
+    try {
+      _recognition.start();
+      renderFreeTalkChat();
+    } catch(e) {
+      S.isRecording = false;
+      _recognition = null;
+      alert("マイクアクセスエラー: " + e.message);
+    }
   }
 }
 
@@ -2123,9 +2132,14 @@ function renderFlashQuestion() {
       if (S._flashRecording) {
         // Stop
         S._flashRecording = false;
-        if (_recognition) { _recognition.onend = null; _recognition.stop(); }
+        if (_recognition) {
+          _recognition.onend = null;
+          _recognition.onerror = null;
+          _recognition.onresult = null;
+          try { _recognition.abort(); } catch(e){}
+          _recognition = null;
+        }
         const text = (S._flashSpeechBuf || '').trim();
-        _recognition = null;
         S._flashSpeechBuf = '';
         $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
         if (text) submitAnswer(text);
@@ -2136,40 +2150,40 @@ function renderFlashQuestion() {
       S._flashRecording = true;
       S._flashSpeechBuf = '';
 
-      function startFlashRec() {
-        _recognition = new SR();
-        _recognition.lang = 'en-US';
-        _recognition.interimResults = false;
-        _recognition.continuous = true;
-        _recognition.onresult = (e) => {
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            if (e.results[i].isFinal) S._flashSpeechBuf += e.results[i][0].transcript + ' ';
-          }
-        };
-        _recognition.onerror = (e) => {
-          if (e.error === 'no-speech' || e.error === 'aborted') return;
-          S._flashRecording = false;
-          _recognition = null;
-          $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-          alert("認識エラー: " + e.error);
-        };
-        _recognition.onend = () => {
-          if (S._flashRecording) {
-            try { startFlashRec(); } catch(e) {
-              S._flashRecording = false;
-              const text = (S._flashSpeechBuf || '').trim();
-              S._flashSpeechBuf = '';
-              $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-              if (text) submitAnswer(text);
-            }
-          }
-        };
-        try { _recognition.start(); } catch(e) { S._flashRecording = false; }
-      }
+      _recognition = new SR();
+      _recognition.lang = 'en-US';
+      _recognition.interimResults = true;
+      _recognition.continuous = true;
+      _recognition.maxAlternatives = 1;
 
-      startFlashRec();
-      $("flashMic").className = "mic-btn recording";
-      $("flashMic").textContent = "⏹";
+      _recognition.onresult = (e) => {
+        let final = '';
+        for (let i = 0; i < e.results.length; i++) {
+          if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
+        }
+        S._flashSpeechBuf = final;
+      };
+      _recognition.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
+        console.warn("Flash speech error:", e.error);
+      };
+      _recognition.onend = () => {
+        if (S._flashRecording && _recognition) {
+          try { _recognition.start(); } catch(e) {
+            S._flashRecording = false;
+            const text = (S._flashSpeechBuf || '').trim();
+            S._flashSpeechBuf = '';
+            _recognition = null;
+            $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+            if (text) submitAnswer(text);
+          }
+        }
+      };
+      try {
+        _recognition.start();
+        $("flashMic").className = "mic-btn recording";
+        $("flashMic").textContent = "⏹";
+      } catch(e) { S._flashRecording = false; alert("マイクエラー: " + e.message); }
     };
   }
 

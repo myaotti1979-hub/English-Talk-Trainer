@@ -223,7 +223,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05r";
+const VERSION = "v2026.05.05s";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -597,7 +597,7 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
   }
   // Google Search Grounding for real-time information
   if (useSearch) {
-    body.tools = [{ google_search_retrieval: { dynamic_retrieval_config: { mode: "MODE_DYNAMIC", dynamic_threshold: 0.3 } } }];
+    body.tools = [{ google_search: {} }];
   }
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Gemini API ${res.status}`);
@@ -1623,48 +1623,59 @@ async function toggleRecording() {
   if (S.isRecording) {
     // Stop
     S.isRecording = false;
-    if (_recognition) { _recognition.stop(); }
-    renderFreeTalkChat();
+    if (_recognition) { _recognition.onend = null; _recognition.stop(); }
+    const text = S._speechBuffer.trim();
+    _recognition = null;
+    S._speechBuffer = '';
+    if (text) handleUserMessage(text);
+    else renderFreeTalkChat();
   } else {
     // Start Web Speech API
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert("お使いのブラウザは音声認識に対応していません"); return; }
-    _recognition = new SR();
-    _recognition.lang = 'en-US';
-    _recognition.interimResults = false;
-    _recognition.continuous = true; // ポーズで止まらず聞き続ける
-    let fullText = '';
+    S._speechBuffer = '';
+    S.isRecording = true;
 
-    _recognition.onresult = (e) => {
-      // continuous=trueでは複数のresultが来る
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          fullText += e.results[i][0].transcript + ' ';
+    function startRecognition() {
+      _recognition = new SR();
+      _recognition.lang = 'en-US';
+      _recognition.interimResults = false;
+      _recognition.continuous = true;
+
+      _recognition.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) {
+            S._speechBuffer += e.results[i][0].transcript + ' ';
+          }
         }
+      };
+      _recognition.onerror = (e) => {
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
+        S.isRecording = false;
+        _recognition = null;
+        alert("音声認識エラー: " + e.error);
+        renderFreeTalkChat();
+      };
+      _recognition.onend = () => {
+        // Auto-restart if user hasn't pressed stop
+        if (S.isRecording) {
+          try { startRecognition(); } catch(e) {
+            S.isRecording = false;
+            const text = S._speechBuffer.trim();
+            S._speechBuffer = '';
+            if (text) handleUserMessage(text);
+            else renderFreeTalkChat();
+          }
+        }
+      };
+      try { _recognition.start(); } catch(e) {
+        S.isRecording = false;
+        alert("マイクエラー: " + e.message);
       }
-    };
-    _recognition.onerror = (e) => {
-      S.isRecording = false;
-      _recognition = null;
-      if (e.error !== 'no-speech' && e.error !== 'aborted') alert("音声認識エラー: " + e.error);
-      renderFreeTalkChat();
-    };
-    _recognition.onend = () => {
-      // continuous=trueでもブラウザが止めることがある（タイムアウト等）
-      S.isRecording = false;
-      _recognition = null;
-      const text = fullText.trim();
-      if (text) handleUserMessage(text);
-      else renderFreeTalkChat();
-    };
-
-    try {
-      _recognition.start();
-      S.isRecording = true;
-      renderFreeTalkChat();
-    } catch(e) {
-      alert("マイクアクセスエラー: " + e.message);
     }
+
+    startRecognition();
+    renderFreeTalkChat();
   }
 }
 
@@ -2109,39 +2120,56 @@ function renderFlashQuestion() {
 
   if ($("flashMic")) {
     $("flashMic").onclick = async () => {
-      if (_recognition) {
+      if (S._flashRecording) {
         // Stop
-        _recognition.stop();
+        S._flashRecording = false;
+        if (_recognition) { _recognition.onend = null; _recognition.stop(); }
+        const text = (S._flashSpeechBuf || '').trim();
+        _recognition = null;
+        S._flashSpeechBuf = '';
+        $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+        if (text) submitAnswer(text);
         return;
       }
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { alert("音声認識非対応"); return; }
-      _recognition = new SR();
-      _recognition.lang = 'en-US';
-      _recognition.interimResults = false;
-      _recognition.continuous = true;
-      let fullText = '';
-      _recognition.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) fullText += e.results[i][0].transcript + ' ';
-        }
-      };
-      _recognition.onerror = (e) => {
-        _recognition = null;
-        $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-        if (e.error !== 'no-speech' && e.error !== 'aborted') alert("認識エラー: " + e.error);
-      };
-      _recognition.onend = () => {
-        _recognition = null;
-        if ($("flashMic")) { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
-        const text = fullText.trim();
-        if (text) submitAnswer(text);
-      };
-      try {
-        _recognition.start();
-        $("flashMic").className = "mic-btn recording";
-        $("flashMic").textContent = "⏹";
-      } catch(e) { alert("マイクエラー: " + e.message); }
+      S._flashRecording = true;
+      S._flashSpeechBuf = '';
+
+      function startFlashRec() {
+        _recognition = new SR();
+        _recognition.lang = 'en-US';
+        _recognition.interimResults = false;
+        _recognition.continuous = true;
+        _recognition.onresult = (e) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) S._flashSpeechBuf += e.results[i][0].transcript + ' ';
+          }
+        };
+        _recognition.onerror = (e) => {
+          if (e.error === 'no-speech' || e.error === 'aborted') return;
+          S._flashRecording = false;
+          _recognition = null;
+          $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+          alert("認識エラー: " + e.error);
+        };
+        _recognition.onend = () => {
+          if (S._flashRecording) {
+            try { startFlashRec(); } catch(e) {
+              S._flashRecording = false;
+              const text = (S._flashSpeechBuf || '').trim();
+              S._flashSpeechBuf = '';
+              $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
+              if (text) submitAnswer(text);
+            }
+          }
+        };
+        try { _recognition.start(); } catch(e) { S._flashRecording = false; }
+      }
+
+      startFlashRec();
+      $("flashMic").className = "mic-btn recording";
+      $("flashMic").textContent = "⏹";
     };
   }
 

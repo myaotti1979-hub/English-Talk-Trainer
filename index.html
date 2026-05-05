@@ -223,7 +223,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.05t";
+const VERSION = "v2026.05.06a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -455,7 +455,7 @@ const S = {
   shadowSentences: [], shadowCurrent: 0, shadowResults: [],
   shadowLevel: "B1",
   // Recording
-  isRecording: false, isProcessing: false,
+  isRecording: false,
   // Cost tracking
   cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
   // Stats
@@ -600,7 +600,22 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
     body.tools = [{ google_search: {} }];
   }
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`Gemini API ${res.status}`);
+  if (!res.ok) {
+    // Retry once for 503 (overloaded) and 429 (rate limit)
+    if (res.status === 503 || res.status === 429) {
+      await new Promise(r => setTimeout(r, 2000));
+      const res2 = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res2.ok) throw new Error(`Gemini API ${res2.status}（リトライ失敗）`);
+      const data2 = await res2.json();
+      const output2 = data2.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const inChars2 = messages.reduce((a, m) => a + m.content.length, 0) + (systemPrompt?.length || 0);
+      S.cost.geminiInTokens += Math.ceil(inChars2 / 4);
+      S.cost.geminiOutTokens += Math.ceil(output2.length / 4);
+      if (useSearch) S.cost.searchCalls = (S.cost.searchCalls || 0) + 1;
+      return output2;
+    }
+    throw new Error(`Gemini API ${res.status}`);
+  }
   const data = await res.json();
   const output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   // Track token usage
@@ -621,7 +636,7 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
   S.cost.ttsChars += text.length;
 
   const voiceInfo = TTS_VOICES.find(v => v.id === voiceId) || TTS_VOICES[0];
-  const rate = TTS_RATE[S.ftLevel] || "medium";
+  const rate = TTS_RATE[S.screen === 'shadow' ? S.shadowLevel : S.ftLevel] || "medium";
 
   // Escape XML special characters
   const xmlText = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -654,39 +669,26 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
   });
 }
 
-// ── WAV Recording ──
-async function recordWav(maxMs = 60000) {
+// ── WAV Recording (Shadowing only) ──
+async function recordWav(maxMs = 15000) {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
   const ctx = new AudioContext({ sampleRate: 16000 });
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 256;
   const chunks = [];
-  let stopped = false, silentFrames = 0;
+  let stopped = false;
   const recStartTime = Date.now();
   proc.onaudioprocess = e => {
-    if (stopped) return;
-    const data = new Float32Array(e.inputBuffer.getChannelData(0));
-    chunks.push(data);
-    const rms = Math.sqrt(data.reduce((a,v)=>a+v*v,0)/data.length);
-    if (rms < 0.01) silentFrames++; else silentFrames = 0;
-    if (silentFrames >= 60 && chunks.length > 10) recorder.stop();
+    if (!stopped) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
   };
-  src.connect(analyser); src.connect(proc); proc.connect(ctx.destination);
-  // Waveform animation
-  let _af = 0;
-  const fd = new Uint8Array(analyser.frequencyBinCount);
-  (function anim(){if(stopped)return;analyser.getByteFrequencyData(fd);document.querySelectorAll(".waveform .bar").forEach((b,i)=>{b.style.height=Math.max(4,fd[i*Math.floor(fd.length/8)]||0)/6+"px";});_af=requestAnimationFrame(anim);})();
+  src.connect(proc); proc.connect(ctx.destination);
   const recorder = {
     stop: async () => {
-      if (stopped) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"}); // already stopped
+      if (stopped) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"});
       stopped = true;
       S.cost.sttSeconds += Math.round((Date.now() - recStartTime) / 1000);
-      cancelAnimationFrame(_af);
       clearTimeout(_timeout);
       try { proc.disconnect(); } catch(e){}
-      try { analyser.disconnect(); } catch(e){}
       try { src.disconnect(); } catch(e){}
       stream.getTracks().forEach(t => t.stop());
       if (ctx.state !== "closed") { try { await ctx.close(); } catch(e){} }
@@ -1563,18 +1565,19 @@ function renderFreeTalkChat() {
     <div class="chat-input-bar">
       <div class="inner">
         <input class="input" id="chatInput" placeholder="Type in English..." autocomplete="off">
-        ${(window.SpeechRecognition||window.webkitSpeechRecognition) ? `<button class="mic-btn ${S.isRecording?'recording':'idle'}" id="micBtn">${S.isRecording?'⏹':'🎤'}</button>` : ''}
+        ${Speech.supported ? `<button class="mic-btn ${Speech.isActive?'recording':'idle'}" id="micBtn">${Speech.isActive?'⏹':'🎤'}</button>` : ''}
         <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%">↑</button>
       </div>
     </div>
   `;
 
   $("ftChatBack").onclick = () => {
+    Speech.stop(); stopAudio();
     if (S.ftSessionActive && S.chatHistory.length > 2) {
       if (confirm("会話を終了しますか？フィードバックを取得できます。")) endFreeTalkSession();
       else return;
     }
-    S.screen = "home"; stopAudio(); render();
+    S.screen = "home"; render();
   };
   $("ftEndBtn").onclick = () => endFreeTalkSession();
 
@@ -1617,73 +1620,134 @@ function hideTyping() {
 }
 
 let _recorder = null;   // for Shadowing (recordWav)
-let _recognition = null; // for Free Talk / Flash (Web Speech API)
 
-async function toggleRecording() {
-  if (S.isRecording) {
-    // Stop
-    S.isRecording = false;
-    if (_recognition) {
-      _recognition.onend = null;
-      _recognition.onerror = null;
-      _recognition.onresult = null;
-      try { _recognition.abort(); } catch(e){}
-      _recognition = null;
-    }
-    const text = (S._speechBuffer || '').trim();
-    S._speechBuffer = '';
-    if (text) handleUserMessage(text);
-    else renderFreeTalkChat();
-  } else {
+// ═══════════════════════════════════
+// WEB SPEECH RECOGNITION MODULE
+// Handles all Web Speech API interactions
+// with proper lifecycle management
+// ═══════════════════════════════════
+const Speech = {
+  _instance: null,
+  _buffer: '',
+  _active: false,       // user intent to record
+  _restartTimer: null,
+  _onComplete: null,     // callback(text) when user stops
+
+  get isActive() { return this._active; },
+  get supported() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition); },
+
+  start(onComplete) {
+    if (this._active) return;
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert("お使いのブラウザは音声認識に対応していません"); return; }
-    S._speechBuffer = '';
-    S.isRecording = true;
+    if (!SR) { alert("お使いのブラウザは音声認識に対応していません"); return false; }
 
-    // Create ONE instance and reuse it
-    _recognition = new SR();
-    _recognition.lang = 'en-US';
-    _recognition.interimResults = true;  // Keep connection alive with partial results
-    _recognition.continuous = true;
-    _recognition.maxAlternatives = 1;
+    this._buffer = '';
+    this._active = true;
+    this._onComplete = onComplete;
+    this._createAndStart();
+    return true;
+  },
 
-    _recognition.onresult = (e) => {
-      // Rebuild full text from all final results
-      let final = '';
-      for (let i = 0; i < e.results.length; i++) {
+  stop() {
+    this._active = false;
+    clearTimeout(this._restartTimer);
+    const text = this._buffer.trim();
+    this._buffer = '';
+
+    if (this._instance) {
+      // Remove all handlers before aborting to prevent callbacks
+      this._instance.onresult = null;
+      this._instance.onerror = null;
+      this._instance.onend = null;
+      try { this._instance.abort(); } catch(e) {}
+      this._instance = null;
+    }
+
+    if (this._onComplete) {
+      const cb = this._onComplete;
+      this._onComplete = null;
+      cb(text);
+    }
+  },
+
+  _createAndStart() {
+    // Clean up any existing instance
+    if (this._instance) {
+      this._instance.onresult = null;
+      this._instance.onerror = null;
+      this._instance.onend = null;
+      try { this._instance.abort(); } catch(e) {}
+    }
+
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    this._instance = new SR();
+    this._instance.lang = 'en-US';
+    this._instance.interimResults = false;  // final results only — simpler and more reliable
+    this._instance.continuous = true;
+    this._instance.maxAlternatives = 1;
+
+    this._instance.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
         if (e.results[i].isFinal) {
-          final += e.results[i][0].transcript + ' ';
+          this._buffer += e.results[i][0].transcript + ' ';
         }
       }
-      S._speechBuffer = final;
     };
-    _recognition.onerror = (e) => {
-      // Ignore no-speech and aborted — just keep going
+
+    this._instance.onerror = (e) => {
+      // These are normal on mobile — ignore silently
       if (e.error === 'no-speech' || e.error === 'aborted') return;
       console.warn("Speech error:", e.error);
-    };
-    _recognition.onend = () => {
-      // Auto-restart using the SAME instance (no new permission prompt)
-      if (S.isRecording && _recognition) {
-        try { _recognition.start(); } catch(e) {
-          // If restart fails, stop gracefully
-          S.isRecording = false;
-          const text = (S._speechBuffer || '').trim();
-          S._speechBuffer = '';
-          _recognition = null;
-          if (text) handleUserMessage(text);
-          else renderFreeTalkChat();
-        }
+      // 'not-allowed' means permission denied — stop completely
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        this._active = false;
+        alert("マイクへのアクセスが拒否されました。ブラウザの設定を確認してください。");
       }
+    };
+
+    this._instance.onend = () => {
+      // Only restart if user hasn't pressed stop
+      if (!this._active) return;
+      // Delay restart to avoid "already started" error on Android
+      clearTimeout(this._restartTimer);
+      this._restartTimer = setTimeout(() => {
+        if (this._active) {
+          try {
+            this._createAndStart();
+          } catch(e) {
+            // If restart completely fails, deliver what we have
+            console.warn("Speech restart failed:", e);
+            this.stop();
+          }
+        }
+      }, 300);
     };
 
     try {
-      _recognition.start();
-      renderFreeTalkChat();
+      this._instance.start();
     } catch(e) {
+      console.warn("Speech start failed:", e);
+      this._active = false;
+      this._instance = null;
+    }
+  }
+};
+
+// ── Free Talk Recording ──
+function toggleRecording() {
+  if (Speech.isActive) {
+    S.isRecording = false;
+    Speech.stop();
+    // Callback in Speech.stop → onComplete will call handleUserMessage or renderFreeTalkChat
+  } else {
+    const started = Speech.start((text) => {
       S.isRecording = false;
-      _recognition = null;
-      alert("マイクアクセスエラー: " + e.message);
+      if (text) handleUserMessage(text);
+      else renderFreeTalkChat();
+    });
+    if (started) {
+      S.isRecording = true;
+      renderFreeTalkChat();
     }
   }
 }
@@ -1820,6 +1884,8 @@ ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
 
 async function endFreeTalkSession() {
   S.ftSessionActive = false;
+  S.isRecording = false;
+  Speech.stop(); stopAudio();
   const elapsed = Math.max(1, Math.round((Date.now() - (S.ftStartTime || Date.now())) / 60000));
   const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
 
@@ -2095,7 +2161,7 @@ function renderFlashQuestion() {
       <div class="flash-hint">💡 ${esc(q.hint || '')}</div>
 
       <div id="flashInputArea">
-        ${(window.SpeechRecognition||window.webkitSpeechRecognition) ? `
+        ${Speech.supported ? `
         <button class="mic-btn idle" id="flashMic" style="margin:0 auto 16px;display:flex">🎤</button>
         <div class="text-xs text-muted mb-16">タップして英語で答える</div>
         ` : ''}
@@ -2128,62 +2194,21 @@ function renderFlashQuestion() {
   $("flashTextInput").onkeydown = e => { if (e.key === "Enter") { const t = e.target.value.trim(); if (t) submitAnswer(t); } };
 
   if ($("flashMic")) {
-    $("flashMic").onclick = async () => {
-      if (S._flashRecording) {
+    $("flashMic").onclick = () => {
+      if (Speech.isActive) {
         // Stop
-        S._flashRecording = false;
-        if (_recognition) {
-          _recognition.onend = null;
-          _recognition.onerror = null;
-          _recognition.onresult = null;
-          try { _recognition.abort(); } catch(e){}
-          _recognition = null;
+        Speech.stop();
+        // onComplete callback handles the result
+      } else {
+        const started = Speech.start((text) => {
+          if ($("flashMic")) { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
+          if (text) submitAnswer(text);
+        });
+        if (started) {
+          $("flashMic").className = "mic-btn recording";
+          $("flashMic").textContent = "⏹";
         }
-        const text = (S._flashSpeechBuf || '').trim();
-        S._flashSpeechBuf = '';
-        $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-        if (text) submitAnswer(text);
-        return;
       }
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { alert("音声認識非対応"); return; }
-      S._flashRecording = true;
-      S._flashSpeechBuf = '';
-
-      _recognition = new SR();
-      _recognition.lang = 'en-US';
-      _recognition.interimResults = true;
-      _recognition.continuous = true;
-      _recognition.maxAlternatives = 1;
-
-      _recognition.onresult = (e) => {
-        let final = '';
-        for (let i = 0; i < e.results.length; i++) {
-          if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
-        }
-        S._flashSpeechBuf = final;
-      };
-      _recognition.onerror = (e) => {
-        if (e.error === 'no-speech' || e.error === 'aborted') return;
-        console.warn("Flash speech error:", e.error);
-      };
-      _recognition.onend = () => {
-        if (S._flashRecording && _recognition) {
-          try { _recognition.start(); } catch(e) {
-            S._flashRecording = false;
-            const text = (S._flashSpeechBuf || '').trim();
-            S._flashSpeechBuf = '';
-            _recognition = null;
-            $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤";
-            if (text) submitAnswer(text);
-          }
-        }
-      };
-      try {
-        _recognition.start();
-        $("flashMic").className = "mic-btn recording";
-        $("flashMic").textContent = "⏹";
-      } catch(e) { S._flashRecording = false; alert("マイクエラー: " + e.message); }
     };
   }
 

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#f0f4f8">
 <title>English Talk Trainer</title>
@@ -12,6 +12,9 @@
 <link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon-167.png">
 <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon-152.png">
 <link rel="apple-touch-icon" sizes="120x120" href="apple-touch-icon-120.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -22,7 +25,6 @@
   --font:'Outfit',system-ui,-apple-system,sans-serif;
   --mono:'JetBrains Mono','SF Mono',monospace;
 }
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;-webkit-tap-highlight-color:transparent;font-size:16px}
 #app{max-width:520px;margin:0 auto;padding:16px;min-height:100vh;position:relative}
 
@@ -227,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06l";
+const VERSION = "v2026.05.06p";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -454,7 +456,9 @@ const S = {
   ftTopic: "", ftLevel: "B1", ftCategory: "",
   ftVoice: "en-US-JennyNeural",
   ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false,
-  ftWhoseTurn: 'ai',  // 'ai' | 'you' — whose turn to speak
+  ftWhoseTurn: 'ai',
+  ftSessionId: 0,  // incremented each session to invalidate stale callbacks
+  ftEnding: false,  // prevent double execution of end session  // 'ai' | 'you' — whose turn to speak
   ftChallengeExprs: [], ftChallengeUsed: [],
   ftPronScores: [], // pronunciation scores per turn
   // Flash Translation
@@ -467,7 +471,7 @@ const S = {
   isRecording: false,
   srMode: localStorage.getItem("ett_sr_mode") || "azure",  // azure default for reliability
   // Cost tracking
-  cost: { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
+  cost: { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
   // Stats
   totalSessions: parseInt(localStorage.getItem("ett_total_sessions") || "0"),
   totalMinutes: parseInt(localStorage.getItem("ett_total_minutes") || "0"),
@@ -475,22 +479,39 @@ const S = {
 
 if (S.geminiKey) S.screen = "home";
 
+// ── Safe localStorage ──
+function safeLSSet(key, value) {
+  try { localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value)); }
+  catch(e) {
+    console.warn("Storage full for " + key);
+    // Show notification only once per session
+    if (!S._storageWarned) {
+      S._storageWarned = true;
+      setTimeout(function() { alert("ブラウザの保存容量が上限に達しました。設定画面から「データクリア」を行ってください。"); }, 100);
+    }
+  }
+}
+
 // ── Streak System ──
+function localDateKey(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
 function getStreak() {
   try { return JSON.parse(localStorage.getItem("ett_streak") || "{}"); } catch { return {}; }
 }
 function updateStreak() {
   const s = getStreak();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateKey();
   s[today] = (s[today] || 0) + 1;
-  localStorage.setItem("ett_streak", JSON.stringify(s));
+  safeLSSet("ett_streak", s);
 }
 function getStreakDays() {
   const s = getStreak();
   let count = 0;
   const d = new Date();
   while (true) {
-    const key = d.toISOString().slice(0, 10);
+    const key = localDateKey(d);
     if (!s[key]) break;
     count++;
     d.setDate(d.getDate() - 1);
@@ -531,7 +552,7 @@ function addMistake(entry) {
   m.push({ ...entry, date: new Date().toISOString(), reviewed: 0 });
   // Keep max 200
   while (m.length > 200) m.shift();
-  localStorage.setItem("ett_mistakes", JSON.stringify(m));
+  safeLSSet("ett_mistakes", m);
 }
 function getReviewQueue() {
   const m = getMistakes();
@@ -547,7 +568,7 @@ function getReviewQueue() {
 function markReviewed(idx) {
   const m = getMistakes();
   if (m[idx]) { m[idx].reviewed++; m[idx].date = new Date().toISOString(); }
-  localStorage.setItem("ett_mistakes", JSON.stringify(m));
+  safeLSSet("ett_mistakes", m);
 }
 
 // ── Vocabulary Notebook ──
@@ -560,7 +581,7 @@ function addVocabEntries(entries) {
     if (!v.some(x => x.en === e.en)) v.push({ ...e, date: new Date().toISOString() });
   });
   while (v.length > 500) v.shift();
-  localStorage.setItem("ett_vocab", JSON.stringify(v));
+  safeLSSet("ett_vocab", v);
 }
 
 // ── Conversation Log ──
@@ -568,7 +589,7 @@ function saveConversationLog(sessionData) {
   const logs = getConversationLogs();
   logs.push({ ...sessionData, date: new Date().toISOString() });
   while (logs.length > 50) logs.shift();
-  localStorage.setItem("ett_convlogs", JSON.stringify(logs));
+  safeLSSet("ett_convlogs", logs);
 }
 function getConversationLogs() {
   try { return JSON.parse(localStorage.getItem("ett_convlogs") || "[]"); } catch { return []; }
@@ -585,6 +606,19 @@ function assessCEFRLevel() {
   if (avg >= 65) return { suggest: "B1", msg: "B1レベルで着実に伸びています。" };
   if (avg >= 50) return { suggest: "A2", msg: "基礎を固めましょう。A2がおすすめです。" };
   return { suggest: "A1", msg: "まずはA1でしっかり基礎を作りましょう。" };
+}
+
+// ── Fetch with Timeout ──
+async function fetchT(url, options, ms) {
+  ms = ms || 30000;
+  var ctrl = new AbortController();
+  var timer = setTimeout(function() { ctrl.abort(); }, ms);
+  try {
+    return await fetch(url, Object.assign({}, options, { signal: ctrl.signal }));
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('リクエストがタイムアウトしました（' + (ms/1000) + '秒）');
+    throw e;
+  } finally { clearTimeout(timer); }
 }
 
 // ── Gemini API ──
@@ -609,13 +643,13 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
   if (useSearch) {
     body.tools = [{ google_search: {} }];
   }
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await fetchT(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 60000);
   if (!res.ok) {
     // Retry once for 503 (overloaded) and 429 (rate limit)
     if (res.status === 503 || res.status === 429) {
       await new Promise(r => setTimeout(r, 2000));
-      const res2 = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!res2.ok) throw new Error(`Gemini API ${res2.status}（リトライ失敗）`);
+      const res2 = await fetchT(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 60000);
+      if (!res2.ok) { var eb2 = ''; try { eb2 = (await res2.text()).slice(0,200); } catch(x){} throw new Error('Gemini API ' + res2.status + ' (retry): ' + eb2); }
       const data2 = await res2.json();
       const output2 = data2.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const inChars2 = messages.reduce((a, m) => a + m.content.length, 0) + (systemPrompt?.length || 0);
@@ -624,7 +658,7 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
       if (useSearch) S.cost.searchCalls = (S.cost.searchCalls || 0) + 1;
       return output2;
     }
-    throw new Error(`Gemini API ${res.status}`);
+    var eb = ''; try { eb = (await res.text()).slice(0,200); } catch(x){} throw new Error('Gemini API ' + res.status + ': ' + eb);
   }
   const data = await res.json();
   const output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -638,18 +672,35 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
 
 // ── Azure TTS ──
 let _curAudio = null;
-function stopAudio() { if(_curAudio){_curAudio.pause();_curAudio=null;} }
+function stopAudio() {
+  if (_curAudio) { _curAudio.pause(); _curAudio = null; }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+}
+
+function speakBrowser(text) {
+  return new Promise(function(resolve) {
+    if (!window.speechSynthesis) { resolve(); return; }
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    u.rate = S.ftLevel === 'A1' || S.ftLevel === 'A2' ? 0.8 : S.ftLevel === 'C1' ? 1.1 : 1.0;
+    u.onend = resolve;
+    u.onerror = function() { resolve(); };
+    speechSynthesis.speak(u);
+  });
+}
 
 async function speakText(text, voiceId = "en-US-JennyNeural") {
-  if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
   stopAudio();
+
+  if (!S.azureKey) return speakBrowser(text);
+
   S.cost.ttsChars += text.length;
 
   const voiceInfo = TTS_VOICES.find(v => v.id === voiceId) || TTS_VOICES[0];
   const rate = TTS_RATE[S.screen === 'shadow' ? S.shadowLevel : S.ftLevel] || "medium";
 
   // Escape XML special characters
-  const xmlText = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const xmlText = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
 
   const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${voiceInfo.lang}'>
     <voice name='${voiceId}'>
@@ -657,31 +708,48 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
     </voice>
   </speak>`;
 
-  const url = `https://${S.azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": S.azureKey,
-      "Content-Type": "application/ssml+xml",
-      "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3"
-    },
-    body: ssml
-  });
-  if (!res.ok) throw new Error(`Azure TTS ${res.status}`);
-
-  const audioBlob = await res.blob();
-  const blobUrl = URL.createObjectURL(audioBlob);
-  return new Promise((resolve, reject) => {
-    _curAudio = new Audio(blobUrl);
-    _curAudio.onended = () => { _curAudio = null; resolve(); };
-    _curAudio.onerror = reject;
-    _curAudio.play().catch(reject);
-  });
+  try {
+    const url = `https://${S.azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
+    const res = await fetchT(url, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": S.azureKey,
+        "Content-Type": "application/ssml+xml",
+        "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3"
+      },
+      body: ssml
+    });
+    if (!res.ok) throw new Error(`Azure TTS ${res.status}`);
+    const audioBlob = await res.blob();
+    const blobUrl = URL.createObjectURL(audioBlob);
+    return new Promise((resolve, reject) => {
+      _curAudio = new Audio(blobUrl);
+      _curAudio.onended = () => { _curAudio = null; resolve(); };
+      _curAudio.onerror = reject;
+      _curAudio.play().catch(reject);
+    });
+  } catch(e) {
+    console.warn("Azure TTS failed, fallback to browser:", e.message);
+    return speakBrowser(text);
+  }
 }
 
-// ── WAV Recording (Shadowing only) ──
-async function recordWav(maxMs = 15000) {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+// ── Mic Stream Management ──
+var _micStream = null;
+async function getMicStream() {
+  if (_micStream && _micStream.active) return _micStream;
+  _micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+  return _micStream;
+}
+function releaseMicStream() {
+  if (_micStream) { _micStream.getTracks().forEach(function(t) { t.stop(); }); _micStream = null; }
+}
+
+// ── WAV Recording (Azure STT fallback & Shadowing) ──
+async function recordWav(maxMs, onAutoStop, costKey) {
+  maxMs = maxMs || 60000;
+  costKey = costKey || 'sttSeconds';
+  const stream = await getMicStream();
   const ctx = new AudioContext({ sampleRate: 16000 });
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
@@ -691,16 +759,20 @@ async function recordWav(maxMs = 15000) {
   proc.onaudioprocess = e => {
     if (!stopped) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
   };
-  src.connect(proc); proc.connect(ctx.destination);
+  src.connect(proc);
+  var zeroGain = ctx.createGain();
+  zeroGain.gain.value = 0;
+  proc.connect(zeroGain);
+  zeroGain.connect(ctx.destination);
   const recorder = {
     stop: async () => {
       if (stopped) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"});
       stopped = true;
-      S.cost.sttSeconds += Math.round((Date.now() - recStartTime) / 1000);
-      clearTimeout(_timeout);
+      S.cost[costKey] += Math.round((Date.now() - recStartTime) / 1000);
+      clearTimeout(_autoStopTimer);
       try { proc.disconnect(); } catch(e){}
       try { src.disconnect(); } catch(e){}
-      stream.getTracks().forEach(t => t.stop());
+      // Don't stop stream tracks - managed by getMicStream/releaseMicStream
       if (ctx.state !== "closed") { try { await ctx.close(); } catch(e){} }
       if (chunks.length === 0) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"});
       const samples = new Float32Array(chunks.reduce((a, c) => a + c.length, 0));
@@ -720,7 +792,16 @@ async function recordWav(maxMs = 15000) {
       return new Blob([wavBuf],{type:"audio/wav"});
     }
   };
-  let _timeout = setTimeout(() => recorder.stop(), maxMs);
+  // Auto-stop with callback so result is not lost (skip if maxMs=0)
+  var _autoStopTimer = null;
+  if (maxMs > 0) {
+    _autoStopTimer = setTimeout(async () => {
+      if (!stopped) {
+        var blob = await recorder.stop();
+        if (onAutoStop) onAutoStop(blob);
+      }
+    }, maxMs);
+  }
   return recorder;
 }
 
@@ -729,7 +810,7 @@ async function azureSTT(wavBlob) {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
   if (!wavBlob || wavBlob.size <= 44) return ""; // empty audio
   const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/dictation/cognitiveservices/v1?language=en-US&format=detailed&profanity=raw`;
-  const res = await fetch(url, {
+  const res = await fetchT(url, {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
@@ -756,7 +837,7 @@ async function azurePronAssess(wavBlob, refText) {
     EnableMiscue: true
   }));
   const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
-  const res = await fetch(url, {
+  const res = await fetchT(url, {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
@@ -810,32 +891,35 @@ function getCumulativeCost() {
 function calcSessionTotal() {
   var c = S.cost;
   var sttCost = (c.sttSeconds / 3600) * 1.32;
+  var pronCost = ((c.pronSeconds || 0) / 3600) * 1.32;
   var ttsCost = (c.ttsChars / 1000000) * 16;
   var gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
   var gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
   var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
   var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
   var searchCost = (c.searchCalls || 0) * 0.035;
-  return sttCost + ttsCost + gemInCost + gemOutCost + searchCost;
+  return sttCost + pronCost + ttsCost + gemInCost + gemOutCost + searchCost;
 }
 
 function calcCostHTML() {
   var c = S.cost;
   var sttCost = (c.sttSeconds / 3600) * 1.32;
+  var pronCost = ((c.pronSeconds || 0) / 3600) * 1.32;
   var ttsCost = (c.ttsChars / 1000000) * 16;
   var gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
   var gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
   var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
   var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
-  const searchCost = (c.searchCalls || 0) * 0.035;
-  const total = sttCost + ttsCost + gemInCost + gemOutCost + searchCost;
-  const totalJPY = Math.round(total * 150 * 10) / 10;
+  var searchCost = (c.searchCalls || 0) * 0.035;
+  var total = sttCost + pronCost + ttsCost + gemInCost + gemOutCost + searchCost;
+  var totalJPY = Math.round(total * 150 * 10) / 10;
 
   return `<div class="card">
     <div style="font-size:15px;font-weight:600;margin-bottom:12px">💰 API コスト概算</div>
     <div style="display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;font-size:13px;line-height:2">
       <span class="text-muted">音声認識</span><span class="text-muted">${c.sttSeconds > 0 ? c.sttSeconds + '秒 (Azure STT)' : 'Web Speech API'}</span><span>${c.sttSeconds > 0 ? '$' + sttCost.toFixed(4) : '無料'}</span>
-      <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars > 0 ? c.ttsChars.toLocaleString() + '文字 (Azure)' : '未使用'}</span><span>${c.ttsChars > 0 ? '$' + ttsCost.toFixed(4) : '$0'}</span>
+      ${c.pronSeconds ? `<span class="text-muted">発音評価</span><span class="text-muted">${c.pronSeconds}秒 (Azure)</span><span>$${pronCost.toFixed(4)}</span>` : ''}
+      <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars > 0 ? c.ttsChars.toLocaleString() + '文字' : '未使用'}</span><span>${c.ttsChars > 0 ? '$' + ttsCost.toFixed(4) : '$0'}</span>
       <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}tk (${GEMINI_MODEL.includes('pro')?'Pro':'Flash'})</span><span>$${gemInCost.toFixed(4)}</span>
       <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}tk</span><span>$${gemOutCost.toFixed(4)}</span>
       ${c.searchCalls ? `<span class="text-muted">Web検索</span><span class="text-muted">${c.searchCalls}回 (Google)</span><span>$${searchCost.toFixed(4)}</span>` : ''}
@@ -854,12 +938,17 @@ function getHistory() {
 function saveSession(entry) {
   const hist = getHistory();
   hist.push({ ...entry, date: new Date().toISOString() });
-  localStorage.setItem("ett_history", JSON.stringify(hist));
-  // Update totals
-  S.totalSessions = hist.length;
-  S.totalMinutes = hist.reduce((a, h) => a + (h.minutes || 0), 0);
-  localStorage.setItem("ett_total_sessions", S.totalSessions);
-  localStorage.setItem("ett_total_minutes", S.totalMinutes);
+  try {
+    localStorage.setItem("ett_history", JSON.stringify(hist));
+    S.totalSessions = hist.length;
+    S.totalMinutes = hist.reduce((a, h) => a + (h.minutes || 0), 0);
+    localStorage.setItem("ett_total_sessions", S.totalSessions);
+    localStorage.setItem("ett_total_minutes", S.totalMinutes);
+  } catch(e) {
+    console.warn("Storage full, removing old entries");
+    hist.splice(0, Math.floor(hist.length / 2));
+    try { localStorage.setItem("ett_history", JSON.stringify(hist)); } catch(e2) {}
+  }
 }
 function clearAllData() {
   if (!confirm("学習履歴・ストリーク・単語帳・会話ログをすべて削除しますか？\nAPIキーは保持されます。")) return;
@@ -1041,8 +1130,8 @@ function renderApiKey() {
     const gk = $("geminiKeyInput").value.trim();
     const ak = $("azureKeyInput").value.trim();
     const ar = $("azureRegionInput").value.trim();
-    if (gk) { S.geminiKey = gk; localStorage.setItem("gemini_api_key", gk); }
-    if (ak) { S.azureKey = ak; localStorage.setItem("azure_speech_key", ak); }
+    S.geminiKey = gk; if (gk) localStorage.setItem("gemini_api_key", gk); else localStorage.removeItem("gemini_api_key");
+    S.azureKey = ak; if (ak) localStorage.setItem("azure_speech_key", ak); else localStorage.removeItem("azure_speech_key");
     if (ar) { S.azureRegion = ar; localStorage.setItem("azure_speech_region", ar); }
     if (!S.geminiKey) { alert("Gemini APIキーを入力してください"); return; }
     S.screen = "home"; render();
@@ -1535,8 +1624,9 @@ async function startFreeTalkSession() {
 
   S.ftSessionActive = true;
   S.ftWhoseTurn = 'ai';
+  S.ftSessionId = (S.ftSessionId || 0) + 1;
   S.ftStartTime = Date.now();
-  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
 
   // 音声自動選択
   S.ftVoice = pickVoice(topic.id);
@@ -1611,7 +1701,8 @@ ${_openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
 
   // Generate challenge expressions (async, don't block start)
   const challengeTopic = { ...topic, prompt: topicPrompt, label: topicDisplay };
-  generateChallengeExpressions(level.id, challengeTopic, S.ftQuickMode).catch(()=>{});
+  var _sid = S.ftSessionId;
+  generateChallengeExpressions(level.id, challengeTopic, S.ftQuickMode, _sid).catch(()=>{});
 
   renderFreeTalkChat();
   showTyping();
@@ -1619,12 +1710,14 @@ ${_openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
   try {
     // Use Google Search grounding for news topics to get real current news
     const reply = await geminiChat(S.chatHistory, sysPrompt, false, isNews);
+    // Guard: if session changed while waiting, discard
+    if (_sid !== S.ftSessionId || !S.ftSessionActive) return;
     S.chatHistory.push({ role: "assistant", content: reply });
     S.chatMessages.push({ type: "ai", text: reply });
     hideTyping();
     renderFreeTalkChat();
     // Auto-speak AI response
-    try { await speakText(reply, S.ftVoice); } catch(e) { console.warn("TTS:", e); }
+    try { await speakText(reply, S.ftVoice); } catch(e) { S.chatMessages.push({type:"system",text:"🔇 音声再生に失敗しました。再生ボタンを押してください。"}); }
     S.ftWhoseTurn = 'you';
     renderFreeTalkChat();
   } catch(e) {
@@ -1678,15 +1771,17 @@ function renderFreeTalkChat() {
     </div>
   `;
 
-  $("ftChatBack").onclick = () => {
-    srStop(); stopAudio();
+  $("ftChatBack").onclick = async () => {
+    srCancel(); stopAudio(); releaseMicStream();
     if (S.ftSessionActive && S.chatHistory.length > 2) {
-      if (confirm("会話を終了しますか？フィードバックを取得できます。")) endFreeTalkSession();
-      else return;
+      if (confirm("会話を終了しますか？フィードバックを取得できます。")) {
+        await endFreeTalkSession();
+        return;
+      }
     }
     S.screen = "home"; render();
   };
-  $("ftEndBtn").onclick = () => endFreeTalkSession();
+  $("ftEndBtn").onclick = async () => { await endFreeTalkSession(); };
 
   // Send text
   const sendMsg = () => {
@@ -1798,8 +1893,28 @@ function srStop() {
       } else { _deliverResult(); }
     }).catch(function() { _deliverResult(); });
   } else {
-    if (_sr) { try { _sr.abort(); } catch(e) {} _sr = null; }
-    _deliverResult();
+    // Web Speech API: use stop() and wait for onend to fire with final results
+    if (_sr) {
+      var deliverTimer = setTimeout(function() {
+        // Safety: if onend never fires within 2s, deliver anyway
+        _sr = null;
+        _deliverResult();
+      }, 2000);
+      _sr.onend = function() {
+        clearTimeout(deliverTimer);
+        _sr = null;
+        // Small delay to ensure last onresult has fired
+        setTimeout(_deliverResult, 100);
+      };
+      _sr.onerror = function() {}; // suppress errors during stop
+      try { _sr.stop(); } catch(e) {
+        clearTimeout(deliverTimer);
+        _sr = null;
+        _deliverResult();
+      }
+    } else {
+      _deliverResult();
+    }
   }
 }
 
@@ -1807,6 +1922,24 @@ function _deliverResult() {
   var text = _srBuf.trim();
   _srBuf = '';
   if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(text); }
+}
+
+// Cancel recording without delivering results (for navigation/ending)
+function srCancel() {
+  _srActive = false;
+  clearTimeout(_srRestartTimer);
+  _srBuf = '';
+  _srCallback = null;
+  _srUseAzure = false;
+  if (_sr) {
+    _sr.onend = null; _sr.onresult = null; _sr.onerror = null;
+    try { _sr.abort(); } catch(e) {}
+    _sr = null;
+  }
+  if (_srRecorder) {
+    try { _srRecorder.stop(); } catch(e) {}
+    _srRecorder = null;
+  }
 }
 
 function _srDoStart() {
@@ -1884,7 +2017,20 @@ function _srDoStart() {
 async function _srStartAzure() {
   _srUseAzure = true;
   try {
-    _srRecorder = await recordWav(60000);
+    _srRecorder = await recordWav(60000, function(blob) {
+      // Auto-stop after 60s: process the result
+      _srRecorder = null;
+      if (blob && blob.size > 44 && S.azureKey) {
+        azureSTT(blob).then(function(text) {
+          _srBuf = text || '';
+          _srActive = false;
+          _deliverResult();
+        }).catch(function() { _srActive = false; _deliverResult(); });
+      } else {
+        _srActive = false;
+        _deliverResult();
+      }
+    });
   } catch(e) {
     _srActive = false; _srUseAzure = false;
     alert("マイクアクセスエラー: " + e.message);
@@ -1954,10 +2100,10 @@ function markChallengeCategory(catId) {
   used.push(catId);
   // Keep last 20 to allow rotation
   while (used.length > 20) used.shift();
-  localStorage.setItem("ett_challenge_used", JSON.stringify(used));
+  safeLSSet("ett_challenge_used", used);
 }
 
-async function generateChallengeExpressions(levelId, topic, isQuick) {
+async function generateChallengeExpressions(levelId, topic, isQuick, sessionId) {
   try {
     const cats = CHALLENGE_CATEGORIES[levelId] || CHALLENGE_CATEGORIES.B1;
     const usedCats = getUsedChallengeCategories();
@@ -1978,12 +2124,14 @@ CONVERSATION TOPIC: "${topicDesc}"
 Generate exactly ${exprCount} expression(s) from this skill category that the learner can naturally use in a conversation about "${topicLabel}".
 
 Rules:
-- All 3 expressions MUST belong to the category "${pick.name}" (${pick.focus})
+- All expressions MUST belong to the category "${pick.name}" (${pick.focus})
 - Each expression MUST be usable in a conversation about "${topicLabel}"
 - Appropriate complexity for ${levelId} level
 - Include a realistic example sentence in the context of this topic
 
 Return JSON: {"category": "${pick.name}", "expressions": [{"en": "expression or phrase", "ja": "Japanese meaning", "example": "example sentence in context of ${topicLabel}"}]}` }], "JSON only.", true);
+    // Guard: if user already left this session, don't touch UI
+    if (sessionId && S.ftSessionId !== sessionId) return;
     const data = safeJSON(raw);
     S.ftChallengeExprs = data.expressions || [];
     S.ftChallengeUsed = new Array(S.ftChallengeExprs.length).fill(false);
@@ -1991,7 +2139,7 @@ Return JSON: {"category": "${pick.name}", "expressions": [{"en": "expression or 
     // Show challenge card in chat
     if (S.ftChallengeExprs.length > 0) {
       S.chatMessages.splice(1, 0, { type: "challenge", expressions: S.ftChallengeExprs, category: S._challengeCategory });
-      renderFreeTalkChat();
+      if (S.screen === "freetalk" || S.ftSessionActive) renderFreeTalkChat();
     }
   } catch(e) { console.warn("Challenge expr:", e); }
 }
@@ -2000,6 +2148,7 @@ async function handleUserMessage(text) {
   S.chatMessages.push({ type: "user", text });
   S.chatHistory.push({ role: "user", content: text });
   S.ftTurnCount++;
+  var sid = S.ftSessionId;
 
   // Check if user used challenge expressions
   S.ftChallengeExprs.forEach((expr, i) => {
@@ -2030,11 +2179,12 @@ ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
 
   try {
     const reply = await geminiChat(S.chatHistory, sysPrompt);
+    if (sid !== S.ftSessionId || !S.ftSessionActive) return;
     S.chatHistory.push({ role: "assistant", content: reply });
     S.chatMessages.push({ type: "ai", text: reply });
     hideTyping();
     renderFreeTalkChat();
-    try { await speakText(reply, S.ftVoice); } catch(e) { console.warn("TTS:", e); }
+    try { await speakText(reply, S.ftVoice); } catch(e) { S.chatMessages.push({type:"system",text:"🔇 音声再生に失敗しました。再生ボタンを押してください。"}); }
     S.ftWhoseTurn = 'you';
     renderFreeTalkChat();
   } catch(e) {
@@ -2046,9 +2196,11 @@ ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
 }
 
 async function endFreeTalkSession() {
+  if (S.ftEnding) return;
+  S.ftEnding = true;
   S.ftSessionActive = false;
   S.isRecording = false;
-  srStop(); stopAudio();
+  srCancel(); stopAudio(); releaseMicStream();
   const elapsed = Math.max(1, Math.round((Date.now() - (S.ftStartTime || Date.now())) / 60000));
   const topic = FT_ALL_TOPICS.find(t => t.id === S.ftTopic);
 
@@ -2091,8 +2243,10 @@ COMPACT JSON. Keep strings SHORT. Max 3 corrections.
     saveConversationLog({
       mode: "freetalk", topic: topic?.label || S.ftTopic,
       level: S.ftLevel, voice: S.ftVoice,
-      messages: S.chatMessages.map(m => ({type: m.type, text: m.text})),
-      feedback: fb,
+      messages: S.chatMessages
+        .filter(m => m.type === 'ai' || m.type === 'user')
+        .slice(-20)
+        .map(m => ({type: m.type, text: (m.text || '').slice(0, 500)})),
     });
 
     // Save mistakes for review
@@ -2104,9 +2258,11 @@ COMPACT JSON. Keep strings SHORT. Max 3 corrections.
     extractVocabulary(S.chatHistory).catch(()=>{});
 
     S.screen = "review";
+    S.ftEnding = false;
     render();
   } catch(e) {
     hideTyping();
+    S.ftEnding = false;
     S.chatMessages.push({ type: "system", text: `フィードバック取得失敗: ${e.message}` });
     renderFreeTalkChat();
   }
@@ -2249,7 +2405,7 @@ function renderFlashSetup() {
 async function generateFlashQuestions() {
   // Flash用に音声自動選択 & コストリセット
   S.ftVoice = pickVoice("flash");
-  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
   app.innerHTML = `
     <div style="text-align:center;padding:80px 0">
       <div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div>
@@ -2550,7 +2706,7 @@ function renderShadowSetup() {
 
 async function generateShadowSentences() {
   S.ftVoice = pickVoice("shadow");
-  S.cost = { sttSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
   app.innerHTML = `<div style="text-align:center;padding:80px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">文を生成中...</div></div>`;
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
@@ -2602,7 +2758,7 @@ async function renderShadowPractice() {
     $("shRecordBtn").textContent = "⏹ 録音中...";
     $("shRecordBtn").className = "btn btn-danger mt-8";
     try {
-      const rec = await recordWav(15000);
+      const rec = await recordWav(0, null, 'pronSeconds');
       // Wait a moment then stop (or user presses again)
       $("shRecordBtn").onclick = async () => {
         $("shRecordBtn").disabled = true;
@@ -2732,7 +2888,7 @@ function renderConvLog() {
     ${logs.map((log, i) => {
       const d = new Date(log.date);
       const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-      return `<div class="card" style="cursor:pointer" data-idx="${i}" class="log-card">
+      return `<div class="card log-card" style="cursor:pointer" data-idx="${i}">
         <div class="flex justify-between items-center">
           <div class="text-sm" style="font-weight:600">🗣️ ${esc(log.topic || '')}</div>
           <div class="text-xs text-muted">${dateStr}</div>

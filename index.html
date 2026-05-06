@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06p";
+const VERSION = "v2026.05.06q";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -745,12 +745,22 @@ function releaseMicStream() {
   if (_micStream) { _micStream.getTracks().forEach(function(t) { t.stop(); }); _micStream = null; }
 }
 
+// ── AudioContext Management ──
+var _audioCtx = null;
+function getAudioContext() {
+  if (!_audioCtx || _audioCtx.state === "closed") {
+    _audioCtx = new AudioContext({ sampleRate: 16000 });
+  }
+  return _audioCtx;
+}
+
 // ── WAV Recording (Azure STT fallback & Shadowing) ──
 async function recordWav(maxMs, onAutoStop, costKey) {
-  maxMs = maxMs || 60000;
+  if (maxMs === undefined || maxMs === null) maxMs = 60000;
   costKey = costKey || 'sttSeconds';
   const stream = await getMicStream();
-  const ctx = new AudioContext({ sampleRate: 16000 });
+  const ctx = getAudioContext();
+  if (ctx.state === "suspended") await ctx.resume();
   const src = ctx.createMediaStreamSource(stream);
   const proc = ctx.createScriptProcessor(4096, 1, 1);
   const chunks = [];
@@ -772,8 +782,7 @@ async function recordWav(maxMs, onAutoStop, costKey) {
       clearTimeout(_autoStopTimer);
       try { proc.disconnect(); } catch(e){}
       try { src.disconnect(); } catch(e){}
-      // Don't stop stream tracks - managed by getMicStream/releaseMicStream
-      if (ctx.state !== "closed") { try { await ctx.close(); } catch(e){} }
+      // AudioContext is reused globally — do not close
       if (chunks.length === 0) return new Blob([new ArrayBuffer(44)], {type:"audio/wav"});
       const samples = new Float32Array(chunks.reduce((a, c) => a + c.length, 0));
       let off = 0; for (const c of chunks) { samples.set(c, off); off += c.length; }
@@ -938,16 +947,18 @@ function getHistory() {
 function saveSession(entry) {
   const hist = getHistory();
   hist.push({ ...entry, date: new Date().toISOString() });
+
+  S.totalSessions = hist.length;
+  S.totalMinutes = hist.reduce((a, h) => a + (h.minutes || 0), 0);
+  safeLSSet("ett_total_sessions", S.totalSessions.toString());
+  safeLSSet("ett_total_minutes", S.totalMinutes.toString());
+
   try {
     localStorage.setItem("ett_history", JSON.stringify(hist));
-    S.totalSessions = hist.length;
-    S.totalMinutes = hist.reduce((a, h) => a + (h.minutes || 0), 0);
-    localStorage.setItem("ett_total_sessions", S.totalSessions);
-    localStorage.setItem("ett_total_minutes", S.totalMinutes);
   } catch(e) {
     console.warn("Storage full, removing old entries");
     hist.splice(0, Math.floor(hist.length / 2));
-    try { localStorage.setItem("ett_history", JSON.stringify(hist)); } catch(e2) {}
+    safeLSSet("ett_history", hist);
   }
 }
 function clearAllData() {
@@ -1772,13 +1783,15 @@ function renderFreeTalkChat() {
   `;
 
   $("ftChatBack").onclick = async () => {
-    srCancel(); stopAudio(); releaseMicStream();
     if (S.ftSessionActive && S.chatHistory.length > 2) {
       if (confirm("会話を終了しますか？フィードバックを取得できます。")) {
         await endFreeTalkSession();
         return;
+      } else {
+        return;
       }
     }
+    srCancel(); stopAudio(); releaseMicStream();
     S.screen = "home"; render();
   };
   $("ftEndBtn").onclick = async () => { await endFreeTalkSession(); };

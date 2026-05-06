@@ -4,243 +4,169 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>English Talk Trainer マニュアル</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#f8fafc;--card:#fff;--text:#1a2a3a;--muted:#5a6a7a;--accent:#4f46e5;--border:#e2e8f0;--green:#059669}
-body{font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:16px}
-.container{max-width:720px;margin:0 auto;padding:24px 20px 80px}
-h1{font-size:28px;font-weight:800;margin:32px 0 8px;color:var(--accent)}
-h2{font-size:22px;font-weight:700;margin:40px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--accent)}
-h3{font-size:18px;font-weight:600;margin:24px 0 8px;color:var(--accent)}
+body{font-family:'Outfit','Hiragino Sans',system-ui,sans-serif;background:#f8fafc;color:#1a2a3a;line-height:1.8;font-size:16px}
+.c{max-width:720px;margin:0 auto;padding:24px 20px 80px}
+h1{font-size:28px;font-weight:800;margin:32px 0 8px;color:#4f46e5}
+h2{font-size:22px;font-weight:700;margin:40px 0 12px;padding-bottom:8px;border-bottom:2px solid #4f46e5}
+h3{font-size:18px;font-weight:600;margin:24px 0 8px;color:#4f46e5}
 p{margin:8px 0 16px}
-.card{background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:20px;margin:16px 0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:600;margin-right:6px}
-.badge-purple{background:#ede9fe;color:var(--accent)}
-.badge-green{background:#d1fae5;color:var(--green)}
-.badge-yellow{background:#fef3c7;color:#92400e}
-.badge-red{background:#fee2e2;color:#dc2626}
+.card{background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:20px;margin:16px 0}
 table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
-th,td{padding:10px 12px;border:1px solid var(--border);text-align:left}
-th{background:#f1f5f9;font-weight:600;font-size:13px}
-code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:14px;font-family:'JetBrains Mono',monospace}
-.tip{background:#f0fdf4;border-left:4px solid var(--green);padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
+th,td{padding:10px 12px;border:1px solid #e2e8f0;text-align:left}
+th{background:#f1f5f9;font-weight:600}
+.tip{background:#f0fdf4;border-left:4px solid #059669;padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
 .warn{background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
-.back-link{display:inline-block;margin-top:8px;color:var(--accent);text-decoration:none;font-weight:600;font-size:14px}
-ul{margin:8px 0 16px 24px}
+a{color:#4f46e5}
+ul,ol{margin:8px 0 16px 24px}
 li{margin:4px 0}
-.toc{background:var(--card);border:1.5px solid var(--border);border-radius:14px;padding:20px;margin:20px 0}
-.toc a{color:var(--accent);text-decoration:none;display:block;padding:4px 0;font-size:15px}
-.toc a:hover{text-decoration:underline}
+.toc{background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:20px;margin:20px 0}
+.toc a{display:block;padding:4px 0;font-size:15px;text-decoration:none}
+.bg{display:inline-block;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:600}
 </style>
 </head>
 <body>
-<div class="container">
-
-<a href="./" class="back-link">← アプリに戻る</a>
+<div class="c">
+<a href="./" style="font-weight:600;font-size:14px;text-decoration:none">← アプリに戻る</a>
 
 <h1>📘 English Talk Trainer</h1>
-<p>AI英会話トレーニングアプリ v2026.05.05a マニュアル</p>
+<p>AI英会話トレーニング v2026.05.06o</p>
 
 <div class="toc">
 <strong>目次</strong>
-<a href="#setup">1. 初期設定（APIキー）</a>
-<a href="#freetalk">2. Free Talk（フリートーク）</a>
-<a href="#flash">3. Flash Translation（瞬間英作文）</a>
-<a href="#shadow">4. Shadowing（シャドーイング）</a>
-<a href="#review">5. 復習システム</a>
-<a href="#vocab">6. 単語帳</a>
-<a href="#convlog">7. 会話ログ</a>
-<a href="#cefr">8. CEFRレベルガイド</a>
-<a href="#streak">9. 学習継続（ストリーク）</a>
-<a href="#cost">10. APIコストについて</a>
-<a href="#tips">11. 効果的な学習法</a>
+<a href="#setup">1. 初期設定</a>
+<a href="#freetalk">2. Free Talk（207トピック）</a>
+<a href="#flash">3. Flash Translation</a>
+<a href="#shadow">4. Shadowing</a>
+<a href="#news">5. ニュース議論（22ジャンル）</a>
+<a href="#challenge">6. チャレンジ表現（22スキル×5レベル）</a>
+<a href="#review">7. 復習・フレーズ集・会話ログ</a>
+<a href="#cefr">8. CEFRレベル</a>
+<a href="#settings">9. 設定（音声認識・モデル・声）</a>
+<a href="#cost">10. コスト</a>
+<a href="#tips">11. 学習法</a>
 <a href="#trouble">12. トラブルシューティング</a>
 </div>
 
 <h2 id="setup">1. 初期設定</h2>
-
-<h3>必要なAPIキー</h3>
 <div class="card">
-<p><strong>Gemini API Key（必須）</strong></p>
-<p>会話AI・問題生成・フィードバック評価に使用。</p>
-<p>取得先: <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a></p>
-<p>無料ティア: 1日1,500リクエスト（十分な量）</p>
+<p><strong>Gemini API Key（必須）</strong> — <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>で取得</p>
+<p><strong>Azure Speech Key（推奨）</strong> — <a href="https://portal.azure.com/" target="_blank">Azure Portal</a> → Speech Services で作成</p>
 </div>
-
-<div class="card">
-<p><strong>Azure Speech Key（推奨）</strong></p>
-<p>音声認識（STT）・音声読み上げ（TTS）・発音評価に使用。</p>
-<p>取得先: <a href="https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/SpeechServices" target="_blank">Azure Portal → Speech Services</a></p>
-<p>Azure Speech リソースを作成し、キーとリージョン（例: <code>eastus</code>）をコピーしてください。</p>
-</div>
-
-<div class="tip">💡 Azure Keyがなくてもテキスト入力だけでFree TalkとFlash Translationは使えますが、音声入力・読み上げ・Shadowingは使えません。</div>
+<div class="tip">💡 Azure Keyがなくてもテキスト入力で使えます。音声読み上げはブラウザ内蔵音声にフォールバックします。</div>
 
 <h2 id="freetalk">2. Free Talk</h2>
-<p>AIと自由に英語で会話するモードです。</p>
-
-<h3>基本の流れ</h3>
-<ol>
-<li>カテゴリ（11種）→ トピック（79種）を選択</li>
-<li>CEFRレベル（A1〜C1）を選択</li>
-<li>クイックモード（3ターン）ON/OFF</li>
-<li>「会話をスタート」をタップ</li>
-<li>AIが会話を始める（自動音声読み上げ）</li>
-<li>🎤ボタンで音声入力 or テキスト入力で返答</li>
-<li>「終了」をタップするとフィードバック取得</li>
-</ol>
-
-<h3>チャレンジ表現</h3>
-<p>セッション開始時に、レベルに合った3つの「今日のチャレンジ表現」が提示されます。会話中にこれらを使うことで語彙の幅が広がります。</p>
-
-<h3>音声入力</h3>
-<ul>
-<li>最大録音時間: 60秒</li>
-<li>無音が約3秒続くと自動停止</li>
-<li>録音中は波形バーが表示されます</li>
-</ul>
-
-<h3>AIの声</h3>
-<p>セッションごとに自動選択されます。</p>
+<p>17カテゴリ・207トピック（うち🎭ロールプレイ54種）。全カテゴリに✏️フリーワード入力対応。</p>
 <table>
-<tr><th>アクセント</th><th>女性</th><th>男性</th><th>出現率</th></tr>
-<tr><td>🇺🇸 アメリカ</td><td>Jenny, Aria</td><td>Guy, Davis</td><td>約60%</td></tr>
-<tr><td>🇬🇧 イギリス</td><td>Sonia</td><td>Ryan</td><td>約27%</td></tr>
-<tr><td>🇦🇺 オーストラリア</td><td>Natasha</td><td>William</td><td>約7%</td></tr>
-<tr><td>🇮🇳 インド</td><td>Neerja</td><td>Prabhat</td><td>約7%</td></tr>
+<tr><th>カテゴリ</th><th>トピック数</th><th>🎭数</th></tr>
+<tr><td>🆓 フリートーク</td><td>2</td><td>-</td></tr>
+<tr><td>🏠 日常生活</td><td>14</td><td>6</td></tr>
+<tr><td>✈️ 旅行</td><td>17</td><td>10</td></tr>
+<tr><td>🍕 食べ物・料理</td><td>10</td><td>4</td></tr>
+<tr><td>💼 仕事・ビジネス</td><td>22</td><td>8</td></tr>
+<tr><td>💹 経済・金融</td><td>14</td><td>4</td></tr>
+<tr><td>🎮 趣味・エンタメ</td><td>10</td><td>2</td></tr>
+<tr><td>💻 テクノロジー</td><td>7</td><td>2</td></tr>
+<tr><td>🌍 社会・時事</td><td>6</td><td>-</td></tr>
+<tr><td>📰 ニュース議論</td><td>22</td><td>-</td></tr>
+<tr><td>🏛️ 文化・異文化</td><td>9</td><td>4</td></tr>
+<tr><td>🏥 健康・医療</td><td>10</td><td>5</td></tr>
+<tr><td>👨‍👩‍👧 家族・子育て</td><td>8</td><td>3</td></tr>
+<tr><td>🏡 住まい・暮らし</td><td>8</td><td>5</td></tr>
+<tr><td>👗 ファッション・美容</td><td>5</td><td>1</td></tr>
+<tr><td>🌿 自然・季節</td><td>6</td><td>-</td></tr>
+<tr><td>👤 自分のこと</td><td>8</td><td>-</td></tr>
 </table>
-<p>シチュエーション系トピック（ホテル・レストラン等）では場面に合った声が自動選択されます。</p>
-
-<h3>フィードバック</h3>
-<p>会話終了後にAIが4軸で評価：</p>
-<ul>
-<li><strong>Grammar</strong> — 文法の正確さ</li>
-<li><strong>Vocabulary</strong> — 語彙の豊かさ</li>
-<li><strong>Naturalness</strong> — 自然さ</li>
-<li><strong>CEFR判定</strong> — レベルが適切かの判断</li>
-</ul>
-<p>間違いは自動的に「復習キュー」に登録されます。</p>
+<p>AIの会話開始は24パターンからランダム選択。同じトピックでも毎回違う入り方になります。</p>
+<p>ターンインジケーター: 🔊青帯（AI発話中）/ 🎤緑帯（あなたのターン）で切替表示。</p>
 
 <h2 id="flash">3. Flash Translation</h2>
-<p>日本語を見て英語に瞬間変換するトレーニングです。</p>
-
-<h3>基本の流れ</h3>
-<ol>
-<li>カテゴリ（日常会話/ビジネス/旅行/意見・感想）を選択</li>
-<li>CEFRレベルを選択</li>
-<li>10問自動生成</li>
-<li>🎤で音声回答 or テキスト入力</li>
-<li>AIが採点（0〜100）+ 模範解答 + フィードバック</li>
-</ol>
-<div class="tip">💡 瞬間英作文は「英語で考える速度」を鍛えます。正確さより「素早く出す」ことを意識してください。</div>
+<p>日本語→英語の瞬間英作文。10問1セット。4カテゴリ×CEFR 5段階。</p>
 
 <h2 id="shadow">4. Shadowing</h2>
-<p>AIの英語を聞いて同じ文を繰り返す、発音矯正トレーニングです。</p>
+<p>AIの英語を聞く→繰り返す→Azure発音評価で正確さ・流暢さをスコア化。5文1セット。</p>
+<div class="warn">⚠️ Azure Speech Key必須</div>
 
-<h3>基本の流れ</h3>
-<ol>
-<li>CEFRレベルを選択</li>
-<li>5文自動生成</li>
-<li>🔊でAIの音声を聞く</li>
-<li>🎤で同じ文を繰り返す</li>
-<li>Azure発音評価で採点（正確さ・流暢さ）</li>
-</ol>
-<div class="warn">⚠️ ShadowingにはAzure Speech Keyが必須です。</div>
+<h2 id="news">5. ニュース議論</h2>
+<p>Gemini Google Search Groundingで実際の最新ニュースを取得し議論。22ジャンル:</p>
+<p>国際 / 政治 / ビジネス / 経済 / テクノロジー / AI / 科学 / 宇宙 / 医療 / 気候変動 / エネルギー / スポーツ / エンタメ / 自動車・EV / スタートアップ / 教育 / 法律 / 不動産 / 食品・農業 / 日本関連 / ライフスタイル / ✏️フリーワード</p>
 
-<h2 id="review">5. 復習システム</h2>
-<p>間違えた表現を間隔反復で復習します。</p>
-<ul>
-<li>Free Talkの修正点、Flash Translationの不正解が自動登録</li>
-<li>復習タイミング: 1日後 → 3日後 → 7日後 → 14日後 → 30日後</li>
-<li>ホーム画面に復習問題がある場合は「📝 復習問題あり」と表示</li>
-<li>「覚えた！」を押すと次の間隔に進む</li>
-</ul>
-
-<h2 id="vocab">6. 単語帳</h2>
-<p>Free Talk終了時に、AIが使ったがユーザーが使わなかった表現を自動抽出して記録します。</p>
-<ul>
-<li>英語表現 + 日本語訳 + 会話中の文脈が保存</li>
-<li>最大500エントリー</li>
-<li>ホーム画面の「📚 単語帳」から閲覧</li>
-</ul>
-
-<h2 id="convlog">7. 会話ログ</h2>
-<p>Free Talkの全会話内容が保存されます。</p>
-<ul>
-<li>最大50セッション分</li>
-<li>タップで会話を展開表示</li>
-<li>「あの時こう言えばよかった」という振り返りに</li>
-</ul>
-
-<h2 id="cefr">8. CEFRレベルガイド</h2>
+<h2 id="challenge">6. チャレンジ表現</h2>
+<p>22スキルカテゴリ×CEFR 5レベル。ローテーション出題、トピック連動で場面に合った表現を生成。Quick=1つ、通常=2つ。使用判定＋AI評価付き。</p>
 <table>
-<tr><th>レベル</th><th>語彙</th><th>文法</th><th>AI話速</th><th>目安</th></tr>
-<tr><td><span class="badge badge-green">A1 入門</span></td><td>〜500語</td><td>現在形・can</td><td>ゆっくり</td><td>英検5級</td></tr>
-<tr><td><span class="badge badge-green">A2 初級</span></td><td>〜1,500語</td><td>過去形・比較級</td><td>ゆっくり</td><td>英検3-4級</td></tr>
-<tr><td><span class="badge badge-purple">B1 中級</span></td><td>〜3,000語</td><td>現在完了・条件文</td><td>普通</td><td>英検2-準2級</td></tr>
-<tr><td><span class="badge badge-purple">B2 中上級</span></td><td>〜5,000語</td><td>仮定法・複合文</td><td>普通</td><td>英検準1級</td></tr>
-<tr><td><span class="badge badge-red">C1 上級</span></td><td>〜8,000語+</td><td>倒置・分裂文</td><td>速い</td><td>英検1級</td></tr>
+<tr><th>レベル</th><th>カテゴリ例</th></tr>
+<tr><td>A1 (3種)</td><td>挨拶 / お願い / 気持ち</td></tr>
+<tr><td>A2 (4種)</td><td>頻度 / 比較 / 意見 / 描写</td></tr>
+<tr><td>B1 (5種)</td><td>理由 / 同意反論 / 経験 / 接続語 / 提案</td></tr>
+<tr><td>B2 (5種)</td><td>ヘッジ / 仮定法 / 議論構成 / イディオム / ニュアンス</td></tr>
+<tr><td>C1 (5種)</td><td>修辞 / 知的語彙 / コロケーション / 格式 / 高度な留保</td></tr>
 </table>
-<p>直近10セッションの平均スコアに基づいて、ホーム画面に「おすすめレベル」が自動表示されます。</p>
 
-<h2 id="streak">9. 学習継続（ストリーク）</h2>
-<p>ホーム画面にカレンダーが表示され、練習した日に色がつきます。連続日数が「🔥 ○日連続」として表示されます。</p>
-<div class="tip">💡 毎日5分でもいいので続けることが最も重要です。クイックモード（3ターン）なら2〜3分で終わります。</div>
+<h2 id="review">7. 復習・フレーズ集・会話ログ</h2>
+<p><strong>復習</strong>: 間隔反復（1→3→7→14→30日）。Free Talk修正点・Flash不正解を自動登録。</p>
+<p><strong>フレーズ集</strong>: ユーザー自身が使ったフレーズを自動抽出。良い点を褒め、改善点を提案。最大500件。</p>
+<p><strong>会話ログ</strong>: 最大50セッション。タップで展開。</p>
 
-<h2 id="cost">10. APIコスト</h2>
-<p>各セッション終了時に概算コストが表示されます。</p>
+<h2 id="cefr">8. CEFRレベル</h2>
 <table>
-<tr><th>API</th><th>用途</th><th>単価</th></tr>
-<tr><td>Azure STT</td><td>音声認識</td><td>$1.32/時間</td></tr>
-<tr><td>Azure TTS</td><td>音声読み上げ</td><td>$16/100万文字</td></tr>
-<tr><td>Gemini入力</td><td>プロンプト</td><td>$0.30/100万トークン</td></tr>
-<tr><td>Gemini出力</td><td>AI返答</td><td>$2.50/100万トークン</td></tr>
+<tr><th>レベル</th><th>語彙</th><th>AI話速</th><th>目安</th></tr>
+<tr><td><span class="bg" style="background:#d1fae5;color:#059669">A1</span></td><td>〜500</td><td>ゆっくり</td><td>英検5級</td></tr>
+<tr><td><span class="bg" style="background:#d1fae5;color:#059669">A2</span></td><td>〜1,500</td><td>ゆっくり</td><td>英検3-4級</td></tr>
+<tr><td><span class="bg" style="background:#ede9fe;color:#4f46e5">B1</span></td><td>〜3,000</td><td>普通</td><td>英検2-準2級</td></tr>
+<tr><td><span class="bg" style="background:#ede9fe;color:#4f46e5">B2</span></td><td>〜5,000</td><td>普通</td><td>英検準1級</td></tr>
+<tr><td><span class="bg" style="background:#fee2e2;color:#dc2626">C1</span></td><td>〜8,000+</td><td>速い</td><td>英検1級</td></tr>
 </table>
+<p>直近10セッション平均からおすすめレベルを自動表示。</p>
+
+<h2 id="settings">9. 設定</h2>
+<h3>🎤 音声認識</h3>
+<table>
+<tr><th>モード</th><th>コスト</th><th>精度</th></tr>
+<tr><td><strong>Azure STT</strong>（デフォルト）</td><td>有料</td><td>◎</td></tr>
+<tr><td>自動</td><td>無料〜有料</td><td>○</td></tr>
+<tr><td>Web Speech</td><td>無料</td><td>△ 騒音に弱い</td></tr>
+</table>
+<h3>🤖 Geminiモデル</h3>
+<p>Flash（速い・安い）/ Pro（安定・高い）。503エラーが出るならProに切替。</p>
+<h3>🔊 AIの声</h3>
+<p>10声×4アクセント（US/UK/AU/IN）。セッションごとにランダム。Azure未設定時はブラウザ音声。</p>
+
+<h2 id="cost">10. コスト</h2>
 <div class="card">
-<p><strong>月間コスト目安</strong></p>
-<p>毎日10分のFree Talk + 10問のFlash Translation = <strong>月額約350〜500円</strong></p>
+<table>
+<tr><th>構成</th><th>1回</th><th>月額（朝晩2回）</th></tr>
+<tr><td>Azure STT + Flash</td><td>約7円</td><td>約420円</td></tr>
+<tr><td>Web Speech + Flash</td><td>約3.5円</td><td>約210円</td></tr>
+<tr><td>Azure STT + Pro</td><td>約10円</td><td>約600円</td></tr>
+</table>
+<p>ホーム画面に累計コスト表示。セッション終了時にコスト内訳を確認可能。</p>
 </div>
 
-<h2 id="tips">11. 効果的な学習法</h2>
+<h2 id="tips">11. 学習法</h2>
 <div class="card">
-<h3>🥇 おすすめ日課メニュー（15分）</h3>
+<h3>🥇 おすすめ日課（15分）</h3>
 <ol>
-<li>📝 復習クイズ（2分）— 前回の間違いを確認</li>
-<li>⚡ Flash Translation 10問（5分）— 変換速度を鍛える</li>
-<li>🗣️ Free Talk クイック3ターン（5分）— 実戦練習</li>
-<li>🎧 Shadowing 5文（3分）— 発音矯正</li>
+<li>📝 復習クイズ（2分）</li>
+<li>⚡ Flash Translation 10問（5分）</li>
+<li>🗣️ Free Talk 3ターン（5分）</li>
+<li>🎧 Shadowing 5文（3分）</li>
 </ol>
 </div>
-<ul>
-<li><strong>間違いを恐れない</strong> — エラーは学習の材料。AIは judge しません</li>
-<li><strong>チャレンジ表現を積極的に使う</strong> — 得意な言い回しだけで逃げない</li>
-<li><strong>レベルは少し難しめ</strong> — 楽すぎると伸びない</li>
-<li><strong>単語帳を定期的にチェック</strong> — AIが使った表現を自分のものに</li>
-<li><strong>会話ログを振り返る</strong> — 「こう言えばよかった」の気づきが宝</li>
-</ul>
 
 <h2 id="trouble">12. トラブルシューティング</h2>
-
-<h3>「Gemini API 400/404」エラー</h3>
-<p>APIキーが正しいか確認してください。設定画面でキーが見えるので、コピペミスがないかチェック。</p>
-
-<h3>「音声認識エラー: Cannot close a closed AudioContext」</h3>
-<p>v2026.05.04g以降で修正済み。古いキャッシュが残っている場合はブラウザのキャッシュをクリアしてください。</p>
-
-<h3>音声が再生されない（iOS）</h3>
-<p>iOSでは初回に画面タップが必要です。一度どこかをタップしてから音声ボタンを押してください。</p>
-
 <h3>マイクが使えない</h3>
-<p>ブラウザの設定でマイクへのアクセスを許可してください。HTTPSが必要です（GitHub Pagesなら自動的にHTTPS）。</p>
+<p>PWAモード問題: アプリアンインストール → Chromeで開き直す → マイク許可 → 再インストール。または⚙️設定で「Azure STT」に切替。</p>
+<h3>503エラー</h3>
+<p>自動リトライ（2秒後1回）あり。頻発なら⚙️設定でProに切替。</p>
+<h3>フィードバックJSONエラー</h3>
+<p>自動修復（safeJSON）あり。修復不能ならリトライ。</p>
 
-<h3>データをリセットしたい</h3>
-<p>ホーム画面の「🗑️ データクリア」でセッション履歴・ストリーク・単語帳などを一括削除できます。APIキーは保持されます。</p>
-
-<div style="margin-top:40px;text-align:center;color:var(--muted);font-size:13px">
-<p>English Talk Trainer v2026.05.05a</p>
-<p>Powered by Gemini AI × Azure Speech</p>
+<div style="margin-top:40px;text-align:center;color:#5a6a7a;font-size:13px">
+<p>English Talk Trainer v2026.05.06o — Gemini AI × Azure Speech</p>
 </div>
-
 </div>
 </body>
 </html>

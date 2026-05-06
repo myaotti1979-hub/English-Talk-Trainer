@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06q";
+const VERSION = "v2026.05.06r";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -682,7 +682,8 @@ function speakBrowser(text) {
     if (!window.speechSynthesis) { resolve(); return; }
     var u = new SpeechSynthesisUtterance(text);
     u.lang = 'en-US';
-    u.rate = S.ftLevel === 'A1' || S.ftLevel === 'A2' ? 0.8 : S.ftLevel === 'C1' ? 1.1 : 1.0;
+    var currentLevel = S.screen === 'shadow' ? S.shadowLevel : S.ftLevel;
+    u.rate = currentLevel === 'A1' || currentLevel === 'A2' ? 0.8 : currentLevel === 'C1' ? 1.1 : 1.0;
     u.onend = resolve;
     u.onerror = function() { resolve(); };
     speechSynthesis.speak(u);
@@ -790,7 +791,7 @@ async function recordWav(maxMs, onAutoStop, costKey) {
       for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 32767;
       const wavBuf = new ArrayBuffer(44 + pcm.byteLength);
       const dv = new DataView(wavBuf);
-      const sr = 16000, ch = 1, bps = 16;
+      const sr = ctx.sampleRate, ch = 1, bps = 16;
       dv.setUint32(0,0x52494646,false); dv.setUint32(4,36+pcm.byteLength,true);
       dv.setUint32(8,0x57415645,false); dv.setUint32(12,0x666D7420,false);
       dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,ch,true);
@@ -1732,6 +1733,7 @@ ${_openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
     S.ftWhoseTurn = 'you';
     renderFreeTalkChat();
   } catch(e) {
+    if (_sid !== S.ftSessionId || !S.ftSessionActive) return;
     hideTyping();
     S.chatMessages.push({ type: "system", text: `❌ Error: ${e.message}` });
     S.ftWhoseTurn = 'you';
@@ -2201,6 +2203,7 @@ ${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
     S.ftWhoseTurn = 'you';
     renderFreeTalkChat();
   } catch(e) {
+    if (sid !== S.ftSessionId || !S.ftSessionActive) return;
     hideTyping();
     S.chatMessages.push({ type: "system", text: `❌ ${e.message}` });
     S.ftWhoseTurn = 'you';

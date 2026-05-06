@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06r";
+const VERSION = "v2026.05.06s";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -582,6 +582,23 @@ function addVocabEntries(entries) {
   });
   while (v.length > 500) v.shift();
   safeLSSet("ett_vocab", v);
+}
+function deleteVocabEntry(index) {
+  var v = getVocabNotebook();
+  // index is from reversed array, convert to original
+  var realIdx = v.length - 1 - index;
+  if (realIdx >= 0 && realIdx < v.length) {
+    v.splice(realIdx, 1);
+    safeLSSet("ett_vocab", v);
+  }
+}
+function updateVocabEntry(index, updates) {
+  var v = getVocabNotebook();
+  var realIdx = v.length - 1 - index;
+  if (realIdx >= 0 && realIdx < v.length) {
+    Object.assign(v[realIdx], updates);
+    safeLSSet("ett_vocab", v);
+  }
 }
 
 // ── Conversation Log ──
@@ -2884,11 +2901,70 @@ function renderVocabNotebook() {
       <div class="title">📚 フレーズ集 (${vocab.length})</div>
     </div>
     ${vocab.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Free Talkを始めると、あなたが使ったフレーズが自動記録されます</div></div>' :
-    `<div class="card">${vocab.map(v => `<div class="vocab-entry"><div class="vocab-en">${esc(v.en)}</div><div class="vocab-ja">${esc(v.ja)}</div>${(v.note||v.context) ? `<div class="vocab-ctx">${esc(v.note||v.context)}</div>` : ''}</div>`).join('')}</div>`}
-    ${vocab.length > 0 ? `<button class="btn btn-danger w-full mt-16 mb-16" id="vnClear">フレーズ集をクリア</button>` : ''}
+    vocab.map((v, i) => `<div class="card" style="padding:14px 16px;margin-bottom:8px">
+      <div class="flex justify-between items-center">
+        <div class="vocab-en" style="flex:1">${esc(v.en)}</div>
+        <button class="btn-ghost text-xs vn-del" data-idx="${i}" style="color:var(--red);padding:4px 8px;font-size:18px">✕</button>
+      </div>
+      <div class="vocab-ja">${esc(v.ja)}</div>
+      ${(v.note||v.context) ? `<div class="vocab-ctx">${esc(v.note||v.context)}</div>` : ''}
+      ${v.example ? `
+        <div style="margin-top:8px;padding:10px 12px;background:#f0fdf4;border-radius:10px;font-size:14px;color:#065f46">
+          <div>📝 ${esc(v.example)}</div>
+          <button class="btn-ghost text-xs vn-speak" data-text="${esc(v.example).replace(/"/g,'&quot;')}" style="margin-top:6px;color:var(--accent)">🔊 再生</button>
+        </div>
+      ` : `
+        <button class="btn-ghost text-xs vn-gen" data-idx="${i}" style="margin-top:8px;color:var(--accent)">✨ 例文を生成</button>
+      `}
+    </div>`).join('')}
+    ${vocab.length > 0 ? `<button class="btn btn-ghost w-full mt-16 mb-16" id="vnClear" style="color:var(--red)">🗑️ すべてクリア</button>` : ''}
   `;
   $("vnBack").onclick = () => { S.screen = "home"; render(); };
-  if ($("vnClear")) $("vnClear").onclick = () => { if(confirm("フレーズ集をクリアしますか？")) { localStorage.removeItem("ett_vocab"); S.screen="home"; render(); } };
+  if ($("vnClear")) $("vnClear").onclick = () => { if(confirm("フレーズ集をすべてクリアしますか？")) { localStorage.removeItem("ett_vocab"); renderVocabNotebook(); } };
+
+  // Individual delete
+  document.querySelectorAll(".vn-del").forEach(btn => {
+    btn.onclick = function() {
+      if (confirm("このフレーズを削除しますか？")) {
+        deleteVocabEntry(parseInt(this.dataset.idx));
+        renderVocabNotebook();
+      }
+    };
+  });
+
+  // Generate example sentence
+  document.querySelectorAll(".vn-gen").forEach(btn => {
+    btn.onclick = async function() {
+      var idx = parseInt(this.dataset.idx);
+      var v = vocab[idx];
+      this.textContent = "⏳ 生成中...";
+      this.disabled = true;
+      try {
+        var raw = await geminiChat([{ role: "user", content: `Create one natural English example sentence using the phrase "${v.en}". Keep it simple and practical. Return ONLY the sentence, no quotes, no explanation.` }], "Return only the example sentence.");
+        var example = raw.trim().replace(/^["']|["']$/g, '');
+        updateVocabEntry(idx, { example: example });
+        renderVocabNotebook();
+      } catch(e) {
+        this.textContent = "❌ 失敗 — リトライ";
+        this.disabled = false;
+      }
+    };
+  });
+
+  // Speak example
+  document.querySelectorAll(".vn-speak").forEach(btn => {
+    btn.onclick = function() {
+      var text = this.dataset.text;
+      if (!text) return;
+      if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US';
+        u.rate = 0.9;
+        speechSynthesis.speak(u);
+      }
+    };
+  });
 }
 
 // ═══════════════════════════════════

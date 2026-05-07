@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06v";
+const VERSION = "v2026.05.07a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -455,7 +455,7 @@ const S = {
   chatHistory: [], chatMessages: [],
   ftTopic: "", ftLevel: "B1", ftCategory: "",
   ftVoice: "en-US-JennyNeural",
-  ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false,
+  ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false, ftUserStarts: false,
   ftWhoseTurn: 'ai',
   ftSessionId: 0,  // incremented each session to invalidate stale callbacks
   ftEnding: false,  // prevent double execution of end session  // 'ai' | 'you' — whose turn to speak
@@ -1278,6 +1278,10 @@ const FT_CATEGORIES = [
     { id: "si_library", label: "🎭 図書館", prompt: "Role-play: You are at a library. The AI plays the librarian. Practice getting a library card, finding books, and asking about borrowing rules." },
     { id: "si_cleaning", label: "🎭 クリーニング店", prompt: "Role-play: You are dropping off clothes at a dry cleaner. The AI plays the staff. Practice explaining stains, asking about turnaround time and prices." },
     { id: "si_online_shop", label: "🎭 ネット通販の問合せ", prompt: "Role-play: You have an issue with an online order (wrong item, delayed delivery). The AI plays customer support via chat. Practice explaining and resolving." },
+    { id: "si_directions", label: "🎭 道案内する", prompt: "Role-play: A tourist asks you for directions. The AI plays the lost tourist. Practice giving clear directions, suggesting landmarks, and offering alternatives." },
+    { id: "si_neighbor", label: "🎭 ご近所への挨拶", prompt: "Role-play: You just moved in and are introducing yourself to a neighbor. The AI plays the neighbor. Practice greeting, small talk, and building rapport." },
+    { id: "si_invite", label: "🎭 友人を誘う", prompt: "Role-play: You are inviting a friend to an event, dinner, or trip. The AI plays the friend. Practice suggesting plans, negotiating dates, and handling declines." },
+    { id: "si_phone_reserve", label: "🎭 電話で予約する", prompt: "Role-play: You are calling to make a reservation (restaurant, salon, etc). The AI plays the receptionist. Practice stating your request, giving details, and confirming." },
     { id: "d_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "travel", icon: "✈️", label: "旅行", topics: [
@@ -1299,6 +1303,8 @@ const FT_CATEGORIES = [
     { id: "si_train", label: "🎭 電車・バス", prompt: "Role-play: You are trying to buy a ticket and navigate public transport. The AI plays a station staff member or fellow passenger. Practice asking about routes, transfers, and schedules." },
     { id: "si_tour", label: "🎭 ツアーガイド", prompt: "Role-play: You are on a guided tour. The AI plays the tour guide. Practice asking questions about sights, history, and recommendations." },
     { id: "si_emergency", label: "🎭 緊急事態", prompt: "Role-play: You are in an emergency situation abroad. Practice asking for help, calling emergency services, and explaining your situation." },
+    { id: "si_ask_recommend", label: "🎭 おすすめを聞く", prompt: "Role-play: You are asking a local for recommendations on restaurants, sightseeing, or activities. The AI plays a friendly local. Practice asking for suggestions, comparing options, and thanking." },
+    { id: "si_trouble_explain", label: "🎭 トラブルを説明する", prompt: "Role-play: Something went wrong on your trip (lost wallet, missed train, feeling sick). The AI plays a helpful stranger or staff. Practice explaining the situation clearly and asking for help." },
     { id: "t_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "food", icon: "🍕", label: "食べ物・料理", topics: [
@@ -1342,6 +1348,12 @@ const FT_CATEGORIES = [
     { id: "si_phone", label: "🎭 電話応対", prompt: "Role-play: You are making/receiving a phone call. Practice phone etiquette, taking messages, and scheduling." },
     { id: "si_biz_dinner", label: "🎭 ビジネスディナー", prompt: "Role-play: You are at a business dinner with clients. The AI plays a client. Practice professional small talk, toasting, and building rapport." },
     { id: "si_conference", label: "🎭 カンファレンス", prompt: "Role-play: You are attending a conference or trade show. The AI plays another attendee. Practice networking, exchanging business cards, and discussing industry topics." },
+    { id: "si_facilitate", label: "🎭 会議ファシリテーション", prompt: "Role-play: You are facilitating a team meeting. The AI plays team members. Practice opening the meeting, managing agenda items, asking for input, summarizing decisions, and assigning action items." },
+    { id: "si_presentation", label: "🎭 プレゼンテーション", prompt: "Role-play: You are giving a presentation to colleagues or clients. The AI plays the audience. Practice your opening, explaining slides, handling Q&A, and closing." },
+    { id: "si_onboard", label: "🎭 新人オンボーディング", prompt: "Role-play: You are onboarding a new team member on their first day. The AI plays the new hire. Practice explaining the team, tools, processes, and answering their questions." },
+    { id: "si_pitch", label: "🎭 プロジェクト提案", prompt: "Role-play: You are pitching a new project or idea to management. The AI plays the decision makers. Practice presenting the problem, your solution, timeline, budget, and handling objections." },
+    { id: "si_delegate", label: "🎭 業務依頼・委任", prompt: "Role-play: You need to delegate a task to a colleague. The AI plays the colleague. Practice explaining the task clearly, setting deadlines, and answering their questions." },
+    { id: "si_interview_er", label: "🎭 面接官として", prompt: "Role-play: You are interviewing a job candidate. The AI plays the candidate. Practice asking about experience, skills, motivation, and evaluating fit." },
     { id: "w_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
   { id: "finance", icon: "💹", label: "経済・金融", topics: [
@@ -1432,6 +1444,8 @@ const FT_CATEGORIES = [
     { id: "si_exchange", label: "🎭 国際交流イベント", prompt: "Role-play: You are at an international exchange event or language cafe. The AI plays a foreign participant. Practice introducing yourself, finding common interests, and cultural exchange." },
     { id: "si_homestay", label: "🎭 ホームステイ", prompt: "Role-play: You are staying with a host family. The AI plays the host. Practice daily conversation, house rules, and cultural exchange." },
     { id: "si_party", label: "🎭 パーティー・社交", prompt: "Role-play: You are at a party or social gathering. The AI plays other guests. Practice small talk, introductions, and mingling." },
+    { id: "si_tour_guide", label: "🎭 観光ガイドする", prompt: "Role-play: You are showing a foreign visitor around your city. The AI plays the tourist. Practice describing sights, recommending places, giving directions, and sharing local knowledge." },
+    { id: "si_japanese_food", label: "🎭 和食を紹介する", prompt: "Role-play: You are explaining Japanese food culture to a foreign friend at a restaurant. The AI plays the friend. Practice describing dishes, ingredients, etiquette (chopsticks, itadakimasu), and recommending items." },
     { id: "c_custom", label: "✏️ フリーワード", prompt: "__CUSTOM__" },
   ]},
 
@@ -1577,6 +1591,17 @@ function renderFreeTalkSetup() {
       </div>
     </div>
 
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <div><div class="text-sm" style="font-weight:600">🙋 自分からスタート</div><div class="text-xs text-muted">自分が会話を切り出す</div></div>
+        <label style="position:relative;width:50px;height:28px;display:inline-block">
+          <input type="checkbox" id="userStartToggle" ${S.ftUserStarts?'checked':''} style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:${S.ftUserStarts?'var(--accent)':'#cbd5e1'};border-radius:14px;transition:.3s"></span>
+          <span style="position:absolute;height:22px;width:22px;left:${S.ftUserStarts?'25px':'3px'};bottom:3px;background:#fff;border-radius:50%;transition:.3s"></span>
+        </label>
+      </div>
+    </div>
+
     <button class="btn btn-primary w-full mt-16" id="startChatBtn" ${!selTopic || ((FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt==='__CUSTOM__' || FT_ALL_TOPICS.find(t=>t.id===selTopic)?.prompt==='__NEWS_CUSTOM__') && !S.ftCustomTopic)?'disabled':''}>会話をスタート</button>
     ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：AI音声読み上げが使えません</p>' : ''}
   `;
@@ -1615,6 +1640,7 @@ function renderFreeTalkSetup() {
 
   // Quick mode toggle
   if ($("quickToggle")) $("quickToggle").onchange = (e) => { S.ftQuickMode = e.target.checked; renderFreeTalkSetup(); };
+  if ($("userStartToggle")) $("userStartToggle").onchange = (e) => { S.ftUserStarts = e.target.checked; renderFreeTalkSetup(); };
 
   // Custom topic input
   if ($("customTopicInput")) {
@@ -1723,16 +1749,24 @@ ${isRolePlay ? "This is a ROLE-PLAY scenario. Stay in character throughout." : "
 
 CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified level.
 
-${_openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
+${S.ftUserStarts ? 'The learner will start the conversation. Respond naturally and keep the conversation going on this topic.' : _openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
   }
 
   S.chatHistory = [{ role: "user", content: isNews ? "Give me a news article to discuss." : "Start the conversation." }];
-  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topicDisplay} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}\n🔊 ${voiceLabel}` }];
+  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topicDisplay} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}${S.ftUserStarts?' 🙋自分スタート':''}\n🔊 ${voiceLabel}` }];
 
   // Generate challenge expressions (async, don't block start)
   const challengeTopic = { ...topic, prompt: topicPrompt, label: topicDisplay };
   var _sid = S.ftSessionId;
   generateChallengeExpressions(level.id, challengeTopic, S.ftQuickMode, _sid).catch(()=>{});
+
+  // User starts mode: skip AI opening, go straight to user input
+  if (S.ftUserStarts && !isNews) {
+    S.chatHistory = [];  // No initial prompt — user speaks first
+    S.ftWhoseTurn = 'you';
+    renderFreeTalkChat();
+    return;
+  }
 
   renderFreeTalkChat();
   showTyping();

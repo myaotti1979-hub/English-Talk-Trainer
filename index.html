@@ -3033,29 +3033,29 @@ function renderConvLog() {
 // ── Service Worker + 強制更新 ──
 if ('serviceWorker' in navigator) {
   const cachedVer = localStorage.getItem("ett_cached_version");
+
+  // Strip cache-bust query if present
+  if (location.search.includes('_cb=')) {
+    history.replaceState(null, '', location.pathname);
+  }
+
   if (cachedVer && cachedVer !== VERSION) {
     console.log(`Version mismatch: ${cachedVer} → ${VERSION}, clearing caches`);
-    // 1. Unregister all service workers
+    // Unregister old SWs + clear all caches, then re-register new SW
     navigator.serviceWorker.getRegistrations().then(regs => {
       return Promise.all(regs.map(r => r.unregister()));
     }).then(() => {
-      // 2. Clear all caches
       return caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k))));
     }).then(() => {
-      // 3. Save new version and hard reload with cache bust
+      // Register fresh SW (current page already has new version - no reload needed)
       localStorage.setItem("ett_cached_version", VERSION);
-      location.replace(location.pathname + '?_cb=' + Date.now());
+      return navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
     }).catch(() => {
       localStorage.setItem("ett_cached_version", VERSION);
-      location.replace(location.pathname + '?_cb=' + Date.now());
     });
   } else {
-    // Strip cache-bust query if present
-    if (location.search.includes('_cb=')) {
-      history.replaceState(null, '', location.pathname);
-    }
     localStorage.setItem("ett_cached_version", VERSION);
-    navigator.serviceWorker.register('./sw.js').then(reg => {
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
       reg.update().catch(() => {});
     }).catch(() => {});
   }

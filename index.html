@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07e";
+const VERSION = "v2026.05.07f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2884,6 +2884,27 @@ async function renderShadowPractice() {
               const score = Math.round(pronScore);
               const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
               S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0) });
+
+              // Word-level accuracy visualization
+              var wordsHtml = '';
+              var words = nb?.Words || pa?.Words || [];
+              if (words.length > 0) {
+                wordsHtml = '<div style="margin-top:12px;line-height:2.2;font-size:15px">' +
+                  words.map(function(w) {
+                    var wpa = w.PronunciationAssessment || w;
+                    var wacc = wpa.AccuracyScore ?? 0;
+                    var errType = wpa.ErrorType || 'None';
+                    var color = errType === 'Omission' ? '#9ca3af' :
+                                errType === 'Insertion' ? '#f59e0b' :
+                                wacc >= 80 ? '#059669' :
+                                wacc >= 50 ? '#f59e0b' : '#dc2626';
+                    var decoration = errType === 'Omission' ? 'line-through' : 'none';
+                    var label = errType === 'Omission' ? '(未発話)' : '';
+                    return '<span style="color:' + color + ';text-decoration:' + decoration + ';font-weight:600;margin-right:4px" title="' + Math.round(wacc) + '点">' +
+                           esc(w.Word || '') + label + '</span>';
+                  }).join('') + '</div>';
+              }
+
               $("shResult").classList.remove("hidden");
               $("shResult").innerHTML = `
                 <div style="font-size:36px;font-weight:800;color:${scoreColor}">${score}</div>
@@ -2891,7 +2912,8 @@ async function renderShadowPractice() {
                   <div class="stat-card"><div class="val text-sm">${Math.round(accScore||0)}</div><div class="lbl">正確さ</div></div>
                   <div class="stat-card"><div class="val text-sm">${Math.round(fluScore||0)}</div><div class="lbl">流暢さ</div></div>
                 </div>
-                <div class="text-xs text-muted mt-8">認識: ${esc(nb?.Display || result?.DisplayText || '')}</div>
+                ${wordsHtml || ''}
+                <div class="text-xs text-muted mt-8">🟢正確 🟡要改善 🔴不正確 <span style="color:#9ca3af">取消線=未発話</span></div>
               `;
             } else {
               // Recognition succeeded but no pronunciation scores - show debug info

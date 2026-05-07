@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06t";
+const VERSION = "v2026.05.06u";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -841,7 +841,7 @@ async function azureSTT(wavBlob) {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
-      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000"
+      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=" + (_audioCtx ? _audioCtx.sampleRate : 16000)
     },
     body: wavBlob
   });
@@ -856,10 +856,11 @@ async function azureSTT(wavBlob) {
 // ── Azure Pronunciation Assessment ──
 async function azurePronAssess(wavBlob, refText) {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
+  var actualRate = _audioCtx ? _audioCtx.sampleRate : 16000;
   const pronConfig = btoa(JSON.stringify({
     ReferenceText: refText,
     GradingSystem: "HundredMark",
-    Granularity: "Word",
+    Granularity: "Phoneme",
     Dimension: "Comprehensive",
     EnableMiscue: true
   }));
@@ -868,13 +869,15 @@ async function azurePronAssess(wavBlob, refText) {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
-      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
+      "Content-Type": `audio/wav; codecs=audio/pcm; samplerate=${actualRate}`,
       "Pronunciation-Assessment": pronConfig
     },
     body: wavBlob
   });
   if (!res.ok) throw new Error(`Azure PronAssess ${res.status}`);
-  return await res.json();
+  var data = await res.json();
+  console.log("PronAssess response:", JSON.stringify(data).slice(0, 500));
+  return data;
 }
 
 // ── Utility ──
@@ -2818,19 +2821,29 @@ async function renderShadowPractice() {
           try {
             const result = await azurePronAssess(wav, sent.en);
             const nb = result?.NBest?.[0];
-            const pron = nb?.PronunciationAssessment || {};
-            const score = pron.PronScore || 0;
-            const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
-            S.shadowResults.push({ en: sent.en, score, accuracy: pron.AccuracyScore||0, fluency: pron.FluencyScore||0, completeness: pron.CompletenessScore||0 });
-            $("shResult").classList.remove("hidden");
-            $("shResult").innerHTML = `
-              <div style="font-size:36px;font-weight:800;color:${scoreColor}">${score}</div>
-              <div class="stats-grid mt-8">
-                <div class="stat-card"><div class="val text-sm">${pron.AccuracyScore||'-'}</div><div class="lbl">正確さ</div></div>
-                <div class="stat-card"><div class="val text-sm">${pron.FluencyScore||'-'}</div><div class="lbl">流暢さ</div></div>
-              </div>
-              <div class="text-xs text-muted mt-8">認識: ${esc(nb?.Display || '')}</div>
-            `;
+            const pron = nb?.PronunciationAssessment;
+            if (pron && pron.PronScore !== undefined) {
+              const score = Math.round(pron.PronScore);
+              const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+              S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(pron.AccuracyScore||0), fluency: Math.round(pron.FluencyScore||0), completeness: Math.round(pron.CompletenessScore||0) });
+              $("shResult").classList.remove("hidden");
+              $("shResult").innerHTML = `
+                <div style="font-size:36px;font-weight:800;color:${scoreColor}">${score}</div>
+                <div class="stats-grid mt-8">
+                  <div class="stat-card"><div class="val text-sm">${Math.round(pron.AccuracyScore||0)}</div><div class="lbl">正確さ</div></div>
+                  <div class="stat-card"><div class="val text-sm">${Math.round(pron.FluencyScore||0)}</div><div class="lbl">流暢さ</div></div>
+                </div>
+                <div class="text-xs text-muted mt-8">認識: ${esc(nb?.Display || result?.DisplayText || '')}</div>
+              `;
+            } else {
+              // Recognition succeeded but no pronunciation scores
+              S.shadowResults.push({ en: sent.en, score: 0 });
+              $("shResult").classList.remove("hidden");
+              $("shResult").innerHTML = `
+                <div class="text-xs text-muted">認識: ${esc(nb?.Display || result?.DisplayText || '(不明)')}</div>
+                <div class="text-xs text-red mt-8">発音評価スコアを取得できませんでした。もう一度お試しください。</div>
+              `;
+            }
           } catch(e) {
             S.shadowResults.push({ en: sent.en, score: 0 });
             $("shResult").classList.remove("hidden");

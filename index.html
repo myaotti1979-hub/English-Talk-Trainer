@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07a";
+const VERSION = "v2026.05.07b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1748,6 +1748,8 @@ TOPIC: ${topicPrompt}
 ${isRolePlay ? "This is a ROLE-PLAY scenario. Stay in character throughout." : ""}
 
 CRITICAL: Follow the level rules STRICTLY. Do NOT speak above the specified level.
+- Your vocabulary, grammar, and sentence length MUST match the level constraints above.
+- A1: only basic 500 words, 1 short sentence. A2: everyday words, 1-2 sentences. B1: standard vocab, 2-3 sentences. B2: wide vocab with idioms, 2-3 complex sentences. C1: sophisticated language, 2-4 sentences.
 
 ${S.ftUserStarts ? 'The learner will start the conversation. Respond naturally and keep the conversation going on this topic.' : _openingStyles[Math.floor(Math.random() * _openingStyles.length)]}`;
   }
@@ -2240,9 +2242,17 @@ async function handleUserMessage(text) {
   const isRolePlay = topic?.id?.startsWith("si_");
   const resolvedPrompt = topic?.prompt === '__CUSTOM__' ? `Talk about "${S.ftCustomTopic}"` : topic?.prompt?.startsWith('__NEWS__') ? 'Discuss the news article you presented' : (topic?.prompt || "Free conversation");
   const sysPrompt = `You are a friendly English conversation partner.
+
 ${level?.sysRules || "Speak naturally."}
+
 Topic: ${resolvedPrompt}.
-${isRolePlay ? "Stay in character for this role-play scenario." : ""}`;
+${isRolePlay ? "Stay in character for this role-play scenario." : ""}
+
+CRITICAL: You MUST follow the level rules above STRICTLY.
+- Do NOT use vocabulary or grammar above the specified level.
+- Do NOT make your sentences longer than the specified range.
+- Match your response length to the level (A1=1 sentence, B1=2-3 sentences, C1=2-4 sentences).
+- If the user speaks above or below the level, YOU still stay at the specified level.`;
 
   try {
     const reply = await geminiChat(S.chatHistory, sysPrompt);

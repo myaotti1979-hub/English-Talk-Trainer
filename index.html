@@ -3032,28 +3032,32 @@ function renderConvLog() {
 
 // ── Service Worker + 強制更新 ──
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').then(reg => {
-    // 新しいSWが見つかったら即座にアクティベート
-    reg.addEventListener('updatefound', () => {
-      const nw = reg.installing;
-      if (nw) nw.addEventListener('statechange', () => {
-        if (nw.state === 'activated') location.reload();
-      });
-    });
-    // ページ読み込みごとにSW更新チェック
-    reg.update().catch(() => {});
-  }).catch(() => {});
-
-  // バージョン不一致時に強制リフレッシュ
   const cachedVer = localStorage.getItem("ett_cached_version");
   if (cachedVer && cachedVer !== VERSION) {
     console.log(`Version mismatch: ${cachedVer} → ${VERSION}, clearing caches`);
-    caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k)))).then(() => {
+    // 1. Unregister all service workers
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      return Promise.all(regs.map(r => r.unregister()));
+    }).then(() => {
+      // 2. Clear all caches
+      return caches.keys().then(ks => Promise.all(ks.map(k => caches.delete(k))));
+    }).then(() => {
+      // 3. Save new version and hard reload with cache bust
       localStorage.setItem("ett_cached_version", VERSION);
-      location.reload();
+      location.replace(location.pathname + '?_cb=' + Date.now());
+    }).catch(() => {
+      localStorage.setItem("ett_cached_version", VERSION);
+      location.replace(location.pathname + '?_cb=' + Date.now());
     });
   } else {
+    // Strip cache-bust query if present
+    if (location.search.includes('_cb=')) {
+      history.replaceState(null, '', location.pathname);
+    }
     localStorage.setItem("ett_cached_version", VERSION);
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.update().catch(() => {});
+    }).catch(() => {});
   }
 }
 

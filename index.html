@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06u";
+const VERSION = "v2026.05.06v";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -808,7 +808,7 @@ async function recordWav(maxMs, onAutoStop, costKey) {
       for (let i = 0; i < samples.length; i++) pcm[i] = Math.max(-1, Math.min(1, samples[i])) * 32767;
       const wavBuf = new ArrayBuffer(44 + pcm.byteLength);
       const dv = new DataView(wavBuf);
-      const sr = ctx.sampleRate, ch = 1, bps = 16;
+      const sr = 16000, ch = 1, bps = 16;
       dv.setUint32(0,0x52494646,false); dv.setUint32(4,36+pcm.byteLength,true);
       dv.setUint32(8,0x57415645,false); dv.setUint32(12,0x666D7420,false);
       dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,ch,true);
@@ -841,7 +841,7 @@ async function azureSTT(wavBlob) {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
-      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=" + (_audioCtx ? _audioCtx.sampleRate : 16000)
+      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000"
     },
     body: wavBlob
   });
@@ -856,27 +856,25 @@ async function azureSTT(wavBlob) {
 // ── Azure Pronunciation Assessment ──
 async function azurePronAssess(wavBlob, refText) {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
-  var actualRate = _audioCtx ? _audioCtx.sampleRate : 16000;
   const pronConfig = btoa(JSON.stringify({
     ReferenceText: refText,
     GradingSystem: "HundredMark",
     Granularity: "Phoneme",
-    Dimension: "Comprehensive",
-    EnableMiscue: true
+    Dimension: "Comprehensive"
   }));
-  const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
+  const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US&format=detailed`;
   const res = await fetchT(url, {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
-      "Content-Type": `audio/wav; codecs=audio/pcm; samplerate=${actualRate}`,
+      "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000",
       "Pronunciation-Assessment": pronConfig
     },
     body: wavBlob
   });
   if (!res.ok) throw new Error(`Azure PronAssess ${res.status}`);
   var data = await res.json();
-  console.log("PronAssess response:", JSON.stringify(data).slice(0, 500));
+  console.log("PronAssess:", JSON.stringify(data).slice(0, 500));
   return data;
 }
 

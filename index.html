@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.06s";
+const VERSION = "v2026.05.06t";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2476,7 +2476,7 @@ Respond ONLY in JSON:
       </div>
     `;
     $("flashRetry").onclick = () => generateFlashQuestions();
-    $("flashBack").onclick = () => { S.screen = "home"; render(); };
+    $("flashBack").onclick = () => { srCancel(); S.screen = "home"; render(); };
   }
 }
 
@@ -2533,11 +2533,26 @@ function renderFlashQuestion() {
   if ($("flashMic")) {
     $("flashMic").onclick = function() {
       if (_srActive) {
+        // Stop recording — deliver result
+        $("flashMic").className = "mic-btn processing";
+        $("flashMic").textContent = "⏳";
         srStop();  // callback handles result
       } else {
         var started = srStart(function(text) {
-          if ($("flashMic")) { $("flashMic").className = "mic-btn idle"; $("flashMic").textContent = "🎤"; }
-          if (text) submitAnswer(text);
+          if ($("flashMic")) {
+            $("flashMic").className = "mic-btn idle";
+            $("flashMic").textContent = "🎤";
+          }
+          if (text && text.trim()) {
+            submitAnswer(text.trim());
+          } else {
+            // No text recognized — show message
+            if ($("flashResult")) {
+              $("flashResult").innerHTML = '<div class="text-xs text-muted">音声が認識できませんでした。もう一度お試しください。</div>';
+              $("flashResult").classList.remove("hidden");
+              setTimeout(function() { if ($("flashResult")) $("flashResult").classList.add("hidden"); }, 2000);
+            }
+          }
         });
         if (started) {
           $("flashMic").className = "mic-btn recording";
@@ -2788,11 +2803,13 @@ async function renderShadowPractice() {
   };
   $("shRecordBtn").onclick = async () => {
     $("shRecordBtn").disabled = true;
-    $("shRecordBtn").textContent = "⏹ 録音中...";
-    $("shRecordBtn").className = "btn btn-danger mt-8";
+    $("shRecordBtn").textContent = "⏳ マイク準備中...";
     try {
       const rec = await recordWav(0, null, 'pronSeconds');
-      // Wait a moment then stop (or user presses again)
+      // Recording started — enable button for stopping
+      $("shRecordBtn").disabled = false;
+      $("shRecordBtn").textContent = "⏹ 録音停止";
+      $("shRecordBtn").className = "btn btn-danger mt-8";
       $("shRecordBtn").onclick = async () => {
         $("shRecordBtn").disabled = true;
         $("shRecordBtn").textContent = "⏳ 評価中...";

@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07d";
+const VERSION = "v2026.05.07e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2853,8 +2853,12 @@ async function renderShadowPractice() {
     $("shListenBtn").disabled = false;
   };
   $("shRecordBtn").onclick = async () => {
+    // Stop any AI audio to prevent echo
+    stopAudio();
     $("shRecordBtn").disabled = true;
     $("shRecordBtn").textContent = "⏳ マイク準備中...";
+    // Brief delay to let speaker audio fully stop before mic activates
+    await new Promise(r => setTimeout(r, 500));
     try {
       const rec = await recordWav(0, null, 'pronSeconds');
       // Recording started — enable button for stopping
@@ -2869,17 +2873,23 @@ async function renderShadowPractice() {
           try {
             const result = await azurePronAssess(wav, sent.en);
             const nb = result?.NBest?.[0];
-            const pron = nb?.PronunciationAssessment;
-            if (pron && pron.PronScore !== undefined) {
-              const score = Math.round(pron.PronScore);
+            // Scores can be in nb.PronunciationAssessment or directly on nb
+            const pa = nb?.PronunciationAssessment || {};
+            const pronScore = pa.PronScore ?? nb?.PronScore;
+            const accScore = pa.AccuracyScore ?? nb?.AccuracyScore;
+            const fluScore = pa.FluencyScore ?? nb?.FluencyScore;
+            const compScore = pa.CompletenessScore ?? nb?.CompletenessScore;
+
+            if (pronScore !== undefined) {
+              const score = Math.round(pronScore);
               const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
-              S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(pron.AccuracyScore||0), fluency: Math.round(pron.FluencyScore||0), completeness: Math.round(pron.CompletenessScore||0) });
+              S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0) });
               $("shResult").classList.remove("hidden");
               $("shResult").innerHTML = `
                 <div style="font-size:36px;font-weight:800;color:${scoreColor}">${score}</div>
                 <div class="stats-grid mt-8">
-                  <div class="stat-card"><div class="val text-sm">${Math.round(pron.AccuracyScore||0)}</div><div class="lbl">正確さ</div></div>
-                  <div class="stat-card"><div class="val text-sm">${Math.round(pron.FluencyScore||0)}</div><div class="lbl">流暢さ</div></div>
+                  <div class="stat-card"><div class="val text-sm">${Math.round(accScore||0)}</div><div class="lbl">正確さ</div></div>
+                  <div class="stat-card"><div class="val text-sm">${Math.round(fluScore||0)}</div><div class="lbl">流暢さ</div></div>
                 </div>
                 <div class="text-xs text-muted mt-8">認識: ${esc(nb?.Display || result?.DisplayText || '')}</div>
               `;

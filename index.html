@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07l";
+const VERSION = "v2026.05.07n";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1832,12 +1832,14 @@ function renderFreeTalkChat() {
     </div>
     <div class="chat-area" id="chatArea">${msgs}<div id="typingIndicator" class="typing hidden"><span></span><span></span><span></span></div></div>
     <div class="chat-input-bar">
-      ${S.ftWhoseTurn === 'ai' ? '<div class="turn-indicator turn-ai">🔊 AIが話しています...</div>' : '<div class="turn-indicator turn-you">🎤 あなたのターンです</div>'}
+      ${S.ftWhoseTurn === 'ending' ? '<div class="turn-indicator turn-ai">⏳ フィードバック生成中...</div>' :
+        S.ftWhoseTurn === 'ai' ? '<div class="turn-indicator turn-ai">🔊 AIが話しています...</div>' :
+        `<div class="turn-indicator turn-you">🎤 あなたのターンです${!S.ftQuickMode && S.ftTurnCount >= 1 ? ' <button class="btn-ghost" id="ftEndInline" style="font-size:12px;padding:2px 10px;border:1.5px solid var(--accent);border-radius:12px;color:var(--accent);margin-left:8px">🏁 終了してフィードバック</button>' : ''}</div>`}
       <div id="liveTranscript" style="display:${_srActive?'block':'none'};max-width:520px;margin:0 auto 6px;padding:8px 14px;background:rgba(220,38,38,.08);border-radius:12px;font-size:13px;color:var(--red);min-height:24px;word-break:break-word"><span style="animation:pulse 1.5s infinite;display:inline-block">🔴</span> <span id="liveText">${esc(_srBuf)}</span></div>
-      <div class="inner">
-        <input class="input" id="chatInput" placeholder="${S.ftWhoseTurn==='ai'?'AIが話しています...':'Type in English...'}" autocomplete="off" ${S.ftWhoseTurn==='ai'?'disabled':''}>
-        ${srSupported() ? `<button class="mic-btn ${_srActive?'recording':'idle'}" id="micBtn" ${S.ftWhoseTurn==='ai'?'disabled':''}>${_srActive?'⏹':'🎤'}</button>` : ''}
-        <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%" ${S.ftWhoseTurn==='ai'?'disabled':''}>↑</button>
+      <div class="inner" ${S.ftWhoseTurn==='ending'?'style="display:none"':''}>
+        <input class="input" id="chatInput" placeholder="${S.ftWhoseTurn==='ai'?'AIが話しています...':'Type in English...'}" autocomplete="off" ${S.ftWhoseTurn!=='you'?'disabled':''}>
+        ${srSupported() ? `<button class="mic-btn ${_srActive?'recording':'idle'}" id="micBtn" ${S.ftWhoseTurn!=='you'?'disabled':''}>${_srActive?'⏹':'🎤'}</button>` : ''}
+        <button class="btn btn-primary" id="sendBtn" style="padding:12px 16px;border-radius:50%" ${S.ftWhoseTurn!=='you'?'disabled':''}>↑</button>
       </div>
     </div>
   `;
@@ -1855,6 +1857,7 @@ function renderFreeTalkChat() {
     S.screen = "home"; render();
   };
   $("ftEndBtn").onclick = async () => { await endFreeTalkSession(); };
+  if ($("ftEndInline")) $("ftEndInline").onclick = async () => { await endFreeTalkSession(); };
 
   // Send text
   const sendMsg = () => {
@@ -2237,8 +2240,10 @@ async function handleUserMessage(text) {
 
   // Quick mode: auto-end after 3 turns
   if (S.ftQuickMode && S.ftTurnCount >= 3) {
+    S.ftWhoseTurn = 'ending';  // Disable all input
+    S.chatMessages.push({ type: "system", text: "✅ 3ターン完了！フィードバックを生成中..." });
     renderFreeTalkChat();
-    setTimeout(() => endFreeTalkSession(), 500);
+    endFreeTalkSession();
     return;
   }
 
@@ -2957,7 +2962,7 @@ async function renderShadowPractice() {
     <div class="card shadow-card">
       <div class="shadow-status" id="shStatus">🔊 まずAIの音声を聞きましょう</div>
       <div class="shadow-text" id="shText" style="filter:blur(4px)">${esc(sent.en)}</div>
-      <div class="text-xs text-muted mb-16">${esc(sent.ja)}</div>
+      <div class="text-xs text-muted mb-16" id="shJa" ${S.shadowHideText ? 'style="display:none"' : ''}>${esc(sent.ja)}</div>
       <button class="btn btn-primary" id="shListenBtn">🔊 AIの音声を聞く</button>
       <button class="btn btn-secondary mt-8 hidden" id="shRecordBtn">🎤 自分で言ってみる</button>
       <button class="btn btn-ghost mt-8 hidden" id="shNextBtn">次の文 →</button>
@@ -2969,8 +2974,11 @@ async function renderShadowPractice() {
     $("shListenBtn").disabled = true;
     $("shListenBtn").textContent = "⏳ 再生中...";
     try { await speakText(sent.en, S.ftVoice); } catch(e) { console.warn(e); }
-    $("shText").style.filter = "none";
-    $("shStatus").textContent = "🎤 同じ文を繰り返してください";
+    // Only reveal text if hide mode is OFF
+    if (!S.shadowHideText) {
+      $("shText").style.filter = "none";
+    }
+    $("shStatus").textContent = S.shadowHideText ? "🎤 聞いた文を繰り返してください（テキスト非表示中）" : "🎤 同じ文を繰り返してください";
     $("shRecordBtn").classList.remove("hidden");
     $("shListenBtn").textContent = "🔊 もう一度聞く";
     $("shListenBtn").disabled = false;
@@ -3000,6 +3008,7 @@ async function renderShadowPractice() {
         // Reveal text after recording
         $("shText").style.filter = "none";
         $("shText").style.userSelect = "auto";
+        if ($("shJa")) $("shJa").style.display = "";
         const wav = await rec.stop();
         // Save recording for playback comparison
         if (wav && wav.size > 44) {

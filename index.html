@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07g";
+const VERSION = "v2026.05.07l";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -254,149 +254,140 @@ const TTS_VOICES = [
 ];
 
 // 話速マッピング（CEFR レベル別）
-const TTS_RATE = { A1: "slow", A2: "slow", B1: "medium", B2: "medium", C1: "fast" };
+// TTS rate is fixed at natural speed for all levels
 
 // ── CEFR レベル定義（語彙・文法・文の長さ・AI振る舞い・フィードバック基準） ──
 const CEFR_LEVELS = {
   A1: {
     id: "A1", label: "A1 入門", tag: "Beginner",
     desc: "ごく基本的な表現で自己紹介や簡単な質問ができる",
-    ttsRate: "slow",
-    // AI会話パートナーへの指示
     sysRules: `LEVEL A1 (Beginner) — STRICT RULES:
-VOCABULARY: Use only the most basic 500 words (be, have, go, like, want, can, good, big, small, etc). NO phrasal verbs. NO idioms. NO slang.
-GRAMMAR: Present simple, past simple of "be/have", "can", "there is/are", imperatives. NO perfect tenses. NO passive voice. NO conditionals beyond zero conditional.
-SENTENCE LENGTH: Keep ALL sentences to 3-8 words. Maximum 1 clause per sentence. Never use subordinate clauses.
-YOUR RESPONSES: 1 sentence only. Ask simple yes/no questions or "What/Where/When" questions.
-BEHAVIOR: Speak as if to a complete beginner. If the user struggles, simplify further. Repeat key words. Use gestures-like expressions ("Look!", "Yes!", "Good!").
-PACE: Very slow and clear. Pause between sentences.
-TOPICS: Stick to immediate personal info — name, age, family, colors, numbers, food, weather (sunny/rainy), daily objects.
-ERRORS: Ignore ALL errors during conversation. Never correct. Just model correct usage naturally.`,
-    // 瞬間英作文の指示
+VOCABULARY: Use ONLY the most basic 500 words. Examples of allowed words: be, have, go, like, want, can, good, bad, big, small, hot, cold, happy, sad, eat, drink, work, live, come, see, know, think, make, take.
+BANNED at A1: phrasal verbs, idioms, slang, abstract nouns (opportunity, situation), academic words.
+GRAMMAR: ONLY present simple ("I like"), "be" in present/past ("It was"), "can/can't", "there is/are", imperatives ("Look!"). 
+BANNED at A1: present continuous, present perfect, past simple (except "was/were/had"), future tenses, passive voice, conditionals, relative clauses.
+SENTENCE LENGTH: 3-8 words. ONE clause only. Never use "because/although/which/that" as connectors.
+YOUR RESPONSES: 1 short sentence only. Ask yes/no or simple "What/Where/When" questions. NEVER ask "Why" or "How" questions.
+BEHAVIOR: Speak to a complete beginner. If they struggle, simplify. Use encouraging words ("Good!", "Yes!", "Nice!"). Repeat key words.
+TOPICS: Name, age, family, colors, numbers 1-100, food, weather (sunny/rainy/cold/hot), daily objects, simple likes/dislikes.
+ERRORS: Ignore ALL errors. Never correct. Model correct usage naturally.`,
     flashRules: `Generate A1 level sentences:
-- Use ONLY present simple, past simple of "be", and "can"
-- Vocabulary: top 500 most common English words only
-- Sentence length: 3-7 words
-- Topics: self-introduction, family, daily routines, simple preferences
-- Examples: "I like coffee.", "She is my sister.", "Can you help me?", "It was cold yesterday."`,
-    // フィードバック評価基準
-    feedbackCriteria: `A1 evaluation criteria:
-- Can they form basic SVO sentences?
-- Can they use present simple correctly?
-- Can they respond to simple questions?
-- Do NOT penalize for missing articles, wrong prepositions, or pronunciation
-- Score generously — any communication attempt is positive at this level`,
+- ONLY present simple and "be" (am/is/are/was/were)
+- ONLY top 500 most common words
+- 3-7 words per sentence, ONE clause
+- NO "because", NO "which", NO compound sentences
+- Topics: self, family, food, weather, daily routine, objects
+- Good examples: "I like coffee.", "She is my sister.", "Can you help me?", "It was cold yesterday.", "I have two cats.", "Where is the station?", "He works in Tokyo.", "This is very good."
+- BAD examples (too hard): "I usually wake up early." (usually=A2), "Could you tell me...?" (could=A2)`,
+    shadowRules: `Generate A1 shadowing sentences:
+- Very short (3-7 words), clear pronunciation
+- Common daily phrases people actually say
+- Examples: "Nice to meet you.", "I like this one.", "Where is the bathroom?", "Can I have some water?", "It's a sunny day.", "Thank you very much.", "I don't understand.", "See you tomorrow."`,
+    feedbackCriteria: `A1 evaluation: Can they form basic SVO sentences? Can they use present simple? Can they respond to simple questions? Do NOT penalize articles, prepositions, or pronunciation. Score very generously — any communication attempt is positive.`,
   },
   A2: {
     id: "A2", label: "A2 初級", tag: "Elementary",
     desc: "日常の基本的なやりとりができる。買い物・道案内など",
-    ttsRate: "slow",
     sysRules: `LEVEL A2 (Elementary) — RULES:
-VOCABULARY: Use common everyday vocabulary (~1500 words). Simple adjectives, basic adverbs (always, sometimes, never, very). NO advanced phrasal verbs. Avoid idioms.
-GRAMMAR: Present simple/continuous, past simple, "going to" future, comparatives/superlatives, basic modals (can/could/must/should), "because/and/but/so" connectors. NO present perfect. NO passive. NO relative clauses.
-SENTENCE LENGTH: 5-12 words per sentence. Maximum 2 clauses joined by "and/but/because".
-YOUR RESPONSES: 1-2 sentences. Ask choice questions ("Do you prefer A or B?") or simple open questions.
-BEHAVIOR: Be encouraging. If the user uses a word incorrectly, model the correct usage in your response without pointing out the error.
-PACE: Slightly slower than normal.
-TOPICS: Shopping, travel basics, family, hobbies, food, daily routines, simple descriptions.
+VOCABULARY: Common everyday vocabulary (~1500 words). Simple adjectives, basic adverbs (always, sometimes, never, usually, very, really). Simple phrasal verbs (wake up, get up, turn on/off, look for).
+BANNED at A2: advanced phrasal verbs (come across, bring up), idioms, abstract vocabulary, academic words.
+GRAMMAR: Present simple/continuous, past simple (regular and common irregulars), "going to" future, comparatives/superlatives, basic modals (can/could/must/should/might), connectors (and/but/because/so/or).
+BANNED at A2: present perfect, past continuous, passive voice, relative clauses, reported speech, conditionals (except zero).
+SENTENCE LENGTH: 5-12 words. Maximum 2 clauses joined by "and/but/because/so".
+YOUR RESPONSES: 1-2 sentences. Ask choice questions ("Do you prefer A or B?") or simple "What/How often/How many" questions.
+BEHAVIOR: Be encouraging. Model correct usage naturally without pointing out errors. Use clear, simple language.
+TOPICS: Shopping, directions, travel basics, family, hobbies, food, daily routines, simple descriptions, weekend plans, past events.
 ERRORS: Ignore minor errors. Only note if meaning is completely unclear.`,
     flashRules: `Generate A2 level sentences:
-- Use present simple, present continuous, past simple, "going to" future
+- Present simple, present continuous, past simple, "going to" future
 - Comparatives ("bigger than"), superlatives ("the best"), basic modals
-- Vocabulary: common everyday words, ~1500 word range
-- Sentence length: 5-10 words
-- Topics: shopping, travel, daily life, preferences, simple descriptions
-- Examples: "I usually wake up at 7.", "This restaurant is better than that one.", "Could you speak more slowly?"`,
-    feedbackCriteria: `A2 evaluation criteria:
-- Can they describe daily routines and habits?
-- Can they use past tense correctly?
-- Can they ask and answer about preferences?
-- Can they use basic connectors (and, but, because)?
-- Be lenient on article/preposition errors but note them as tips`,
+- 5-10 words, max 2 clauses
+- NO present perfect, NO passive, NO relative clauses
+- Topics: shopping, travel, daily life, preferences, descriptions, past events
+- Good examples: "I usually wake up at seven.", "This restaurant is cheaper than that one.", "We're going to visit Osaka next week.", "Could you speak more slowly?", "I bought a new phone yesterday.", "She is taller than her brother."
+- BAD examples (too hard): "I've been to Osaka." (present perfect=B1), "The book which I read..." (relative clause=B1)`,
+    shadowRules: `Generate A2 shadowing sentences:
+- 5-10 words, natural everyday phrases
+- Past tense, comparisons, simple opinions
+- Examples: "I went to the supermarket yesterday.", "This coffee is better than last time.", "Could you tell me the time?", "We're going to have a party on Saturday.", "I always take the train to work.", "She's wearing a beautiful dress today."`,
+    feedbackCriteria: `A2 evaluation: Can they describe routines and habits? Can they use past tense? Can they ask about preferences? Can they use "and/but/because"? Be lenient on articles/prepositions but note them as tips.`,
   },
   B1: {
     id: "B1", label: "B1 中級", tag: "Intermediate",
     desc: "身近な話題について意見を述べ、理由を説明できる",
-    ttsRate: "medium",
     sysRules: `LEVEL B1 (Intermediate) — RULES:
-VOCABULARY: Use standard vocabulary (~3000 words). Common phrasal verbs (look forward to, get along with, turn out). Simple collocations. Avoid rare idioms.
-GRAMMAR: All basic tenses + present perfect, past continuous, first conditional (if + present → will), basic passive voice, relative clauses (who/which/that), reported speech basics. NO subjunctive. NO mixed conditionals.
-SENTENCE LENGTH: 8-18 words. Use 2-3 clause sentences with appropriate connectors (however, although, in addition).
-YOUR RESPONSES: 2-3 sentences. Ask open-ended "Why/How" questions. Encourage opinions.
-BEHAVIOR: Speak naturally but clearly. Push the user to express opinions and give reasons. If they use only simple structures, prompt them: "Can you tell me why?" or "What happened next?"
-PACE: Normal conversational speed.
-TOPICS: Opinions on familiar subjects, experiences, travel stories, work situations, plans, explanations.
-ERRORS: Note significant grammar errors mentally for end-of-session feedback, but don't interrupt the conversation.`,
+VOCABULARY: Standard vocabulary (~3000 words). Common phrasal verbs (look forward to, get along with, turn out, figure out, come up with). Simple collocations (make a decision, take responsibility).
+BANNED at B1: rare idioms, academic jargon, C1 vocabulary (implications, nuanced, inherently).
+GRAMMAR: All basic tenses + present perfect ("I've been to..."), past continuous ("I was walking when..."), first conditional ("If it rains, I'll stay home"), basic passive voice ("It was made in Japan"), relative clauses (who/which/that), "used to", comparisons.
+BANNED at B1: second/third conditionals, past perfect, mixed conditionals, inversion, subjunctive, cleft sentences.
+SENTENCE LENGTH: 8-18 words. 2-3 clause sentences with connectors (however, although, in addition, for example).
+YOUR RESPONSES: 2-3 sentences. Ask open "Why/How" questions. Encourage opinions and reasons. Ask follow-up questions.
+BEHAVIOR: Speak naturally and clearly. Push the user to express opinions with reasons. If they give simple answers, prompt: "Can you tell me more?" or "Why do you think so?"
+TOPICS: Opinions on familiar subjects, personal experiences, travel stories, work situations, future plans, comparing options.
+ERRORS: Note significant grammar errors for feedback, but don't interrupt conversation flow.`,
     flashRules: `Generate B1 level sentences:
-- Use present perfect, past continuous, first conditional, passive voice, relative clauses
-- Include opinion expressions ("I think...", "In my opinion...")
+- Present perfect, past continuous, first conditional, passive voice, relative clauses
+- Opinion expressions ("I think...", "In my opinion..."), reason connectors ("because", "so that")
 - Common phrasal verbs and collocations
-- Sentence length: 8-15 words
-- Topics: opinions, experiences, explanations, comparing options, giving reasons
-- Examples: "I've never been to Europe, but I'd love to go.", "The meeting was canceled because the manager was sick.", "If it rains tomorrow, we should stay home."`,
-    feedbackCriteria: `B1 evaluation criteria:
-- Can they express opinions and give reasons?
-- Can they use present perfect vs past simple appropriately?
-- Can they form conditional sentences?
-- Can they use connectors beyond "and/but"?
-- Can they narrate a sequence of events?
-- Note tense consistency errors and connector misuse`,
+- 8-15 words per sentence
+- NO second/third conditionals, NO past perfect, NO inversion
+- Topics: opinions, experiences, comparisons, giving reasons
+- Good examples: "I've never been to Europe, but I'd love to go.", "The meeting was canceled because the manager was sick.", "If it rains tomorrow, we should stay home.", "I used to play soccer when I was in high school."
+- BAD examples (too hard): "Had I known..." (inversion=C1), "If I had studied harder..." (third conditional=B2)`,
+    shadowRules: `Generate B1 shadowing sentences:
+- 8-15 words, natural spoken English
+- Include present perfect, opinions, reasons
+- Examples: "I've been studying English for about three years now.", "In my opinion, traveling by train is more convenient.", "If we leave early, we can avoid the morning traffic.", "The restaurant we went to last night was really crowded."`,
+    feedbackCriteria: `B1 evaluation: Can they express opinions with reasons? Can they use present perfect vs past simple? Can they form conditional sentences? Can they use connectors beyond "and/but"? Can they narrate a sequence of events? Note tense consistency errors and connector misuse.`,
   },
   B2: {
     id: "B2", label: "B2 中上級", tag: "Upper Intermediate",
     desc: "幅広い話題で流暢に議論でき、詳細な説明ができる",
-    ttsRate: "medium",
     sysRules: `LEVEL B2 (Upper Intermediate) — RULES:
-VOCABULARY: Use wide-ranging vocabulary (~5000 words). Phrasal verbs, collocations, some idioms ("it's a no-brainer", "on the same page"). Register awareness (formal vs informal).
-GRAMMAR: All tenses including past perfect, second/third conditionals, passive in various tenses, complex relative clauses, wish/if only, modals of deduction (must have/might have). Discourse markers (nevertheless, whereas, as a result).
+VOCABULARY: Wide-ranging vocabulary (~5000 words). Phrasal verbs freely, collocations (pose a threat, raise concerns, draw conclusions), some idioms ("it's a no-brainer", "on the same page", "the bottom line"). Register awareness (formal vs informal).
+GRAMMAR: All tenses including past perfect ("After I had finished..."), second conditional ("If I were rich, I would..."), third conditional ("If I had studied, I would have passed"), passive in various tenses, complex relative clauses, wish/if only, modals of deduction (must have/might have/could have). Discourse markers (nevertheless, whereas, as a result, on the other hand).
 SENTENCE LENGTH: 10-25 words. Complex sentences with multiple clauses. Varied sentence structure.
-YOUR RESPONSES: 2-3 sentences. Challenge the user's ideas. Play devil's advocate occasionally. Ask follow-up questions that require detailed responses.
-BEHAVIOR: Speak as you would to a competent non-native speaker. Use natural contractions (I'd, they've, wouldn't). Introduce new vocabulary in context. If the user gives a simple answer, push for elaboration.
-PACE: Natural speed with some fast phrases.
-TOPICS: Abstract topics, current affairs, professional discussions, hypothetical situations, analysis.
+YOUR RESPONSES: 2-3 sentences. Challenge the user's ideas. Play devil's advocate occasionally. Ask follow-up questions requiring detailed, analytical responses.
+BEHAVIOR: Speak as to a competent non-native speaker. Use natural contractions. Introduce new vocabulary in context. If the user gives a simple answer, push for elaboration and nuance.
+TOPICS: Current affairs, professional discussions, hypothetical situations, analysis and evaluation, abstract ideas, advantages/disadvantages.
 ERRORS: Expect mostly correct grammar. Note subtle errors (article usage, preposition collocations, tense nuances) for feedback.`,
     flashRules: `Generate B2 level sentences:
-- Use second/third conditionals, past perfect, passive constructions, wish clauses
-- Include idioms, phrasal verbs, and collocations
-- Use discourse markers (however, nevertheless, furthermore)
-- Sentence length: 12-20 words
+- Second/third conditionals, past perfect, passive constructions, wish clauses
+- Idioms, phrasal verbs, collocations, discourse markers (however, nevertheless, furthermore)
+- 12-20 words per sentence
+- NO inversion, NO cleft sentences, NO subjunctive
 - Topics: hypothetical situations, analysis, professional contexts, abstract ideas
-- Examples: "If I had known about the delay, I would have taken a different route.", "The project is believed to have been completed ahead of schedule.", "She wishes she had studied abroad when she had the chance."`,
-    feedbackCriteria: `B2 evaluation criteria:
-- Can they discuss abstract topics with some detail?
-- Can they use conditionals accurately (2nd/3rd)?
-- Can they use passive voice naturally?
-- Do they vary sentence structure (not always SVO)?
-- Can they use discourse markers to organize ideas?
-- Note: at B2, expect good accuracy. Flag subtle errors like collocation mistakes.`,
+- Good examples: "If I had known about the delay, I would have taken a different route.", "The project is believed to have been completed ahead of schedule.", "She wishes she had studied abroad when she had the chance.", "Despite the economic downturn, several companies managed to increase their profits."
+- BAD examples (too hard): "Not only did he finish..." (inversion=C1), "It was the CEO who decided..." (cleft=C1)`,
+    shadowRules: `Generate B2 shadowing sentences:
+- 12-20 words, sophisticated but natural spoken English
+- Include conditionals, passive, idioms in natural speech
+- Examples: "If I had more free time, I'd probably take up a new hobby like photography.", "The decision was made without consulting any of the team members.", "I've come to realize that first impressions aren't always accurate.", "To be honest, I think the advantages far outweigh the disadvantages."`,
+    feedbackCriteria: `B2 evaluation: Can they discuss abstract topics in detail? Can they use conditionals accurately (2nd/3rd)? Can they use passive voice naturally? Do they vary sentence structure? Can they use discourse markers? At B2, expect good accuracy — flag subtle collocation and register errors.`,
   },
   C1: {
     id: "C1", label: "C1 上級", tag: "Advanced",
     desc: "複雑な話題でも流暢かつ自然に議論できる。ニュアンスを表現",
-    ttsRate: "fast",
     sysRules: `LEVEL C1 (Advanced) — RULES:
-VOCABULARY: Use sophisticated vocabulary (~8000+ words). Idioms, metaphors, academic vocabulary, nuanced word choices (distinguish vs differentiate, implication vs consequence). Register shifting (casual ↔ formal within conversation).
-GRAMMAR: All structures including mixed conditionals, inversion (Not only...but also, Rarely do we...), cleft sentences (What I mean is..., It was John who...), advanced modals, subjunctive (I suggest he go...). Complex noun phrases.
-SENTENCE LENGTH: 12-30+ words. Sophisticated sentence structures with embedding, parenthetical remarks, and rhetorical devices.
-YOUR RESPONSES: 2-4 sentences. Use natural, sophisticated English. Include cultural references, humor, sarcasm when appropriate. Challenge with complex questions requiring nuanced answers.
-BEHAVIOR: Treat the user as a near-fluent speaker. Use fast natural speech patterns, contractions, ellipsis ("Sounds good" instead of "That sounds good"). Use nuanced vocabulary. If the user uses basic language, gently model more sophisticated alternatives.
-PACE: Fast, natural speed. Include some rapid phrases and natural speech patterns.
-TOPICS: Complex social issues, philosophical questions, professional strategy, cultural analysis, nuanced debates.
-ERRORS: Expect high accuracy. Note lack of sophistication (using simple words when precise ones exist), unnatural collocations, and register inconsistencies.`,
+VOCABULARY: Sophisticated vocabulary (~8000+ words). Idioms, metaphors, academic vocabulary, nuanced word choices (distinguish vs differentiate, implication vs consequence, mitigate vs reduce). Register shifting (casual ↔ formal within conversation).
+GRAMMAR: All structures including mixed conditionals ("If I had studied harder, I would be in a better position now"), inversion ("Not only did he refuse, but he also..."), cleft sentences ("What concerns me is...", "It was the timing that caused..."), advanced modals, subjunctive ("I suggest he go..."), complex noun phrases, ellipsis and substitution.
+SENTENCE LENGTH: 12-30+ words. Sophisticated structures with embedding, parenthetical remarks, and rhetorical devices.
+YOUR RESPONSES: 2-4 sentences. Use natural, sophisticated English. Include cultural references, understated humor, and rhetorical questions. Challenge with complex questions requiring nuanced, multi-perspective answers.
+BEHAVIOR: Treat the user as a near-fluent speaker. Use natural contractions, ellipsis ("Sounds good" not "That sounds good to me"). Model sophisticated alternatives. If the user uses basic language, gently rephrase using more precise vocabulary.
+TOPICS: Complex social issues, philosophical questions, professional strategy, cultural analysis, nuanced debates, ethical dilemmas.
+ERRORS: Expect high accuracy. Focus on sophistication — note when simple words are used where precise ones exist, unnatural collocations, register inconsistencies, and lack of hedging/mitigation.`,
     flashRules: `Generate C1 level sentences:
-- Use mixed conditionals, inversion, cleft sentences, subjunctive mood
-- Include idiomatic expressions, academic vocabulary, and nuanced word choices
-- Use complex noun phrases and embedded clauses
-- Sentence length: 15-25 words
-- Topics: complex analysis, professional contexts, nuanced opinions, cultural commentary
-- Examples: "Had it not been for her intervention, the negotiations would have collapsed entirely.", "What concerns me most is the lack of transparency in the decision-making process.", "The report suggests that the government reconsider its approach to renewable energy subsidies."`,
-    feedbackCriteria: `C1 evaluation criteria:
-- Can they express nuanced opinions with appropriate hedging?
-- Can they use sophisticated vocabulary (not just "good/bad/big/small")?
-- Can they vary register appropriately?
-- Do they use complex grammar structures naturally (not just correctly)?
-- Can they use idiomatic language and collocations accurately?
-- Note: at C1, focus on sophistication, not just correctness. A correct but basic sentence should still receive feedback.`,
+- Mixed conditionals, inversion, cleft sentences, subjunctive mood
+- Idiomatic expressions, academic vocabulary, nuanced word choices
+- Complex noun phrases and embedded clauses
+- 15-25 words per sentence
+- Topics: complex analysis, professional strategy, nuanced opinions, cultural commentary
+- Good examples: "Had it not been for her intervention, the negotiations would have collapsed entirely.", "What concerns me most is the lack of transparency in the decision-making process.", "The report suggests that the government reconsider its approach to renewable energy subsidies.", "Not only has the policy failed to achieve its objectives, but it has also created unintended consequences."`,
+    shadowRules: `Generate C1 shadowing sentences:
+- 15-25 words, natural sophisticated spoken English
+- Include inversion, cleft sentences, hedging, connected speech patterns
+- Examples: "What I find particularly interesting is how cultural context shapes our perception of fairness.", "Had we anticipated the scale of the problem, we could have allocated resources more effectively.", "It's not so much the policy itself that concerns me, but rather the way it was implemented.", "The extent to which technology has transformed our daily lives is truly remarkable."`,
+    feedbackCriteria: `C1 evaluation: Can they express nuanced opinions with hedging? Can they use sophisticated vocabulary (not just "good/bad/big/small")? Can they vary register? Do they use complex grammar naturally (not just correctly)? Can they use idiomatic language and collocations accurately? Focus on sophistication, not just correctness — a correct but basic sentence should receive feedback.`,
   },
 };
 
@@ -458,7 +449,7 @@ const S = {
   ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false, ftUserStarts: false,
   ftWhoseTurn: 'ai',
   ftSessionId: 0,  // incremented each session to invalidate stale callbacks
-  ftEnding: false,  // prevent double execution of end session  // 'ai' | 'you' — whose turn to speak
+  ftEnding: false,  // prevent double execution of end session
   ftChallengeExprs: [], ftChallengeUsed: [],
   ftPronScores: [], // pronunciation scores per turn
   // Flash Translation
@@ -466,10 +457,14 @@ const S = {
   flashLevel: "A2", flashCategory: "daily",
   // Shadowing
   shadowSentences: [], shadowCurrent: 0, shadowResults: [],
-  shadowLevel: "B1",
+  shadowLevel: "B1", shadowHideText: false,
+  shadowLastRecordingUrl: null,  // #6: replay own recording
   // Recording
   isRecording: false,
-  srMode: localStorage.getItem("ett_sr_mode") || "azure",  // azure default for reliability
+  srMode: localStorage.getItem("ett_sr_mode") || "azure",
+  // Response time tracking (#1)
+  ftResponseTimes: [],  // timestamps in ms
+  ftTurnStartTime: 0,   // when "your turn" started  // azure default for reliability
   // Cost tracking
   cost: { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
   // Stats
@@ -699,8 +694,8 @@ function speakBrowser(text) {
     if (!window.speechSynthesis) { resolve(); return; }
     var u = new SpeechSynthesisUtterance(text);
     u.lang = 'en-US';
-    var currentLevel = S.screen === 'shadow' ? S.shadowLevel : S.ftLevel;
-    u.rate = currentLevel === 'A1' || currentLevel === 'A2' ? 0.8 : currentLevel === 'C1' ? 1.1 : 1.0;
+    
+    u.rate = 1.0;
     u.onend = resolve;
     u.onerror = function() { resolve(); };
     speechSynthesis.speak(u);
@@ -715,7 +710,7 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
   S.cost.ttsChars += text.length;
 
   const voiceInfo = TTS_VOICES.find(v => v.id === voiceId) || TTS_VOICES[0];
-  const rate = TTS_RATE[S.screen === 'shadow' ? S.shadowLevel : S.ftLevel] || "medium";
+  const rate = "medium";
 
   // Escape XML special characters
   const xmlText = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
@@ -1214,6 +1209,13 @@ function renderHome() {
       <div class="stat-card" style="grid-column:span 2"><div class="val" style="color:var(--orange);font-size:20px">$${getCumulativeCost().toFixed(3)}（約${Math.round(getCumulativeCost()*150)}円）</div><div class="lbl">累計APIコスト</div></div>
     </div>` : ''}
 
+    <div class="card mb-16" style="background:linear-gradient(135deg,${new Date().getHours()<12?'#fef3c7,#fde68a':'#e0e7ff,#c7d2fe'});border:none">
+      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅 朝のルーティン（10分）':'🌙 夜のルーティン（10分）'}</div>
+      <div class="text-xs mt-8" style="color:#1a2a3a">${new Date().getHours()<12?
+        '① 📝 復習クイズ（2分）→ ② 🗣️ Free Talk 3ターン（5分）→ ③ 🎧 Shadowing 5文（3分）' :
+        '① 📝 復習クイズ（2分）→ ② ⚡ Flash 英作文（5分）→ ③ 📚 フレーズ集チェック（3分）'}</div>
+    </div>
+
     <div class="mode-card mode-freetalk mb-16" id="startFreeTalk">
       <div class="icon">🗣️</div>
       <h3>Free Talk</h3>
@@ -1683,6 +1685,7 @@ async function startFreeTalkSession() {
   S.ftWhoseTurn = 'ai';
   S.ftSessionId = (S.ftSessionId || 0) + 1;
   S.ftStartTime = Date.now();
+  S.ftResponseTimes = [];
   S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
 
   // 音声自動選択
@@ -1766,7 +1769,7 @@ ${S.ftUserStarts ? 'The learner will start the conversation. Respond naturally a
   // User starts mode: skip AI opening, go straight to user input
   if (S.ftUserStarts && !isNews) {
     S.chatHistory = [];  // No initial prompt — user speaks first
-    S.ftWhoseTurn = 'you';
+    S.ftWhoseTurn = 'you'; S.ftTurnStartTime = Date.now();
     renderFreeTalkChat();
     return;
   }
@@ -1785,13 +1788,13 @@ ${S.ftUserStarts ? 'The learner will start the conversation. Respond naturally a
     renderFreeTalkChat();
     // Auto-speak AI response
     try { await speakText(reply, S.ftVoice); } catch(e) { S.chatMessages.push({type:"system",text:"🔇 音声再生に失敗しました。再生ボタンを押してください。"}); }
-    S.ftWhoseTurn = 'you';
+    S.ftWhoseTurn = 'you'; S.ftTurnStartTime = Date.now();
     renderFreeTalkChat();
   } catch(e) {
     if (_sid !== S.ftSessionId || !S.ftSessionActive) return;
     hideTyping();
     S.chatMessages.push({ type: "system", text: `❌ Error: ${e.message}` });
-    S.ftWhoseTurn = 'you';
+    S.ftWhoseTurn = 'you'; S.ftTurnStartTime = Date.now();
     renderFreeTalkChat();
   }
 }
@@ -2215,6 +2218,11 @@ Return JSON: {"category": "${pick.name}", "expressions": [{"en": "expression or 
 }
 
 async function handleUserMessage(text) {
+  // Track response time
+  if (S.ftTurnStartTime > 0) {
+    S.ftResponseTimes.push(Date.now() - S.ftTurnStartTime);
+    S.ftTurnStartTime = 0;
+  }
   S.chatMessages.push({ type: "user", text });
   S.chatHistory.push({ role: "user", content: text });
   S.ftTurnCount++;
@@ -2263,13 +2271,13 @@ CRITICAL: You MUST follow the level rules above STRICTLY.
     hideTyping();
     renderFreeTalkChat();
     try { await speakText(reply, S.ftVoice); } catch(e) { S.chatMessages.push({type:"system",text:"🔇 音声再生に失敗しました。再生ボタンを押してください。"}); }
-    S.ftWhoseTurn = 'you';
+    S.ftWhoseTurn = 'you'; S.ftTurnStartTime = Date.now();
     renderFreeTalkChat();
   } catch(e) {
     if (sid !== S.ftSessionId || !S.ftSessionActive) return;
     hideTyping();
     S.chatMessages.push({ type: "system", text: `❌ ${e.message}` });
-    S.ftWhoseTurn = 'you';
+    S.ftWhoseTurn = 'you'; S.ftTurnStartTime = Date.now();
     renderFreeTalkChat();
   }
 }
@@ -2333,6 +2341,23 @@ COMPACT JSON. Keep strings SHORT. Max 3 corrections.
       addMistake({ original: c.original, corrected: c.corrected, explanation: c.explanation, mode: "freetalk" });
     });
 
+    // #3: Add unused challenge expressions to review queue
+    if (S.ftChallengeExprs.length > 0) {
+      var challengeResults = fb.challengeResults || [];
+      S.ftChallengeExprs.forEach(function(expr, i) {
+        var cr = challengeResults[i];
+        var wasUsed = cr ? cr.used : (S.ftChallengeUsed && S.ftChallengeUsed[i]);
+        if (!wasUsed) {
+          addMistake({
+            original: "（未使用チャレンジ表現）",
+            corrected: expr.en + " — " + expr.ja,
+            explanation: "次回のトークで使ってみましょう！",
+            mode: "challenge"
+          });
+        }
+      });
+    }
+
     // Extract vocabulary from AI responses (async, don't block)
     extractVocabulary(S.chatHistory).catch(()=>{});
 
@@ -2378,7 +2403,7 @@ function renderReview() {
       <div class="stat-card"><div class="val" style="color:${fb.grammar?.score>=80?'var(--green)':fb.grammar?.score>=60?'var(--yellow)':'var(--red)'}">${fb.grammar?.score || '-'}</div><div class="lbl">Grammar</div></div>
       <div class="stat-card"><div class="val" style="color:${fb.vocabulary?.score>=80?'var(--green)':fb.vocabulary?.score>=60?'var(--yellow)':'var(--red)'}">${fb.vocabulary?.score || '-'}</div><div class="lbl">Vocabulary</div></div>
       <div class="stat-card"><div class="val" style="color:${fb.naturalness?.score>=80?'var(--green)':fb.naturalness?.score>=60?'var(--yellow)':'var(--red)'}">${fb.naturalness?.score || '-'}</div><div class="lbl">Naturalness</div></div>
-      <div class="stat-card"><div class="val text-accent">${S.ftTurnCount}</div><div class="lbl">Turns</div></div>
+      <div class="stat-card"><div class="val text-accent">${S.ftResponseTimes.length > 0 ? (S.ftResponseTimes.reduce((a,b)=>a+b,0)/S.ftResponseTimes.length/1000).toFixed(1)+'秒' : '-'}</div><div class="lbl">⚡ 平均応答</div></div>
     </div>
 
     ${fb.grammar?.issues?.length ? `
@@ -2440,6 +2465,8 @@ const FLASH_CATEGORIES = [
   { id: "business", label: "💼 ビジネス" },
   { id: "travel", label: "✈️ 旅行" },
   { id: "opinion", label: "💭 意見・感想" },
+  { id: "situation", label: "⚡ 状況反応" },
+  { id: "pattern", label: "🔄 パターンドリル" },
 ];
 
 function initFlash() {
@@ -2492,17 +2519,60 @@ async function generateFlashQuestions() {
     </div>
   `;
   const cat = FLASH_CATEGORIES.find(c => c.id === S.flashCategory);
-  const prompt = `Generate 10 Japanese-to-English translation exercises.
+  const lvlRules = (CEFR_LEVELS[S.flashLevel] || CEFR_LEVELS.A2).flashRules;
+  var prompt;
+
+  if (S.flashCategory === 'situation') {
+    // #4: Situation Response — no Japanese, just scenarios
+    prompt = `Generate 10 situation-response exercises for English conversation practice.
+
+${lvlRules}
+
+For each exercise:
+- Describe a SITUATION in Japanese (e.g. "友人が風邪を引いた。声をかけてください。")
+- The user must respond naturally in English WITHOUT translating
+- Provide a good example response as "en"
+- Provide 1-2 alternative natural responses
+
+IMPORTANT: The "ja" field is a SITUATION DESCRIPTION, not a sentence to translate.
+The user should react/respond to the situation, NOT translate the Japanese.
+
+Respond ONLY in JSON:
+{"questions": [{"ja": "状況の説明（日本語）", "en": "Natural English response", "alt": ["alternative response"], "hint": "key expression hint"}]}`;
+  } else if (S.flashCategory === 'pattern') {
+    // #5: Pattern Drill — same pattern in 3 different contexts
+    prompt = `Generate pattern drill exercises for English fluency training.
+
+${lvlRules}
+
+Create 3-4 PATTERNS (grammar chunks). For each pattern, create 3 situations.
+Total: around 10 exercises.
+
+Each exercise:
+- "ja" = 日本語で状況を説明 + 使うべきパターンをヒントで示す
+- "en" = パターンを使った英語の回答
+- "hint" = the pattern itself (e.g., "I'm looking forward to ___")
+
+Example pattern: "I'm looking forward to ___"
+- 状況1: 来週旅行に行く → "I'm looking forward to the trip next week."
+- 状況2: 友人と再会する → "I'm looking forward to seeing you again."
+- 状況3: 新しい仕事 → "I'm looking forward to starting my new job."
+
+Respond ONLY in JSON:
+{"questions": [{"ja": "状況説明", "en": "Answer using the pattern", "alt": ["alternative"], "hint": "Pattern: I'm looking forward to ___"}]}`;
+  } else {
+    prompt = `Generate 10 Japanese-to-English translation exercises.
 
 Category: ${cat.label}
 
-${(CEFR_LEVELS[S.flashLevel] || CEFR_LEVELS.A2).flashRules}
+${lvlRules}
 
 - Make sentences practical and useful in real life
 - Provide 1-2 alternative correct answers when possible
 
 Respond ONLY in JSON:
 {"questions": [{"ja": "日本語文", "en": "English sentence", "alt": ["alternative answer 1"], "hint": "key grammar/vocab hint"}]}`;
+  }
 
   try {
     const raw = await geminiChat([{ role: "user", content: prompt }], "Generate translation exercises. JSON only.", true);
@@ -2530,26 +2600,31 @@ function renderFlashQuestion() {
   const q = S.flashQuestions[S.flashCurrent];
   if (!q) { renderFlashSummary(); return; }
   const progress = ((S.flashCurrent) / S.flashQuestions.length * 100).toFixed(0);
+  const isSituation = S.flashCategory === 'situation';
+  const isPattern = S.flashCategory === 'pattern';
+  const modeTitle = isSituation ? '⚡ Situation Response' : isPattern ? '🔄 Pattern Drill' : 'Flash Translation';
+  const promptLabel = isSituation ? '📌 この状況で英語で応答してください' : isPattern ? '🔄 パターンを使って答えてください' : '';
 
   app.innerHTML = `
     <div class="navbar">
       <button class="back" id="flqBack">←</button>
-      <div class="title">Flash Translation</div>
+      <div class="title">${modeTitle}</div>
       <div class="text-xs text-muted">${S.flashCurrent + 1}/${S.flashQuestions.length}</div>
     </div>
     <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
 
     <div class="card flash-card">
+      ${promptLabel ? `<div class="text-xs text-accent mb-8" style="font-weight:600">${promptLabel}</div>` : ''}
       <div class="flash-ja">${esc(q.ja)}</div>
       <div class="flash-hint">💡 ${esc(q.hint || '')}</div>
 
       <div id="flashInputArea">
         ${srSupported() ? `
         <button class="mic-btn idle" id="flashMic" style="margin:0 auto 16px;display:flex">🎤</button>
-        <div class="text-xs text-muted mb-16">タップして英語で答える</div>
+        <div class="text-xs text-muted mb-16">${isSituation ? '英語で応答する' : 'タップして英語で答える'}</div>
         ` : ''}
         <div class="flex gap-8">
-          <input class="input" id="flashTextInput" placeholder="Type your answer..." autocomplete="off" style="border-radius:24px">
+          <input class="input" id="flashTextInput" placeholder="${isSituation ? 'Respond in English...' : 'Type your answer...'}" autocomplete="off" style="border-radius:24px">
           <button class="btn btn-primary" id="flashSendBtn" style="padding:12px 16px;border-radius:50%;flex-shrink:0">↑</button>
         </div>
       </div>
@@ -2561,7 +2636,7 @@ function renderFlashQuestion() {
   `;
 
   $("flqBack").onclick = () => {
-    if (confirm("練習を中断しますか？")) { S.screen = "home"; render(); }
+    if (confirm("練習を中断しますか？")) { srCancel(); S.screen = "home"; render(); }
   };
   $("flashSkipBtn").onclick = () => {
     S.flashResults.push({ ja: q.ja, en: q.en, userAnswer: "(skipped)", score: 0 });
@@ -2623,7 +2698,42 @@ async function evaluateFlashAnswer(userAnswer, q) {
   resultEl.innerHTML = '<div class="typing" style="justify-content:center"><span></span><span></span><span></span></div>';
 
   try {
-    const evalPrompt = `Compare the user's English translation with the correct answer.
+    var evalMode = S.flashCategory === 'situation' ? 'situation' : S.flashCategory === 'pattern' ? 'pattern' : 'translation';
+    var evalPrompt;
+    if (evalMode === 'situation') {
+      evalPrompt = `Evaluate the user's English response to a situation.
+
+Situation (in Japanese): ${q.ja}
+Example good response: ${q.en}
+${q.alt?.length ? `Other good responses: ${q.alt.join(", ")}` : ""}
+User's response: ${userAnswer}
+
+RULES:
+- The user does NOT need to match the example exactly
+- Any natural, appropriate English response to this situation is correct
+- IGNORE capitalization and punctuation
+- Evaluate: Is it natural? Appropriate for the situation? Grammatically correct?
+
+JSON response:
+{"score": 85, "isCorrect": true, "feedback": "Japanese feedback on naturalness and appropriateness", "correctedVersion": "A polished version of their response"}`;
+    } else if (evalMode === 'pattern') {
+      evalPrompt = `Evaluate the user's answer in a pattern drill exercise.
+
+Situation: ${q.ja}
+Target pattern: ${q.hint}
+Example answer: ${q.en}
+${q.alt?.length ? `Alternatives: ${q.alt.join(", ")}` : ""}
+User's answer: ${userAnswer}
+
+RULES:
+- Did the user correctly use the target pattern?
+- IGNORE capitalization and punctuation
+- The content doesn't need to match exactly, but the PATTERN must be used
+
+JSON response:
+{"score": 85, "isCorrect": true, "feedback": "Japanese feedback - did they use the pattern correctly?", "correctedVersion": "Best version using the pattern"}`;
+    } else {
+      evalPrompt = `Compare the user's English translation with the correct answer.
 
 Japanese: ${q.ja}
 Correct answer: ${q.en}
@@ -2649,6 +2759,7 @@ Scoring guide:
 - 80-94: Correct meaning, minor grammar issues
 - 60-79: Understandable but significant errors
 - 0-59: Major errors or wrong meaning`;
+    }
 
     const raw = await geminiChat([{ role: "user", content: evalPrompt }], "English teacher evaluator. JSON only.", true);
     const ev = safeJSON(raw);
@@ -2659,7 +2770,7 @@ Scoring guide:
       <div class="flash-answer">
         <div style="font-size:32px;font-weight:800;color:${scoreColor};margin-bottom:8px">${ev.score}</div>
         <div class="text-sm mb-8"><strong>あなた:</strong> ${esc(userAnswer)}</div>
-        <div class="text-sm mb-8"><strong>模範:</strong> <span class="correct">${esc(q.en)}</span></div>
+        <div class="text-sm mb-8"><strong>${S.flashCategory==='situation'?'良い例':S.flashCategory==='pattern'?'パターン例':'模範'}:</strong> <span class="correct">${esc(q.en)}</span></div>
         ${!ev.isCorrect ? `<div class="text-sm mb-8"><strong>修正:</strong> ${esc(ev.correctedVersion)}</div>` : ''}
         <div class="text-xs text-muted">${esc(ev.feedback)}</div>
       </div>
@@ -2794,10 +2905,21 @@ function renderShadowSetup() {
         ${Object.values(CEFR_LEVELS).map(l => `<div class="level-chip ${S.shadowLevel===l.id?'active':''}" data-id="${l.id}">${l.label}</div>`).join("")}
       </div>
     </div>
+    <div class="card">
+      <div class="flex justify-between items-center">
+        <div><div class="text-sm" style="font-weight:600">🙈 録音中テキストを隠す</div><div class="text-xs text-muted">本格シャドーイング（耳だけで再現）</div></div>
+        <label style="position:relative;width:50px;height:28px;display:inline-block">
+          <input type="checkbox" id="shHideToggle" ${S.shadowHideText?'checked':''} style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:${S.shadowHideText?'var(--accent)':'#cbd5e1'};border-radius:14px;transition:.3s"></span>
+          <span style="position:absolute;height:22px;width:22px;left:${S.shadowHideText?'25px':'3px'};bottom:3px;background:#fff;border-radius:50%;transition:.3s"></span>
+        </label>
+      </div>
+    </div>
     <button class="btn btn-primary w-full mt-16" id="shStartBtn">5文スタート</button>
     ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech必須</p>' : ''}
   `;
   $("shBack").onclick = () => { S.screen = "home"; render(); };
+  if ($("shHideToggle")) $("shHideToggle").onchange = (e) => { S.shadowHideText = e.target.checked; renderShadowSetup(); };
   document.querySelectorAll(".level-chip").forEach(el => {
     el.onclick = () => { S.shadowLevel = el.dataset.id; renderShadowSetup(); };
   });
@@ -2810,7 +2932,7 @@ async function generateShadowSentences() {
   app.innerHTML = `<div style="text-align:center;padding:80px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">文を生成中...</div></div>`;
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
-    const raw = await geminiChat([{ role: "user", content: `Generate 5 natural English sentences for shadowing practice at ${lvl.id} level. ${lvl.flashRules}\nReturn JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
+    const raw = await geminiChat([{ role: "user", content: `Generate 5 natural spoken English sentences for shadowing practice at ${lvl.id} level. ${lvl.shadowRules}\nReturn JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
     S.shadowSentences = safeJSON(raw).sentences || [];
     if (!S.shadowSentences.length) throw new Error("No sentences");
     S.shadowCurrent = 0;
@@ -2842,7 +2964,7 @@ async function renderShadowPractice() {
       <div id="shResult" class="hidden mt-16"></div>
     </div>
   `;
-  $("shpBack").onclick = () => { if(confirm("中断しますか？")) { stopAudio(); S.screen="home"; render(); } };
+  $("shpBack").onclick = () => { if(confirm("中断しますか？")) { stopAudio(); releaseMicStream(); if(S.shadowLastRecordingUrl){URL.revokeObjectURL(S.shadowLastRecordingUrl);S.shadowLastRecordingUrl=null;} S.screen="home"; render(); } };
   $("shListenBtn").onclick = async () => {
     $("shListenBtn").disabled = true;
     $("shListenBtn").textContent = "⏳ 再生中...";
@@ -2858,6 +2980,12 @@ async function renderShadowPractice() {
     stopAudio();
     $("shRecordBtn").disabled = true;
     $("shRecordBtn").textContent = "⏳ マイク準備中...";
+    // Hide text if setting is on
+    if (S.shadowHideText) {
+      $("shText").style.filter = "blur(8px)";
+      $("shText").style.userSelect = "none";
+      $("shStatus").textContent = "👂 耳だけで繰り返してください";
+    }
     // Brief delay to let speaker audio fully stop before mic activates
     await new Promise(r => setTimeout(r, 500));
     try {
@@ -2869,7 +2997,15 @@ async function renderShadowPractice() {
       $("shRecordBtn").onclick = async () => {
         $("shRecordBtn").disabled = true;
         $("shRecordBtn").textContent = "⏳ 評価中...";
+        // Reveal text after recording
+        $("shText").style.filter = "none";
+        $("shText").style.userSelect = "auto";
         const wav = await rec.stop();
+        // Save recording for playback comparison
+        if (wav && wav.size > 44) {
+          if (S.shadowLastRecordingUrl) URL.revokeObjectURL(S.shadowLastRecordingUrl);
+          S.shadowLastRecordingUrl = URL.createObjectURL(wav);
+        }
         if (S.azureKey && wav.size > 44) {
           try {
             const result = await azurePronAssess(wav, sent.en);
@@ -2915,6 +3051,7 @@ async function renderShadowPractice() {
                 </div>
                 ${wordsHtml || ''}
                 <div class="text-xs text-muted mt-8">🟢正確 🟡要改善 🔴不正確 <span style="color:#9ca3af">取消線=未発話</span></div>
+                ${S.shadowLastRecordingUrl ? '<button class="btn btn-ghost btn-sm mt-8" id="shPlayMyRec">🎙️ 自分の録音を聞く</button>' : ''}
               `;
             } else {
               // Recognition succeeded but no pronunciation scores - show debug info
@@ -2939,6 +3076,15 @@ async function renderShadowPractice() {
     } catch(e) { alert("マイクエラー: " + e.message); $("shRecordBtn").disabled = false; }
   };
   $("shNextBtn").onclick = () => { S.shadowCurrent++; renderShadowPractice(); };
+  if ($("shPlayMyRec")) {
+    $("shPlayMyRec").onclick = function() {
+      if (S.shadowLastRecordingUrl) {
+        stopAudio();
+        _curAudio = new Audio(S.shadowLastRecordingUrl);
+        _curAudio.play().catch(function(){});
+      }
+    };
+  }
 }
 
 function renderShadowSummary() {

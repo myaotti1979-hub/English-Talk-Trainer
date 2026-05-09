@@ -229,15 +229,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07o";
+const VERSION = "v2026.05.07p";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
 const GEMINI_MODELS = [
-  { id: "gemini-2.5-flash", label: "2.5 Flash（速い・安い）" },
-  { id: "gemini-2.5-pro", label: "2.5 Pro（高精度・安定）" },
+  { id: "gemini-3.1-flash-lite-preview", label: "3.1 Flash-Lite（最速・無料枠あり）", inPrice: 0.25, outPrice: 1.50 },
+  { id: "gemini-2.5-flash", label: "2.5 Flash（安定版）", inPrice: 0.30, outPrice: 2.50 },
+  { id: "gemini-3-flash-preview", label: "3 Flash（高推論）", inPrice: 0.50, outPrice: 3.00 },
+  { id: "gemini-2.5-pro", label: "2.5 Pro（最高精度）", inPrice: 1.25, outPrice: 10.00 },
 ];
-let GEMINI_MODEL = localStorage.getItem("gemini_model") || "gemini-2.5-flash";
+let GEMINI_MODEL = localStorage.getItem("gemini_model") || "gemini-3.1-flash-lite-preview";
 
 // ── Azure TTS Neural Voices ──
 const TTS_VOICES = [
@@ -917,8 +919,9 @@ function calcSessionTotal() {
   var sttCost = (c.sttSeconds / 3600) * 1.32;
   var pronCost = ((c.pronSeconds || 0) / 3600) * 1.32;
   var ttsCost = (c.ttsChars / 1000000) * 16;
-  var gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
-  var gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
+  var _cm = GEMINI_MODELS.find(function(m){return m.id===GEMINI_MODEL;}) || GEMINI_MODELS[0];
+  var gemInPrice = _cm.inPrice;
+  var gemOutPrice = _cm.outPrice;
   var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
   var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
   var searchCost = (c.searchCalls || 0) * 0.035;
@@ -930,8 +933,9 @@ function calcCostHTML() {
   var sttCost = (c.sttSeconds / 3600) * 1.32;
   var pronCost = ((c.pronSeconds || 0) / 3600) * 1.32;
   var ttsCost = (c.ttsChars / 1000000) * 16;
-  var gemInPrice = GEMINI_MODEL.includes('pro') ? 1.25 : 0.30;
-  var gemOutPrice = GEMINI_MODEL.includes('pro') ? 10.00 : 2.50;
+  var _cm = GEMINI_MODELS.find(function(m){return m.id===GEMINI_MODEL;}) || GEMINI_MODELS[0];
+  var gemInPrice = _cm.inPrice;
+  var gemOutPrice = _cm.outPrice;
   var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
   var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
   var searchCost = (c.searchCalls || 0) * 0.035;
@@ -944,7 +948,7 @@ function calcCostHTML() {
       <span class="text-muted">音声認識</span><span class="text-muted">${c.sttSeconds > 0 ? c.sttSeconds + '秒 (Azure STT)' : 'Web Speech API'}</span><span>${c.sttSeconds > 0 ? '$' + sttCost.toFixed(4) : '無料'}</span>
       ${c.pronSeconds ? `<span class="text-muted">発音評価</span><span class="text-muted">${c.pronSeconds}秒 (Azure)</span><span>$${pronCost.toFixed(4)}</span>` : ''}
       <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars > 0 ? c.ttsChars.toLocaleString() + '文字' : '未使用'}</span><span>${c.ttsChars > 0 ? '$' + ttsCost.toFixed(4) : '$0'}</span>
-      <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}tk (${GEMINI_MODEL.includes('pro')?'Pro':'Flash'})</span><span>$${gemInCost.toFixed(4)}</span>
+      <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}tk (${_cm.label.split('（')[0]})</span><span>$${gemInCost.toFixed(4)}</span>
       <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}tk</span><span>$${gemOutCost.toFixed(4)}</span>
       ${c.searchCalls ? `<span class="text-muted">Web検索</span><span class="text-muted">${c.searchCalls}回 (Google)</span><span>$${searchCost.toFixed(4)}</span>` : ''}
     </div>
@@ -1178,7 +1182,7 @@ function renderHome() {
     <div class="home-header">
       <div class="pre">AI-Powered English Training</div>
       <h1>English Talk Trainer</h1>
-      <div class="sub">Gemini ${GEMINI_MODEL.includes('pro') ? 'Pro' : 'Flash'} × Azure Speech — ${VERSION}</div>
+      <div class="sub">Gemini ${GEMINI_MODELS.find(function(m){return m.id===GEMINI_MODEL;})?.label.split('（')[0] || 'Flash'} × Azure Speech — ${VERSION}</div>
     </div>
 
     <div class="card">

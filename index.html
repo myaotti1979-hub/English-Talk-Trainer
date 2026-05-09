@@ -229,7 +229,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07n";
+const VERSION = "v2026.05.07o";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2499,6 +2499,11 @@ function renderFlashSetup() {
       <div class="topic-grid">
         ${FLASH_CATEGORIES.map(c => `<div class="topic-pill ${S.flashCategory===c.id?'selected':''}" data-id="${c.id}">${c.label}</div>`).join("")}
       </div>
+      <div class="text-xs text-muted mt-8">${
+        S.flashCategory === 'situation' ? '⚡ 状況が日本語で表示 → 英語で即座に反応（翻訳ではなく応答）' :
+        S.flashCategory === 'pattern' ? '🔄 同じパターンを3つの状況で反復 → チャンクの自動化' :
+        '日本語の文を見て英語に翻訳する従来モード'
+      }</div>
     </div>
     <button class="btn btn-primary w-full mt-16" id="flashStartBtn">10問スタート</button>
     ${!S.azureKey ? '<p class="text-xs text-red mt-8" style="text-align:center">⚠️ Azure Speech未設定：AI音声読み上げ不可</p>' : ''}

@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07q";
+const VERSION = "v2026.05.07r";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -3076,6 +3076,12 @@ async function renderShadowPractice() {
                 <div class="text-xs text-muted mt-8">🟢正確 🟡要改善 🔴不正確 <span style="color:#9ca3af">取消線=未発話</span></div>
                 ${S.shadowLastRecordingUrl ? '<button class="btn btn-ghost btn-sm mt-8" id="shPlayMyRec">🎙️ 自分の録音を聞く</button>' : ''}
               `;
+              // Bind playback handler immediately after rendering
+              if ($("shPlayMyRec")) {
+                $("shPlayMyRec").onclick = function() {
+                  if (S.shadowLastRecordingUrl) { stopAudio(); _curAudio = new Audio(S.shadowLastRecordingUrl); _curAudio.play().catch(function(){}); }
+                };
+              }
             } else {
               // Recognition succeeded but no pronunciation scores - show debug info
               var debugKeys = nb ? Object.keys(nb).join(', ') : 'NBest empty';
@@ -3099,15 +3105,6 @@ async function renderShadowPractice() {
     } catch(e) { alert("マイクエラー: " + e.message); $("shRecordBtn").disabled = false; }
   };
   $("shNextBtn").onclick = () => { S.shadowCurrent++; renderShadowPractice(); };
-  if ($("shPlayMyRec")) {
-    $("shPlayMyRec").onclick = function() {
-      if (S.shadowLastRecordingUrl) {
-        stopAudio();
-        _curAudio = new Audio(S.shadowLastRecordingUrl);
-        _curAudio.play().catch(function(){});
-      }
-    };
-  }
 }
 
 function renderShadowSummary() {

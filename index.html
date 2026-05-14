@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07r";
+const VERSION = "v2026.05.07s";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2843,8 +2843,9 @@ function renderFlashSummary() {
         <div class="text-sm" style="flex:1">${esc(r.ja)}</div>
         <div class="tag ${r.score>=80?'tag-green':r.score>=60?'tag-orange':'tag-accent'}">${r.score}</div>
       </div>
-      <div class="text-xs text-muted mt-8">${esc(r.en)}</div>
-      ${r.userAnswer !== "(skipped)" ? `<div class="text-xs mt-8" style="color:${r.isCorrect?'var(--green)':'var(--red)'}">→ ${esc(r.userAnswer)}</div>` : '<div class="text-xs mt-8 text-muted">→ スキップ</div>'}
+      ${r.userAnswer !== "(skipped)" ? `<div class="text-xs mt-8" style="color:${r.isCorrect?'var(--green)':'var(--red)'}">🗣️ ${esc(r.userAnswer)}</div>` : '<div class="text-xs mt-8 text-muted">🗣️ スキップ</div>'}
+      ${!r.isCorrect ? `<div class="text-xs mt-8" style="color:var(--green)">✅ ${esc(r.en)}</div>` : ''}
+      ${r.feedback ? `<div class="text-xs text-muted mt-4">${esc(r.feedback)}</div>` : ''}
     </div>
   `).join("");
 

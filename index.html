@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07s";
+const VERSION = "v2026.05.07u";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -463,6 +463,8 @@ const S = {
   shadowSentences: [], shadowCurrent: 0, shadowResults: [],
   shadowLevel: "B1", shadowHideText: false,
   shadowLastRecordingUrl: null,  // #6: replay own recording
+  // Routine mode
+  routine: { active: false, theme: 'daily', step: 0, scores: [] },
   // Recording
   isRecording: false,
   srMode: localStorage.getItem("ett_sr_mode") || "azure",
@@ -1215,11 +1217,20 @@ function renderHome() {
       <div class="stat-card" style="grid-column:span 2"><div class="val" style="color:var(--orange);font-size:20px">$${getCumulativeCost().toFixed(3)}（約${Math.round(getCumulativeCost()*150)}円）</div><div class="lbl">累計APIコスト</div></div>
     </div>` : ''}
 
-    <div class="card mb-16" style="background:linear-gradient(135deg,${new Date().getHours()<12?'#fef3c7,#fde68a':'#e0e7ff,#c7d2fe'});border:none">
-      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅 朝のルーティン（10分）':'🌙 夜のルーティン（10分）'}</div>
-      <div class="text-xs mt-8" style="color:#1a2a3a">${new Date().getHours()<12?
-        '① 📝 復習クイズ（2分）→ ② 🗣️ Free Talk 3ターン（5分）→ ③ 🎧 Shadowing 5文（3分）' :
-        '① 📝 復習クイズ（2分）→ ② ⚡ Flash 英作文（5分）→ ③ 📚 フレーズ集チェック（3分）'}</div>
+    <div class="card mb-16" id="routineCard" style="background:linear-gradient(135deg,${new Date().getHours()<12?'#fef3c7,#fde68a':'#e0e7ff,#c7d2fe'});border:none;cursor:pointer">
+      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅':'🌙'} 自動ルーティン（10分）</div>
+      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Shadowing 5文を自動連続</div>
+      <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップしてテーマを選択</div>
+    </div>
+    <div class="card mb-16 hidden" id="routineSetup">
+      <div class="text-sm" style="font-weight:600;margin-bottom:10px">🎯 テーマを選択</div>
+      <div class="topic-grid">
+        <div class="topic-pill selected" data-rtheme="daily">🏠 日常会話</div>
+        <div class="topic-pill" data-rtheme="business">💼 ビジネス</div>
+        <div class="topic-pill" data-rtheme="travel">✈️ 旅行</div>
+        <div class="topic-pill" data-rtheme="opinion">💭 意見・感想</div>
+      </div>
+      <button class="btn btn-primary w-full mt-16" id="routineStartBtn">🚀 ルーティン開始</button>
     </div>
 
     <div class="mode-card mode-freetalk mb-16" id="startFreeTalk">
@@ -1256,12 +1267,94 @@ function renderHome() {
   $("startFreeTalk").onclick = () => initFreeTalk();
   $("startFlash").onclick = () => initFlash();
   $("startShadow").onclick = () => initShadow();
+
+  // Routine launcher
+  if ($("routineCard")) {
+    $("routineCard").onclick = function() {
+      $("routineCard").classList.add("hidden");
+      $("routineSetup").classList.remove("hidden");
+    };
+  }
+  var _rTheme = 'daily';
+  document.querySelectorAll("[data-rtheme]").forEach(function(el) {
+    el.onclick = function() {
+      _rTheme = this.dataset.rtheme;
+      document.querySelectorAll("[data-rtheme]").forEach(function(e) { e.classList.remove("selected"); });
+      this.classList.add("selected");
+    };
+  });
+  if ($("routineStartBtn")) {
+    $("routineStartBtn").onclick = function() {
+      startRoutine(_rTheme);
+    };
+  }
   $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
   if ($("clearDataBtn")) $("clearDataBtn").onclick = clearAllData;
   if ($("startReview")) $("startReview").onclick = () => { S.screen = "reviewquiz"; render(); };
   if ($("vocabBtn")) $("vocabBtn").onclick = () => { S.screen = "vocab"; render(); };
   if ($("convlogBtn")) $("convlogBtn").onclick = () => { S.screen = "convlog"; render(); };
   if ($("histBtn")) $("histBtn").onclick = () => { S.screen = "history"; renderHistory(); };
+}
+
+// ── Auto Routine Mode ──
+const ROUTINE_THEMES = {
+  daily: { ftCat: 'daily', ftTopic: 'd_random', flashCat: 'daily', label: '🏠 日常会話' },
+  business: { ftCat: 'business', ftTopic: 'b_meeting', flashCat: 'business', label: '💼 ビジネス' },
+  travel: { ftCat: 'travel', ftTopic: 't_destination', flashCat: 'travel', label: '✈️ 旅行' },
+  opinion: { ftCat: 'daily', ftTopic: 'd_random', flashCat: 'opinion', label: '💭 意見・感想' },
+};
+
+function startRoutine(theme) {
+  var rt = ROUTINE_THEMES[theme] || ROUTINE_THEMES.daily;
+  S.routine = { active: true, theme: theme, step: 0, scores: [], label: rt.label };
+  S.ftQuickMode = true;
+  S.ftUserStarts = false;
+  var catTopics = FT_ALL_TOPICS.filter(function(t) { return t.catId === rt.ftCat && !t.id.startsWith('si_') && t.prompt !== '__CUSTOM__'; });
+  var pick = catTopics[Math.floor(Math.random() * catTopics.length)] || FT_ALL_TOPICS[0];
+  S.ftTopic = pick.id;
+  S.ftCustomTopic = '';
+  S.screen = "freetalk";
+  startFreeTalkSession();
+}
+
+function advanceRoutine() {
+  if (!S.routine.active) { S.screen = "home"; render(); return; }
+  S.routine.step++;
+  var rt = ROUTINE_THEMES[S.routine.theme] || ROUTINE_THEMES.daily;
+  if (S.routine.step === 1) {
+    S.flashCategory = rt.flashCat;
+    S.screen = "flash";
+    S.flashQuestions = []; S.flashCurrent = 0; S.flashResults = [];
+    generateFlashQuestions();
+  } else if (S.routine.step === 2) {
+    initShadow();
+  } else {
+    renderRoutineSummary();
+  }
+}
+
+function renderRoutineSummary() {
+  var scores = S.routine.scores;
+  var avgScore = scores.length > 0 ? Math.round(scores.reduce(function(a,b){return a+b;},0)/scores.length) : 0;
+  var scoreColor = avgScore >= 80 ? 'var(--green)' : avgScore >= 60 ? 'var(--yellow)' : 'var(--red)';
+  S.routine.active = false;
+  app.innerHTML = `
+    <div class="summary-header" style="padding-top:40px">
+      <div style="font-size:48px;margin-bottom:8px">🎉</div>
+      <div class="score" style="color:${scoreColor}">${avgScore}</div>
+      <div class="label">ルーティン完了！(${esc(S.routine.label||'')})</div>
+    </div>
+    <div class="card">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[0]!==undefined?scores[0]:'-'}</div><div class="text-xs text-muted">Free Talk</div></div>
+        <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[1]!==undefined?scores[1]:'-'}</div><div class="text-xs text-muted">Flash</div></div>
+        <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[2]!==undefined?scores[2]:'-'}</div><div class="text-xs text-muted">Shadowing</div></div>
+      </div>
+    </div>
+    ${calcCostHTML()}
+    <button class="btn btn-primary w-full mt-16 mb-16" id="rtHome">ホームに戻る</button>
+  `;
+  $("rtHome").onclick = function() { S.screen = "home"; render(); };
 }
 
 // ═══════════════════════════════════
@@ -2461,13 +2554,16 @@ function renderReview() {
       <div class="text-sm">${esc(fb.encouragement)}</div>
     </div>` : ''}
 
-    <button class="btn btn-primary w-full mt-16" id="revHome">ホームに戻る</button>
+    <button class="btn btn-primary w-full mt-16" id="revHome">${S.routine.active?"▶ 次へ (Flash英作文)":"ホームに戻る"}</button>
     <button class="btn btn-secondary w-full mt-8 mb-16" id="revAgain">もう一度練習する</button>
   `;
   // Insert cost card before buttons
   const costPos = app.querySelector('#revHome');
   if (costPos) costPos.insertAdjacentHTML('beforebegin', calcCostHTML());
-  $("revBack").onclick = $("revHome").onclick = () => { S.screen = "home"; render(); };
+  $("revBack").onclick = $("revHome").onclick = () => {
+    if (S.routine.active) { S.routine.scores.push(fb.overallScore || 0); advanceRoutine(); }
+    else { S.screen = "home"; render(); }
+  };
   $("revAgain").onclick = () => initFreeTalk();
 }
 
@@ -2870,13 +2966,16 @@ function renderFlashSummary() {
       ${reviewItems}
     </div>
 
-    <button class="btn btn-primary w-full mt-16" id="fsHome">ホームに戻る</button>
+    <button class="btn btn-primary w-full mt-16" id="fsHome">${S.routine.active?"▶ 次へ (Shadowing)":"ホームに戻る"}</button>
     <button class="btn btn-secondary w-full mt-8 mb-16" id="fsAgain">もう10問</button>
   `;
   // Insert cost card
   const fsCostPos = app.querySelector('#fsHome');
   if (fsCostPos) fsCostPos.insertAdjacentHTML('beforebegin', calcCostHTML());
-  $("fsBck").onclick = $("fsHome").onclick = () => { S.screen = "home"; render(); };
+  $("fsBck").onclick = $("fsHome").onclick = () => {
+    if (S.routine.active) { S.routine.scores.push(avg); advanceRoutine(); }
+    else { S.screen = "home"; render(); }
+  };
   $("fsAgain").onclick = () => initFlash();
 }
 
@@ -3044,7 +3143,7 @@ async function renderShadowPractice() {
             if (pronScore !== undefined) {
               const score = Math.round(pronScore);
               const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
-              S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0) });
+              S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0), words: words });
 
               // Word-level accuracy visualization
               var wordsHtml = '';
@@ -3115,18 +3214,124 @@ function renderShadowSummary() {
   saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: avg, minutes: 3, voice: S.ftVoice });
   addToCumulativeCost(calcSessionTotal());
   const scoreColor = avg >= 80 ? 'var(--green)' : avg >= 60 ? 'var(--yellow)' : 'var(--red)';
+
+  // Find worst sentence for retry
+  var worstIdx = 0;
+  results.forEach(function(r, i) { if (r.score < results[worstIdx].score) worstIdx = i; });
+
+  // Build word-level detail per sentence
+  var sentCards = results.map(function(r, i) {
+    var wordHtml = '';
+    if (r.words && r.words.length > 0) {
+      wordHtml = '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:2px 5px;font-size:13px">' +
+        r.words.map(function(w) {
+          var wpa = w.PronunciationAssessment || w;
+          var wacc = wpa.AccuracyScore ?? 0;
+          var errType = wpa.ErrorType || 'None';
+          var color = errType === 'Omission' ? '#9ca3af' : wacc >= 80 ? '#059669' : wacc >= 50 ? '#f59e0b' : '#dc2626';
+          var dec = errType === 'Omission' ? 'line-through' : 'none';
+          return '<span style="color:' + color + ';text-decoration:' + dec + ';font-weight:500">' + esc(w.Word || '') + '</span>';
+        }).join('') + '</div>';
+    }
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="flex justify-between items-center">
+        <div class="text-sm" style="flex:1;font-weight:500">${esc(r.en)}</div>
+        <div style="font-weight:700;font-size:18px;color:${r.score>=80?'var(--green)':r.score>=60?'var(--yellow)':'var(--red)'}; margin-left:8px">${r.score}</div>
+      </div>
+      <div class="flex gap-8 mt-4" style="font-size:12px;color:var(--muted)">
+        <span>正確さ ${r.accuracy||'-'}</span><span>流暢さ ${r.fluency||'-'}</span>
+      </div>
+      ${wordHtml}
+      <button class="btn-ghost text-xs sh-replay mt-4" data-text="${esc(r.en).replace(/"/g,'&quot;')}" style="color:var(--accent)">🔊 お手本を聞く</button>
+    </div>`;
+  }).join('');
+
   app.innerHTML = `
     <div class="navbar"><button class="back" id="shsBack">←</button><div class="title">Shadowing 結果</div></div>
     <div class="summary-header"><div class="score" style="color:${scoreColor}">${avg}</div><div class="label">発音スコア平均</div></div>
-    <div class="card">
-      ${results.map(r => `<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div class="flex justify-between"><div class="text-sm" style="flex:1">${esc(r.en)}</div><div style="font-weight:700;color:${r.score>=80?'var(--green)':r.score>=60?'var(--yellow)':'var(--red)'}">${r.score}</div></div></div>`).join('')}
+
+    <div class="stats-grid mb-16">
+      <div class="stat-card"><div class="val" style="color:var(--green)">${results.filter(r=>r.score>=80).length}</div><div class="lbl">Good</div></div>
+      <div class="stat-card"><div class="val" style="color:var(--red)">${results.filter(r=>r.score<60).length}</div><div class="lbl">要練習</div></div>
     </div>
+
+    <div class="card" id="shAdviceCard" style="background:#f0fdf4;border-color:#bbf7d0">
+      <div class="flex justify-between items-center">
+        <div class="text-sm" style="font-weight:600">💡 発音アドバイス</div>
+        <button class="btn btn-ghost btn-sm" id="shGetAdvice" style="color:var(--accent);font-size:12px">✨ AI分析（有料）</button>
+      </div>
+      <div class="text-xs mt-8 text-muted" id="shAdviceText">ボタンを押すとGeminiが弱点を分析します</div>
+    </div>
+
+    <div class="card">${sentCards}</div>
+
+    <div class="text-xs text-muted mt-8 mb-4" style="text-align:center">🟢80+ 🟡50-79 🔴50未満 取消線=未発話</div>
+
+    ${results[worstIdx].score < 80 ? `<button class="btn btn-secondary w-full mt-8" id="shRetryWorst">🔄 最低スコアの文をもう一度練習</button>` : ''}
+
     ${calcCostHTML()}
-    <button class="btn btn-primary w-full mt-16" id="shsHome">ホームに戻る</button>
-    <button class="btn btn-secondary w-full mt-8 mb-16" id="shsAgain">もう一度</button>
+    <button class="btn btn-primary w-full mt-16" id="shsHome">${S.routine.active?"🎉 ルーティン完了":"ホームに戻る"}</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="shsAgain">もう一度（新しい文）</button>
   `;
-  $("shsBack").onclick = $("shsHome").onclick = () => { S.screen = "home"; render(); };
+
+  $("shsBack").onclick = $("shsHome").onclick = () => {
+    if (S.routine.active) { S.routine.scores.push(avg); advanceRoutine(); }
+    else { S.screen = "home"; render(); }
+  };
   $("shsAgain").onclick = () => initShadow();
+  if ($("shRetryWorst")) {
+    $("shRetryWorst").onclick = function() {
+      // Reset to practice just the worst sentence
+      S.shadowSentences = [{ en: results[worstIdx].en, ja: '' }];
+      S.shadowCurrent = 0;
+      S.shadowResults = [];
+      renderShadowPractice();
+    };
+  }
+
+  // Replay buttons
+  document.querySelectorAll(".sh-replay").forEach(function(btn) {
+    btn.onclick = function() {
+      speakBrowser(this.dataset.text);
+    };
+  });
+
+  // AI advice button (opt-in, costs money)
+  if ($("shGetAdvice")) {
+    $("shGetAdvice").onclick = function() {
+      this.disabled = true;
+      this.textContent = "⏳ 分析中...";
+      generatePronAdvice(results);
+    };
+  }
+}
+
+async function generatePronAdvice(results) {
+  try {
+    var summary = results.map(function(r) {
+      var weakWords = (r.words || []).filter(function(w) {
+        var pa = w.PronunciationAssessment || w;
+        return (pa.AccuracyScore ?? 100) < 70;
+      }).map(function(w) { return w.Word; });
+      return r.en + ' (score:' + r.score + ', weak:' + (weakWords.join(',') || 'none') + ')';
+    }).join('\n');
+
+    var raw = await geminiChat([{ role: "user", content: `You are a pronunciation coach for a Japanese English learner.
+
+Their shadowing results:
+${summary}
+
+Give 2-3 specific, actionable pronunciation tips in Japanese based on their weak words.
+Focus on sounds Japanese speakers commonly struggle with (th/s, r/l, v/b, f, w, vowel length).
+Keep each tip under 40 characters. Be encouraging.
+Return ONLY the tips, one per line. No numbering.` }], "短い日本語アドバイスのみ。", true);
+
+    if ($("shAdviceText")) {
+      $("shAdviceText").innerHTML = raw.split('\n').filter(function(l){return l.trim();}).map(function(l){ return '• ' + esc(l.trim()); }).join('<br>');
+    }
+  } catch(e) {
+    if ($("shAdviceText")) $("shAdviceText").textContent = "アドバイスを生成できませんでした";
+  }
 }
 
 // ═══════════════════════════════════

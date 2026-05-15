@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.07u";
+const VERSION = "v2026.05.07v";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2635,10 +2635,26 @@ async function generateFlashQuestions() {
   `;
   const cat = FLASH_CATEGORIES.find(c => c.id === S.flashCategory);
   const lvlRules = (CEFR_LEVELS[S.flashLevel] || CEFR_LEVELS.A2).flashRules;
+
+  // Variety system: random sub-topics to prevent repetitive outputs
+  const VARIETY_SEEDS = {
+    daily: ["朝の準備・通勤", "ペットの世話", "友人との約束", "引っ越し・新生活", "天気と服装", "スーパーでの買い物", "料理・自炊", "掃除・洗濯", "近所づきあい", "休日の過ごし方", "健康管理・運動", "美容院・散髪", "DIY・修理", "誕生日・お祝い", "子供の学校行事"],
+    business: ["会議の司会", "プレゼン準備", "クライアントへのメール", "締め切り変更", "プロジェクト進捗報告", "新人教育", "オフィス移転", "予算申請", "業績評価", "チームビルディング", "出張手配", "在宅勤務", "クレーム対応", "契約交渉", "ITシステム導入"],
+    travel: ["空港でのトラブル", "ホテルの予約変更", "道に迷った時", "レストランの注文", "お土産選び", "現地ツアー", "両替・支払い", "公共交通機関", "体調不良", "写真スポット", "文化体験", "帰国準備", "レンタカー", "海外の医療", "ビザ・入国"],
+    opinion: ["教育制度", "テクノロジーの影響", "環境問題", "働き方改革", "SNSの功罪", "AI時代の仕事", "伝統と革新", "都市と地方", "食文化の変化", "スポーツの意義", "読書vs動画", "キャッシュレス", "多様性", "宇宙開発", "健康と食事"],
+    situation: ["職場での依頼", "友人との再会", "病院の受付", "クレーム", "お礼を言う", "道を聞かれた", "遅刻の連絡", "提案する", "断る", "褒める", "相談する", "励ます", "紹介する", "電話を取る", "注文を間違えられた"],
+    pattern: ["I'm looking forward to", "I used to", "It depends on", "I'm supposed to", "I can't help but", "There's no point in", "I might as well", "I'd rather", "It's worth", "I'm about to", "I ended up", "I'm getting used to", "It turns out that", "I wish I could", "I should have"],
+  };
+  var seeds = VARIETY_SEEDS[S.flashCategory] || VARIETY_SEEDS.daily;
+  // Pick 3 random seeds for this session
+  var picked = [];
+  var shuffled = seeds.slice().sort(function() { return Math.random() - 0.5; });
+  picked = shuffled.slice(0, 3);
+  var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios/topics this time: "${picked.join('", "')}". Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
+
   var prompt;
 
   if (S.flashCategory === 'situation') {
-    // #4: Situation Response — no Japanese, just scenarios
     prompt = `Generate 10 situation-response exercises for English conversation practice.
 
 ${lvlRules}
@@ -2650,31 +2666,29 @@ For each exercise:
 - Provide 1-2 alternative natural responses
 
 IMPORTANT: The "ja" field is a SITUATION DESCRIPTION, not a sentence to translate.
-The user should react/respond to the situation, NOT translate the Japanese.
+${varietyHint}
 
 Respond ONLY in JSON:
 {"questions": [{"ja": "状況の説明（日本語）", "en": "Natural English response", "alt": ["alternative response"], "hint": "key expression hint"}]}`;
   } else if (S.flashCategory === 'pattern') {
-    // #5: Pattern Drill — same pattern in 3 different contexts
+    var patternPicks = (VARIETY_SEEDS.pattern || []).slice().sort(function(){return Math.random()-0.5;}).slice(0,4);
     prompt = `Generate pattern drill exercises for English fluency training.
 
 ${lvlRules}
 
-Create 3-4 PATTERNS (grammar chunks). For each pattern, create 3 situations.
-Total: around 10 exercises.
+Use THESE specific patterns (create 2-3 situations for each):
+${patternPicks.map(function(p,i){return (i+1)+'. "'+p+'..."';}).join('\n')}
 
 Each exercise:
-- "ja" = 日本語で状況を説明 + 使うべきパターンをヒントで示す
+- "ja" = 日本語で状況を説明 + パターンヒント
 - "en" = パターンを使った英語の回答
-- "hint" = the pattern itself (e.g., "I'm looking forward to ___")
+- "hint" = the pattern (e.g., "${patternPicks[0]}...")
 
-Example pattern: "I'm looking forward to ___"
-- 状況1: 来週旅行に行く → "I'm looking forward to the trip next week."
-- 状況2: 友人と再会する → "I'm looking forward to seeing you again."
-- 状況3: 新しい仕事 → "I'm looking forward to starting my new job."
+Total: 10 exercises.
+${varietyHint}
 
 Respond ONLY in JSON:
-{"questions": [{"ja": "状況説明", "en": "Answer using the pattern", "alt": ["alternative"], "hint": "Pattern: I'm looking forward to ___"}]}`;
+{"questions": [{"ja": "状況説明", "en": "Answer using the pattern", "alt": ["alternative"], "hint": "Pattern: ..."}]}`;
   } else {
     prompt = `Generate 10 Japanese-to-English translation exercises.
 
@@ -2684,6 +2698,7 @@ ${lvlRules}
 
 - Make sentences practical and useful in real life
 - Provide 1-2 alternative correct answers when possible
+${varietyHint}
 
 Respond ONLY in JSON:
 {"questions": [{"ja": "日本語文", "en": "English sentence", "alt": ["alternative answer 1"], "hint": "key grammar/vocab hint"}]}`;
@@ -3051,7 +3066,15 @@ async function generateShadowSentences() {
   app.innerHTML = `<div style="text-align:center;padding:80px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">文を生成中...</div></div>`;
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
-    const raw = await geminiChat([{ role: "user", content: `Generate 5 natural spoken English sentences for shadowing practice at ${lvl.id} level. ${lvl.shadowRules}\nReturn JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
+    // Variety seeds for shadowing
+    var shTopics = ["旅行の思い出", "仕事の出来事", "友人との会話", "ニュース・時事", "趣味の話", "家族の話", "将来の計画", "食べ物・レストラン", "季節・天気", "映画・音楽", "スポーツ・運動", "テクノロジー", "買い物", "健康", "学校・勉強"];
+    var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
+    const raw = await geminiChat([{ role: "user", content: `Generate 5 natural spoken English sentences for shadowing practice at ${lvl.id} level.
+${lvl.shadowRules}
+
+VARIETY: Use these topics: "${shPicked.join('", "')}". Each sentence MUST be about a DIFFERENT topic. Avoid generic textbook sentences. Make them sound like real things people actually say.
+
+Return JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
     S.shadowSentences = safeJSON(raw).sentences || [];
     if (!S.shadowSentences.length) throw new Error("No sentences");
     S.shadowCurrent = 0;

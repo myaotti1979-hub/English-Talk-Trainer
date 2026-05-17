@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.08a";
+const VERSION = "v2026.05.08b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1225,10 +1225,7 @@ function renderHome() {
     <div class="card mb-16 hidden" id="routineSetup">
       <div class="text-sm" style="font-weight:600;margin-bottom:10px">🎯 テーマを選択</div>
       <div class="topic-grid">
-        <div class="topic-pill selected" data-rtheme="daily">🏠 日常会話</div>
-        <div class="topic-pill" data-rtheme="business">💼 ビジネス</div>
-        <div class="topic-pill" data-rtheme="travel">✈️ 旅行</div>
-        <div class="topic-pill" data-rtheme="opinion">💭 意見・感想</div>
+        ${Object.entries(ROUTINE_THEMES).map(function([k,v]) { return '<div class="topic-pill'+(k==='daily'?' selected':'')+'" data-rtheme="'+k+'">'+v.label+'</div>'; }).join('')}
       </div>
       <button class="btn btn-primary w-full mt-16" id="routineStartBtn">🚀 ルーティン開始</button>
     </div>
@@ -1298,10 +1295,18 @@ function renderHome() {
 
 // ── Auto Routine Mode ──
 const ROUTINE_THEMES = {
-  daily: { ftCat: 'daily', ftTopic: 'd_random', flashCat: 'daily', label: '🏠 日常会話' },
-  business: { ftCat: 'business', ftTopic: 'b_meeting', flashCat: 'business', label: '💼 ビジネス' },
-  travel: { ftCat: 'travel', ftTopic: 't_destination', flashCat: 'travel', label: '✈️ 旅行' },
-  opinion: { ftCat: 'daily', ftTopic: 'd_random', flashCat: 'opinion', label: '💭 意見・感想' },
+  daily:    { ftCat: 'daily',   flashCat: 'daily',    label: '🏠 日常生活' },
+  work:     { ftCat: 'work',    flashCat: 'business',  label: '💼 ビジネス' },
+  travel:   { ftCat: 'travel',  flashCat: 'travel',    label: '✈️ 旅行' },
+  opinion:  { ftCat: 'society', flashCat: 'opinion',   label: '💭 意見・社会' },
+  food:     { ftCat: 'food',    flashCat: 'daily',     label: '🍕 食べ物' },
+  finance:  { ftCat: 'finance', flashCat: 'business',  label: '💹 経済・金融' },
+  tech:     { ftCat: 'tech',    flashCat: 'opinion',   label: '💻 テクノロジー' },
+  health:   { ftCat: 'health',  flashCat: 'daily',     label: '🏥 健康・医療' },
+  culture:  { ftCat: 'culture', flashCat: 'opinion',   label: '🏛️ 文化' },
+  hobby:    { ftCat: 'hobby',   flashCat: 'daily',     label: '🎮 趣味' },
+  family:   { ftCat: 'family',  flashCat: 'daily',     label: '👨‍👩‍👧 家族' },
+  personal: { ftCat: 'personal',flashCat: 'opinion',   label: '👤 自分のこと' },
 };
 
 function startRoutine(theme) {
@@ -1309,9 +1314,20 @@ function startRoutine(theme) {
   S.routine = { active: true, theme: theme, step: 0, scores: [], label: rt.label };
   S.ftQuickMode = true;
   S.ftUserStarts = false;
-  var catTopics = FT_ALL_TOPICS.filter(function(t) { return t.catId === rt.ftCat && !t.id.startsWith('si_') && t.prompt !== '__CUSTOM__'; });
-  var pick = catTopics[Math.floor(Math.random() * catTopics.length)] || FT_ALL_TOPICS[0];
+
+  // Pick a random non-roleplay, non-custom topic from the matching category
+  var catTopics = FT_ALL_TOPICS.filter(function(t) {
+    return t.catId === rt.ftCat && !t.id.startsWith('si_') && t.prompt !== '__CUSTOM__' && t.prompt !== '__NEWS_CUSTOM__';
+  });
+  // Fallback: if no topics found in category, try all non-roleplay topics
+  if (catTopics.length === 0) {
+    catTopics = FT_ALL_TOPICS.filter(function(t) {
+      return !t.id.startsWith('si_') && t.prompt !== '__CUSTOM__' && t.prompt !== '__NEWS_CUSTOM__' && t.id !== 'free_random';
+    });
+  }
+  var pick = catTopics[Math.floor(Math.random() * catTopics.length)];
   S.ftTopic = pick.id;
+  S.ftCategory = pick.catId;
   S.ftCustomTopic = '';
   S.screen = "freetalk";
   startFreeTalkSession();

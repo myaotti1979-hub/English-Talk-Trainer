@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.08c";
+const VERSION = "v2026.05.08d";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -450,7 +450,7 @@ const S = {
   chatHistory: [], chatMessages: [],
   ftTopic: "", ftLevel: "B1", ftCategory: "",
   ftVoice: "en-US-JennyNeural",
-  ftTurnCount: 0, ftSessionActive: false, ftQuickMode: false, ftUserStarts: false,
+  ftTurnCount: 0, ftSessionActive: false, ftMaxTurns: 5, ftUserStarts: false,
   ftWhoseTurn: 'ai',
   ftSessionId: 0,  // incremented each session to invalidate stale callbacks
   ftEnding: false,  // prevent double execution of end session
@@ -1319,7 +1319,7 @@ const ROUTINE_THEMES = {
 function startRoutine(theme) {
   var rt = ROUTINE_THEMES[theme] || ROUTINE_THEMES.daily;
   S.routine = { active: true, theme: theme, step: 0, scores: [], label: rt.label };
-  S.ftQuickMode = true;
+  S.ftMaxTurns = 3;
   S.ftUserStarts = false;
 
   // Pick a random non-roleplay, non-custom topic from the matching category
@@ -1654,7 +1654,7 @@ function initFreeTalk() {
   S.chatMessages = [];
   S.ftTurnCount = 0;
   S.ftSessionActive = false;
-  S.ftQuickMode = false;
+  
   S.ftChallengeExprs = [];
   S.ftChallengeUsed = [];
   S.ftPronScores = [];
@@ -1706,14 +1706,11 @@ function renderFreeTalkSetup() {
     </div>
 
     <div class="card">
-      <div class="flex justify-between items-center">
-        <div><div class="text-sm" style="font-weight:600">⚡ クイックモード</div><div class="text-xs text-muted">3ターンで終了</div></div>
-        <label style="position:relative;width:50px;height:28px;display:inline-block">
-          <input type="checkbox" id="quickToggle" ${S.ftQuickMode?'checked':''} style="opacity:0;width:0;height:0">
-          <span style="position:absolute;cursor:pointer;inset:0;background:${S.ftQuickMode?'var(--accent)':'#cbd5e1'};border-radius:14px;transition:.3s"></span>
-          <span style="position:absolute;height:22px;width:22px;left:${S.ftQuickMode?'25px':'3px'};bottom:3px;background:#fff;border-radius:50%;transition:.3s"></span>
-        </label>
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">🔄 ターン数</div>
+      <div class="level-select">
+        ${[3,5,7,10,0].map(n => `<div class="level-chip ${S.ftMaxTurns===n?'active':''}" data-turns="${n}">${n===0?'∞ 自由':n+'ターン'}</div>`).join('')}
       </div>
+      <div class="text-xs text-muted mt-8">最終ターンでAIが会話を自然に締めます</div>
     </div>
 
     <div class="card">
@@ -1764,7 +1761,9 @@ function renderFreeTalkSetup() {
   });
 
   // Quick mode toggle
-  if ($("quickToggle")) $("quickToggle").onchange = (e) => { S.ftQuickMode = e.target.checked; renderFreeTalkSetup(); };
+  document.querySelectorAll("[data-turns]").forEach(function(el) {
+    el.onclick = function() { S.ftMaxTurns = parseInt(this.dataset.turns); renderFreeTalkSetup(); };
+  });
   if ($("userStartToggle")) $("userStartToggle").onchange = (e) => { S.ftUserStarts = e.target.checked; renderFreeTalkSetup(); };
 
   // Custom topic input
@@ -1881,12 +1880,12 @@ ${S.ftUserStarts ? 'The learner will start the conversation. Respond naturally a
   }
 
   S.chatHistory = [{ role: "user", content: isNews ? "Give me a news article to discuss." : "Start the conversation." }];
-  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topicDisplay} — ${level.label}${S.ftQuickMode?' ⚡Quick':''}${S.ftUserStarts?' 🙋自分スタート':''}\n🔊 ${voiceLabel}` }];
+  S.chatMessages = [{ type: "system", text: `${topic.catIcon || '🗣️'} ${topicDisplay} — ${level.label}${S.ftMaxTurns>0?' ('+S.ftMaxTurns+'ターン)':' (∞)'}${S.ftUserStarts?' 🙋自分スタート':''}\n🔊 ${voiceLabel}` }];
 
   // Generate challenge expressions (async, don't block start)
   const challengeTopic = { ...topic, prompt: topicPrompt, label: topicDisplay };
   var _sid = S.ftSessionId;
-  generateChallengeExpressions(level.id, challengeTopic, S.ftQuickMode, _sid).catch(()=>{});
+  generateChallengeExpressions(level.id, challengeTopic, S.ftMaxTurns > 0 && S.ftMaxTurns <= 3, _sid).catch(()=>{});
 
   // User starts mode: skip AI opening, go straight to user input
   if (S.ftUserStarts && !isNews) {
@@ -1956,7 +1955,7 @@ function renderFreeTalkChat() {
     <div class="chat-input-bar">
       ${S.ftWhoseTurn === 'ending' ? '<div class="turn-indicator turn-ai">⏳ フィードバック生成中...</div>' :
         S.ftWhoseTurn === 'ai' ? '<div class="turn-indicator turn-ai">🔊 AIが話しています...</div>' :
-        `<div class="turn-indicator turn-you">🎤 あなたのターンです${!S.ftQuickMode && S.ftTurnCount >= 1 ? ' <button class="btn-ghost" id="ftEndInline" style="font-size:12px;padding:2px 10px;border:1.5px solid var(--accent);border-radius:12px;color:var(--accent);margin-left:8px">🏁 終了してフィードバック</button>' : ''}</div>`}
+        `<div class="turn-indicator turn-you">🎤 あなたのターンです${S.ftMaxTurns > 0 ? ' (' + S.ftTurnCount + '/' + S.ftMaxTurns + ')' : ''}${S.ftMaxTurns === 0 && S.ftTurnCount >= 1 ? ' <button class="btn-ghost" id="ftEndInline" style="font-size:12px;padding:2px 10px;border:1.5px solid var(--accent);border-radius:12px;color:var(--accent);margin-left:8px">🏁 終了してフィードバック</button>' : ''}</div>`}
       <div id="liveTranscript" style="display:${_srActive?'block':'none'};max-width:520px;margin:0 auto 6px;padding:8px 14px;background:rgba(220,38,38,.08);border-radius:12px;font-size:13px;color:var(--red);min-height:24px;word-break:break-word"><span style="animation:pulse 1.5s infinite;display:inline-block">🔴</span> <span id="liveText">${esc(_srBuf)}</span></div>
       <div class="inner" ${S.ftWhoseTurn==='ending'?'style="display:none"':''}>
         <input class="input" id="chatInput" placeholder="${S.ftWhoseTurn==='ai'?'AIが話しています...':'Type in English...'}" autocomplete="off" ${S.ftWhoseTurn!=='you'?'disabled':''}>
@@ -2364,9 +2363,9 @@ async function handleUserMessage(text) {
   });
 
   // Quick mode: auto-end after 3 turns
-  if (S.ftQuickMode && S.ftTurnCount >= 3) {
+  if (S.ftMaxTurns > 0 && S.ftTurnCount >= S.ftMaxTurns) {
     S.ftWhoseTurn = 'ending';  // Disable all input
-    S.chatMessages.push({ type: "system", text: "✅ 3ターン完了！フィードバックを生成中..." });
+    S.chatMessages.push({ type: "system", text: "✅ " + S.ftMaxTurns + "ターン完了！フィードバックを生成中..." });
     renderFreeTalkChat();
     endFreeTalkSession();
     return;
@@ -2380,12 +2379,21 @@ async function handleUserMessage(text) {
   const level = FT_LEVELS.find(l => l.id === S.ftLevel);
   const isRolePlay = topic?.id?.startsWith("si_");
   const resolvedPrompt = topic?.prompt === '__CUSTOM__' ? `Talk about "${S.ftCustomTopic}"` : topic?.prompt?.startsWith('__NEWS__') ? 'Discuss the news article you presented' : (topic?.prompt || "Free conversation");
+  const isLastTurn = S.ftMaxTurns > 0 && S.ftTurnCount >= S.ftMaxTurns - 1;
   const sysPrompt = `You are a friendly English conversation partner.
 
 ${level?.sysRules || "Speak naturally."}
 
 Topic: ${resolvedPrompt}.
 ${isRolePlay ? "Stay in character for this role-play scenario." : ""}
+
+${S.ftMaxTurns > 0 ? `This is turn ${S.ftTurnCount} of ${S.ftMaxTurns}.` : ''}
+${isLastTurn ? `THIS IS THE FINAL TURN. Wrap up the conversation naturally:
+- Acknowledge what the user just said
+- Give a brief, warm closing remark
+- Do NOT ask any more questions
+- End with a natural goodbye or closing phrase
+- If role-playing, close the scenario naturally (e.g., "Thank you for coming in", "It was great talking to you")` : ''}
 
 CRITICAL: You MUST follow the level rules above STRICTLY.
 - Do NOT use vocabulary or grammar above the specified level.

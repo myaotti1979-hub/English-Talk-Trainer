@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.08d";
+const VERSION = "v2026.05.08f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2362,14 +2362,8 @@ async function handleUserMessage(text) {
     }
   });
 
-  // Quick mode: auto-end after 3 turns
-  if (S.ftMaxTurns > 0 && S.ftTurnCount >= S.ftMaxTurns) {
-    S.ftWhoseTurn = 'ending';  // Disable all input
-    S.chatMessages.push({ type: "system", text: "✅ " + S.ftMaxTurns + "ターン完了！フィードバックを生成中..." });
-    renderFreeTalkChat();
-    endFreeTalkSession();
-    return;
-  }
+  // Turn limit: let AI respond with wrap-up, THEN end
+  // (removed immediate auto-end — AI gets the last word)
 
   S.ftWhoseTurn = 'ai';
   renderFreeTalkChat();
@@ -2379,7 +2373,7 @@ async function handleUserMessage(text) {
   const level = FT_LEVELS.find(l => l.id === S.ftLevel);
   const isRolePlay = topic?.id?.startsWith("si_");
   const resolvedPrompt = topic?.prompt === '__CUSTOM__' ? `Talk about "${S.ftCustomTopic}"` : topic?.prompt?.startsWith('__NEWS__') ? 'Discuss the news article you presented' : (topic?.prompt || "Free conversation");
-  const isLastTurn = S.ftMaxTurns > 0 && S.ftTurnCount >= S.ftMaxTurns - 1;
+  const isLastTurn = S.ftMaxTurns > 0 && S.ftTurnCount >= S.ftMaxTurns;
   const sysPrompt = `You are a friendly English conversation partner.
 
 ${level?.sysRules || "Speak naturally."}
@@ -2387,13 +2381,14 @@ ${level?.sysRules || "Speak naturally."}
 Topic: ${resolvedPrompt}.
 ${isRolePlay ? "Stay in character for this role-play scenario." : ""}
 
-${S.ftMaxTurns > 0 ? `This is turn ${S.ftTurnCount} of ${S.ftMaxTurns}.` : ''}
-${isLastTurn ? `THIS IS THE FINAL TURN. Wrap up the conversation naturally:
-- Acknowledge what the user just said
-- Give a brief, warm closing remark
-- Do NOT ask any more questions
-- End with a natural goodbye or closing phrase
-- If role-playing, close the scenario naturally (e.g., "Thank you for coming in", "It was great talking to you")` : ''}
+${S.ftMaxTurns > 0 ? `This is user turn ${S.ftTurnCount} of ${S.ftMaxTurns}.` : ''}
+${isLastTurn ? `THIS IS THE FINAL EXCHANGE. The user just finished their last turn. You MUST wrap up now:
+- Briefly acknowledge what the user said
+- Give a warm, natural closing remark
+- Do NOT ask any questions — the conversation is ending
+- End with a goodbye or closing phrase appropriate to the context
+- If role-playing, close the scenario naturally (e.g., "Thank you for coming in", "Have a great trip!")
+- Keep it short (1-2 sentences max)` : ''}
 
 CRITICAL: You MUST follow the level rules above STRICTLY.
 - Do NOT use vocabulary or grammar above the specified level.
@@ -2409,6 +2404,16 @@ CRITICAL: You MUST follow the level rules above STRICTLY.
     hideTyping();
     renderFreeTalkChat();
     try { await speakText(reply, S.ftVoice); } catch(e) { S.chatMessages.push({type:"system",text:"🔇 音声再生に失敗しました。再生ボタンを押してください。"}); }
+
+    // After last turn: AI has wrapped up → auto-end
+    if (isLastTurn) {
+      S.ftWhoseTurn = 'ending';
+      S.chatMessages.push({ type: "system", text: "✅ " + S.ftMaxTurns + "ターン完了！フィードバックを生成中..." });
+      renderFreeTalkChat();
+      endFreeTalkSession();
+      return;
+    }
+
     S.ftWhoseTurn = 'you'; S.ftTurnStartTime = Date.now();
     renderFreeTalkChat();
   } catch(e) {
@@ -2974,7 +2979,7 @@ function renderFlashSummary() {
   updateStreak();
   // Save mistakes for review
   results.filter(r => !r.isCorrect && r.userAnswer !== "(skipped)").forEach(r => {
-    addMistake({ original: r.userAnswer, corrected: r.en, explanation: r.feedback || "", mode: "flash" });
+    addMistake({ original: r.userAnswer, corrected: r.en, explanation: r.feedback || "", source: r.ja, mode: "flash" });
   });
 
   const scoreColor = avg >= 80 ? "var(--green)" : avg >= 60 ? "var(--yellow)" : "var(--red)";
@@ -3405,16 +3410,13 @@ function renderReviewQuiz() {
     return;
   }
   const all = getMistakes();
-  var correct = 0, total = queue.length;
 
-  function showQuestion(i) {
+  function showCard(i) {
     if (i >= queue.length) {
-      // Review complete summary
       app.innerHTML = `
         <div class="summary-header" style="padding-top:40px">
           <div style="font-size:48px;margin-bottom:8px">📝</div>
-          <div class="score" style="color:var(--accent)">${correct}/${total}</div>
-          <div class="label">復習完了</div>
+          <div class="label">復習完了！${queue.length}問</div>
         </div>
         <button class="btn btn-primary w-full mt-16 mb-16" id="rqHome">ホームに戻る</button>`;
       $("rqHome").onclick = () => { S.screen = "home"; render(); };
@@ -3425,89 +3427,62 @@ function renderReviewQuiz() {
     const isChallenge = m.mode === 'challenge';
     const isFlash = m.mode === 'flash';
 
-    // Different display based on type
-    var questionHTML, hintHTML;
+    // Build card content based on type
+    var topLabel, questionText, correctText, contextText;
     if (isChallenge) {
-      // Challenge expression: show the expression and ask to make a sentence
       var parts = m.corrected.split(' — ');
-      questionHTML = `
-        <div class="text-xs text-muted mb-8">💡 この表現を使って文を作ってください:</div>
-        <div class="text-sm" style="font-weight:700;color:var(--accent);font-size:18px">${esc(parts[0] || m.corrected)}</div>
-        <div class="text-xs text-muted mt-4">${esc(parts[1] || '')}</div>`;
-      hintHTML = `<div class="text-xs text-muted mt-8">例: この表現を使った自然な文を考えてみましょう</div>`;
+      topLabel = '💡 覚えたい表現';
+      correctText = parts[0] || m.corrected;
+      contextText = parts[1] || '';
+      questionText = '';
+    } else if (isFlash) {
+      topLabel = '⚡ Flash 不正解';
+      correctText = m.corrected;
+      contextText = m.source ? '日本語: ' + m.source : '';
+      questionText = m.original || '';
     } else {
-      // Correction/Flash: show context and ask for correct version
-      questionHTML = `
-        <div class="text-xs text-muted mb-8">${isFlash ? '⚡ もう一度英語にしてみましょう:' : '🗣️ 正しく言い直してみましょう:'}</div>
-        <div class="text-sm text-red" style="font-weight:600;text-decoration:line-through;opacity:.6">${esc(m.original)}</div>`;
-      hintHTML = m.explanation ? `<div class="text-xs text-muted mt-8">💡 ${esc(m.explanation)}</div>` : '';
+      topLabel = '🗣️ Free Talk 修正';
+      correctText = m.corrected;
+      contextText = m.explanation || '';
+      questionText = m.original || '';
     }
 
     app.innerHTML = `
       <div class="navbar"><button class="back" id="rqBack">←</button><div class="title">📝 復習 ${i+1}/${queue.length}</div></div>
       <div class="progress-bar"><div class="progress-fill" style="width:${(i/queue.length*100).toFixed(0)}%"></div></div>
-      <div class="card" style="padding:28px">
-        ${questionHTML}
-        ${hintHTML}
-        <div id="rqInputArea" class="mt-16">
-          <div class="flex gap-8">
-            <input class="input" id="rqInput" placeholder="英語で入力..." autocomplete="off" style="border-radius:24px">
-            <button class="btn btn-primary" id="rqSubmit" style="padding:12px 16px;border-radius:50%;flex-shrink:0">↑</button>
-          </div>
-          <button class="btn btn-ghost w-full mt-8" id="rqShowAnswer" style="font-size:13px">🔍 答えを見る</button>
-        </div>
-        <div id="rqAnswer" class="hidden mt-16">
-          <div class="divider"></div>
-          <div class="text-xs text-muted mb-8">✅ 正しい表現:</div>
-          <div class="text-sm text-green" style="font-weight:600">${esc(isChallenge ? (m.corrected.split(' — ')[0] || m.corrected) : m.corrected)}</div>
-          <div id="rqFeedback" class="text-xs text-muted mt-8"></div>
-          <div class="flex gap-8 mt-16">
-            <button class="btn btn-secondary w-full" id="rqHard">😓 もう一回</button>
-            <button class="btn btn-primary w-full" id="rqEasy">✅ 覚えた</button>
-          </div>
-        </div>
+
+      <div class="card" style="padding:24px;text-align:center">
+        <div class="text-xs text-muted mb-12">${topLabel}</div>
+
+        <div style="font-size:20px;font-weight:700;color:var(--accent);line-height:1.6;margin-bottom:16px">${esc(correctText)}</div>
+
+        <button class="btn btn-ghost btn-sm rq-speak" data-text="${esc(correctText).replace(/"/g,'&quot;')}" style="color:var(--accent);margin-bottom:16px">🔊 発音を聞く</button>
+
+        ${contextText ? `<div class="text-xs text-muted mb-8">${esc(contextText)}</div>` : ''}
+        ${questionText ? `<div class="text-xs" style="color:var(--red);text-decoration:line-through;opacity:.5">${esc(questionText)}</div>` : ''}
+      </div>
+
+      <div class="text-xs text-muted mb-8" style="text-align:center">この表現を覚えましたか？</div>
+      <div class="flex gap-8">
+        <button class="btn btn-secondary w-full" id="rqHard">😓 まだ</button>
+        <button class="btn btn-primary w-full" id="rqEasy">✅ 覚えた</button>
       </div>
     `;
+
     $("rqBack").onclick = () => { S.screen = "home"; render(); };
-
-    // Submit answer
-    function submitReviewAnswer() {
-      var answer = $("rqInput")?.value?.trim();
-      $("rqInputArea").classList.add("hidden");
-      $("rqAnswer").classList.remove("hidden");
-      var target = isChallenge ? (m.corrected.split(' — ')[0] || '') : m.corrected;
-      if (answer && target) {
-        // Simple similarity check
-        var sim = answer.toLowerCase().replace(/[.,!?]/g,'').trim() === target.toLowerCase().replace(/[.,!?]/g,'').trim();
-        $("rqFeedback").innerHTML = sim ?
-          '<span style="color:var(--green)">✅ 正解！</span>' :
-          '<span style="color:var(--muted)">あなたの回答: ' + esc(answer) + '</span>';
-        if (sim) correct++;
-      }
-    }
-    $("rqSubmit").onclick = submitReviewAnswer;
-    if ($("rqInput")) $("rqInput").onkeydown = function(e) { if (e.key === 'Enter') submitReviewAnswer(); };
-    $("rqShowAnswer").onclick = function() {
-      $("rqInputArea").classList.add("hidden");
-      $("rqAnswer").classList.remove("hidden");
+    document.querySelectorAll(".rq-speak").forEach(function(btn) {
+      btn.onclick = function() { speakBrowser(this.dataset.text); };
+    });
+    $("rqHard").onclick = function() {
+      if (realIdx >= 0) resetMistakeTimer(realIdx);
+      showCard(i + 1);
     };
-
-    // Next actions
-    setTimeout(function() {
-      if ($("rqHard")) $("rqHard").onclick = function() {
-        if (realIdx >= 0) resetMistakeTimer(realIdx);  // Will show again soon
-        showQuestion(i + 1);
-      };
-      if ($("rqEasy")) $("rqEasy").onclick = function() {
-        if (realIdx >= 0) markReviewed(realIdx);  // Advance to next interval
-        correct++;
-        showQuestion(i + 1);
-      };
-    }, 50);
-
-    setTimeout(function() { $("rqInput")?.focus(); }, 100);
+    $("rqEasy").onclick = function() {
+      if (realIdx >= 0) markReviewed(realIdx);
+      showCard(i + 1);
+    };
   }
-  showQuestion(0);
+  showCard(0);
 }
 
 // ═══════════════════════════════════

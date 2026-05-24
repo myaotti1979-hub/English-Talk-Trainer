@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.08f";
+const VERSION = "v2026.05.08g";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2316,20 +2316,33 @@ async function generateChallengeExpressions(levelId, topic, isQuick, sessionId) 
     const exprCount = isQuick ? 1 : 2;
     const topicDesc = topic?.prompt || "general conversation";
     const topicLabel = topic?.label || "フリートーク";
-    const raw = await geminiChat([{ role: "user", content: `You are helping a ${levelId} level English learner practice.
+    const raw = await geminiChat([{ role: "user", content: `You are helping a ${levelId} level English learner practice NEW expressions in a real conversation.
 
-SKILL CATEGORY: "${pick.name}" — ${pick.focus}
-CONVERSATION TOPIC: "${topicDesc}"
+CONVERSATION TOPIC: "${topicLabel}" — ${topicDesc}
+SKILL FOCUS: "${pick.name}" — ${pick.focus}
 
-Generate exactly ${exprCount} expression(s) from this skill category that the learner can naturally use in a conversation about "${topicLabel}".
+Generate exactly ${exprCount} short, practical phrase(s) that the learner can EASILY drop into this specific conversation.
 
-Rules:
-- All expressions MUST belong to the category "${pick.name}" (${pick.focus})
-- Each expression MUST be usable in a conversation about "${topicLabel}"
-- Appropriate complexity for ${levelId} level
-- Include a realistic example sentence in the context of this topic
+CRITICAL RULES:
+- The phrase must be something the learner would ACTUALLY SAY in this conversation
+- Keep it SHORT: 2-6 words (a phrase or sentence starter, NOT a full sentence)
+- It must feel natural, not forced or academic
+- Give a concrete example of HOW to use it in this conversation topic
+- The example must be a complete sentence the learner might say
 
-Return JSON: {"category": "${pick.name}", "expressions": [{"en": "expression or phrase", "ja": "Japanese meaning", "example": "example sentence in context of ${topicLabel}"}]}` }], "JSON only.", true);
+BAD examples (too abstract, hard to use):
+- "to a certain degree" — too academic
+- "take into account" — too formal for conversation
+- "It is worth noting that" — written English
+
+GOOD examples (short, practical, easy to drop in):
+- "by the way" — "By the way, have you been to that new café?"
+- "I used to" — "I used to take the train, but now I drive."
+- "It depends on" — "It depends on the weather."
+- "I'm looking forward to" — "I'm looking forward to the weekend."
+- "To be honest" — "To be honest, I prefer working from home."
+
+Return JSON: {"category": "${pick.name}", "expressions": [{"en": "short phrase", "ja": "日本語の意味", "example": "Full example sentence using this phrase in the context of ${topicLabel}"}]}` }], "JSON only.", true);
     // Guard: if user already left this session, don't touch UI
     if (sessionId && S.ftSessionId !== sessionId) return;
     const data = safeJSON(raw);

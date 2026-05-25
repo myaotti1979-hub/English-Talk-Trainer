@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.08g";
+const VERSION = "v2026.05.08h";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -242,6 +242,12 @@ const GEMINI_MODELS = [
   { id: "gemini-2.5-pro", label: "2.5 Pro（最高精度）", inPrice: 1.25, outPrice: 10.00 },
 ];
 let GEMINI_MODEL = localStorage.getItem("gemini_model") || "gemini-3.1-flash-lite";
+// Auto-migrate deprecated models
+var _deprecatedMap = { "gemini-3.1-flash-lite-preview": "gemini-3.1-flash-lite" };
+if (_deprecatedMap[GEMINI_MODEL]) {
+  GEMINI_MODEL = _deprecatedMap[GEMINI_MODEL];
+  localStorage.setItem("gemini_model", GEMINI_MODEL);
+}
 
 // ── Azure TTS Neural Voices ──
 const TTS_VOICES = [

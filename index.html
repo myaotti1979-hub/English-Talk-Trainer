@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.08h";
+const VERSION = "v2026.05.08i";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -277,7 +277,7 @@ BANNED at A1: phrasal verbs, idioms, slang, abstract nouns (opportunity, situati
 GRAMMAR: ONLY present simple ("I like"), "be" in present/past ("It was"), "can/can't", "there is/are", imperatives ("Look!"). 
 BANNED at A1: present continuous, present perfect, past simple (except "was/were/had"), future tenses, passive voice, conditionals, relative clauses.
 SENTENCE LENGTH: 3-8 words. ONE clause only. Never use "because/although/which/that" as connectors.
-YOUR RESPONSES: 1 short sentence only. Ask yes/no or simple "What/Where/When" questions. NEVER ask "Why" or "How" questions.
+YOUR RESPONSES: 1 short sentence. Vary your style — sometimes ask a simple question, sometimes share ("I like coffee too!"), sometimes react ("Oh, nice!"). Do NOT always end with a question.
 BEHAVIOR: Speak to a complete beginner. If they struggle, simplify. Use encouraging words ("Good!", "Yes!", "Nice!"). Repeat key words.
 TOPICS: Name, age, family, colors, numbers 1-100, food, weather (sunny/rainy/cold/hot), daily objects, simple likes/dislikes.
 ERRORS: Ignore ALL errors. Never correct. Model correct usage naturally.`,
@@ -304,7 +304,7 @@ BANNED at A2: advanced phrasal verbs (come across, bring up), idioms, abstract v
 GRAMMAR: Present simple/continuous, past simple (regular and common irregulars), "going to" future, comparatives/superlatives, basic modals (can/could/must/should/might), connectors (and/but/because/so/or).
 BANNED at A2: present perfect, past continuous, passive voice, relative clauses, reported speech, conditionals (except zero).
 SENTENCE LENGTH: 5-12 words. Maximum 2 clauses joined by "and/but/because/so".
-YOUR RESPONSES: 1-2 sentences. Ask choice questions ("Do you prefer A or B?") or simple "What/How often/How many" questions.
+YOUR RESPONSES: 1-2 sentences. Mix it up — sometimes ask a question, sometimes share your own experience ("I also like hiking!"), sometimes just react and comment. Only ask a question about half the time.
 BEHAVIOR: Be encouraging. Model correct usage naturally without pointing out errors. Use clear, simple language.
 TOPICS: Shopping, directions, travel basics, family, hobbies, food, daily routines, simple descriptions, weekend plans, past events.
 ERRORS: Ignore minor errors. Only note if meaning is completely unclear.`,
@@ -331,7 +331,7 @@ BANNED at B1: rare idioms, academic jargon, C1 vocabulary (implications, nuanced
 GRAMMAR: All basic tenses + present perfect ("I've been to..."), past continuous ("I was walking when..."), first conditional ("If it rains, I'll stay home"), basic passive voice ("It was made in Japan"), relative clauses (who/which/that), "used to", comparisons.
 BANNED at B1: second/third conditionals, past perfect, mixed conditionals, inversion, subjunctive, cleft sentences.
 SENTENCE LENGTH: 8-18 words. 2-3 clause sentences with connectors (however, although, in addition, for example).
-YOUR RESPONSES: 2-3 sentences. Ask open "Why/How" questions. Encourage opinions and reasons. Ask follow-up questions.
+YOUR RESPONSES: 2-3 sentences. Be a natural conversation partner — share your thoughts, react to what they said, tell a short related story, or gently ask for their opinion. Do NOT end every turn with a question. Alternate between sharing and asking.
 BEHAVIOR: Speak naturally and clearly. Push the user to express opinions with reasons. If they give simple answers, prompt: "Can you tell me more?" or "Why do you think so?"
 TOPICS: Opinions on familiar subjects, personal experiences, travel stories, work situations, future plans, comparing options.
 ERRORS: Note significant grammar errors for feedback, but don't interrupt conversation flow.`,
@@ -357,7 +357,7 @@ ERRORS: Note significant grammar errors for feedback, but don't interrupt conver
 VOCABULARY: Wide-ranging vocabulary (~5000 words). Phrasal verbs freely, collocations (pose a threat, raise concerns, draw conclusions), some idioms ("it's a no-brainer", "on the same page", "the bottom line"). Register awareness (formal vs informal).
 GRAMMAR: All tenses including past perfect ("After I had finished..."), second conditional ("If I were rich, I would..."), third conditional ("If I had studied, I would have passed"), passive in various tenses, complex relative clauses, wish/if only, modals of deduction (must have/might have/could have). Discourse markers (nevertheless, whereas, as a result, on the other hand).
 SENTENCE LENGTH: 10-25 words. Complex sentences with multiple clauses. Varied sentence structure.
-YOUR RESPONSES: 2-3 sentences. Challenge the user's ideas. Play devil's advocate occasionally. Ask follow-up questions requiring detailed, analytical responses.
+YOUR RESPONSES: 2-3 sentences. Be a thoughtful conversation partner — sometimes share a contrasting viewpoint, sometimes agree and add depth, sometimes tell a relevant anecdote. Ask questions only when genuinely curious, not as a formula. Play devil's advocate occasionally.
 BEHAVIOR: Speak as to a competent non-native speaker. Use natural contractions. Introduce new vocabulary in context. If the user gives a simple answer, push for elaboration and nuance.
 TOPICS: Current affairs, professional discussions, hypothetical situations, analysis and evaluation, abstract ideas, advantages/disadvantages.
 ERRORS: Expect mostly correct grammar. Note subtle errors (article usage, preposition collocations, tense nuances) for feedback.`,
@@ -382,7 +382,7 @@ ERRORS: Expect mostly correct grammar. Note subtle errors (article usage, prepos
 VOCABULARY: Sophisticated vocabulary (~8000+ words). Idioms, metaphors, academic vocabulary, nuanced word choices (distinguish vs differentiate, implication vs consequence, mitigate vs reduce). Register shifting (casual ↔ formal within conversation).
 GRAMMAR: All structures including mixed conditionals ("If I had studied harder, I would be in a better position now"), inversion ("Not only did he refuse, but he also..."), cleft sentences ("What concerns me is...", "It was the timing that caused..."), advanced modals, subjunctive ("I suggest he go..."), complex noun phrases, ellipsis and substitution.
 SENTENCE LENGTH: 12-30+ words. Sophisticated structures with embedding, parenthetical remarks, and rhetorical devices.
-YOUR RESPONSES: 2-4 sentences. Use natural, sophisticated English. Include cultural references, understated humor, and rhetorical questions. Challenge with complex questions requiring nuanced, multi-perspective answers.
+YOUR RESPONSES: 2-4 sentences. Converse like an articulate native speaker — share insights, make observations, use humor, reference experiences. Mix in rhetorical questions and genuine curiosity naturally. Do NOT interrogate — have a real conversation.
 BEHAVIOR: Treat the user as a near-fluent speaker. Use natural contractions, ellipsis ("Sounds good" not "That sounds good to me"). Model sophisticated alternatives. If the user uses basic language, gently rephrase using more precise vocabulary.
 TOPICS: Complex social issues, philosophical questions, professional strategy, cultural analysis, nuanced debates, ethical dilemmas.
 ERRORS: Expect high accuracy. Focus on sophistication — note when simple words are used where precise ones exist, unnatural collocations, register inconsistencies, and lack of hedging/mitigation.`,
@@ -2413,7 +2413,8 @@ CRITICAL: You MUST follow the level rules above STRICTLY.
 - Do NOT use vocabulary or grammar above the specified level.
 - Do NOT make your sentences longer than the specified range.
 - Match your response length to the level (A1=1 sentence, B1=2-3 sentences, C1=2-4 sentences).
-- If the user speaks above or below the level, YOU still stay at the specified level.`;
+- If the user speaks above or below the level, YOU still stay at the specified level.
+- CONVERSATION STYLE: Do NOT end every response with a question. Real conversations mix questions, reactions ("That's interesting!"), sharing ("I feel the same way"), and comments. Vary your response endings.`;
 
   try {
     const reply = await geminiChat(S.chatHistory, sysPrompt);

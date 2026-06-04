@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.30d";
+const VERSION = "v2026.05.30e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1347,6 +1347,9 @@ function startRoutine(theme) {
   S.ftTopic = pick.id;
   S.ftCategory = pick.catId;
   S.ftCustomTopic = '';
+  // Save topic info for Flash/Shadowing continuity
+  S.routine.topicLabel = pick.label || '';
+  S.routine.topicPrompt = pick.prompt || '';
   S.screen = "freetalk";
   startFreeTalkSession();
 }
@@ -2713,6 +2716,11 @@ async function generateFlashQuestions() {
   picked = shuffled.slice(0, 3);
   var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios/topics this time: "${picked.join('", "')}". Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
 
+  // In routine mode: override variety with the Free Talk topic for continuity
+  if (S.routine.active && S.routine.topicLabel) {
+    varietyHint = `\n\nIMPORTANT - THEME CONTINUITY: The learner just had a Free Talk conversation about "${S.routine.topicLabel}". Generate sentences RELATED to this same topic/theme. Make the practice feel like a natural continuation of their conversation. All sentences should be about "${S.routine.topicLabel}" or closely related subjects.`;
+  }
+
   var prompt;
 
   if (S.flashCategory === 'situation') {
@@ -3130,10 +3138,17 @@ async function generateShadowSentences() {
     // Variety seeds for shadowing
     var shTopics = ["旅行の思い出", "仕事の出来事", "友人との会話", "ニュース・時事", "趣味の話", "家族の話", "将来の計画", "食べ物・レストラン", "季節・天気", "映画・音楽", "スポーツ・運動", "テクノロジー", "買い物", "健康", "学校・勉強"];
     var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
+
+    // In routine mode: use the Free Talk topic for continuity
+    var themeHint = `VARIETY: Use these topics: "${shPicked.join('", "')}". Each sentence MUST be about a DIFFERENT topic.`;
+    if (S.routine.active && S.routine.topicLabel) {
+      themeHint = `THEME CONTINUITY: The learner just practiced "${S.routine.topicLabel}". Generate ALL sentences related to this same topic/theme. Make the shadowing feel like a continuation of their conversation.`;
+    }
+
     const raw = await geminiChat([{ role: "user", content: `Generate 5 natural spoken English sentences for shadowing practice at ${lvl.id} level.
 ${lvl.shadowRules}
 
-VARIETY: Use these topics: "${shPicked.join('", "')}". Each sentence MUST be about a DIFFERENT topic. Avoid generic textbook sentences. Make them sound like real things people actually say.
+${themeHint} Avoid generic textbook sentences. Make them sound like real things people actually say.
 
 Return JSON: {"sentences": [{"en": "sentence", "ja": "Japanese translation"}]}` }], "JSON only.", true);
     S.shadowSentences = safeJSON(raw).sentences || [];

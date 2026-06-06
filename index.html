@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.30g";
+const VERSION = "v2026.06.06b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2702,18 +2702,24 @@ async function generateFlashQuestions() {
 
   // Variety system: random sub-topics to prevent repetitive outputs
   const VARIETY_SEEDS = {
-    daily: ["朝の準備・通勤", "ペットの世話", "友人との約束", "引っ越し・新生活", "天気と服装", "スーパーでの買い物", "料理・自炊", "掃除・洗濯", "近所づきあい", "休日の過ごし方", "健康管理・運動", "美容院・散髪", "DIY・修理", "誕生日・お祝い", "子供の学校行事"],
-    business: ["会議の司会", "プレゼン準備", "クライアントへのメール", "締め切り変更", "プロジェクト進捗報告", "新人教育", "オフィス移転", "予算申請", "業績評価", "チームビルディング", "出張手配", "在宅勤務", "クレーム対応", "契約交渉", "ITシステム導入"],
-    travel: ["空港でのトラブル", "ホテルの予約変更", "道に迷った時", "レストランの注文", "お土産選び", "現地ツアー", "両替・支払い", "公共交通機関", "体調不良", "写真スポット", "文化体験", "帰国準備", "レンタカー", "海外の医療", "ビザ・入国"],
-    opinion: ["教育制度", "テクノロジーの影響", "環境問題", "働き方改革", "SNSの功罪", "AI時代の仕事", "伝統と革新", "都市と地方", "食文化の変化", "スポーツの意義", "読書vs動画", "キャッシュレス", "多様性", "宇宙開発", "健康と食事"],
-    situation: ["職場での依頼", "友人との再会", "病院の受付", "クレーム", "お礼を言う", "道を聞かれた", "遅刻の連絡", "提案する", "断る", "褒める", "相談する", "励ます", "紹介する", "電話を取る", "注文を間違えられた"],
-    pattern: ["I'm looking forward to", "I used to", "It depends on", "I'm supposed to", "I can't help but", "There's no point in", "I might as well", "I'd rather", "It's worth", "I'm about to", "I ended up", "I'm getting used to", "It turns out that", "I wish I could", "I should have"],
+    daily: ["朝の準備・通勤","ペットの世話","友人との約束","引っ越し・新生活","天気と服装","スーパーでの買い物","料理・自炊","掃除・洗濯","近所づきあい","休日の過ごし方","健康管理・運動","美容院・散髪","DIY・修理","誕生日・お祝い","子供の学校行事","電車の遅延","宅配便の受取","SNSの投稿","カフェでの注文","公園での散歩","ジムでのトレーニング","映画館での体験","図書館で本を借りる","病院の予約","銀行での手続き","ゴミ出しのルール","季節の衣替え","週末のブランチ","夜更かしと朝寝坊","コンビニでの買い物"],
+    business: ["会議の司会","プレゼン準備","クライアントへのメール","締め切り変更","プロジェクト進捗報告","新人教育","オフィス移転","予算申請","業績評価","チームビルディング","出張手配","在宅勤務","クレーム対応","契約交渉","ITシステム導入","給与交渉","退職の挨拶","昇進の報告","社内イベント企画","マーケティング戦略","顧客満足度調査","競合分析","人事異動","ビジネスランチ","海外支社との連携","KPI設定","ブレインストーミング","議事録の作成","社内研修","コンプライアンス"],
+    travel: ["空港でのトラブル","ホテルの予約変更","道に迷った時","レストランの注文","お土産選び","現地ツアー","両替・支払い","公共交通機関","体調不良","写真スポット","文化体験","帰国準備","レンタカー","海外の医療","ビザ・入国","Airbnbのチェックイン","Wi-Fiを探す","荷物の紛失","チップの払い方","フライトの遅延","現地の人に話しかける","美術館・博物館","ナイトマーケット","登山・ハイキング","ビーチリゾート","寺院・教会の訪問","国境越え","鉄道パスの使い方","屋台の食べ歩き","天候トラブル"],
+    opinion: ["教育制度","テクノロジーの影響","環境問題","働き方改革","SNSの功罪","AI時代の仕事","伝統と革新","都市と地方","食文化の変化","スポーツの意義","読書vs動画","キャッシュレス","多様性","宇宙開発","健康と食事","少子高齢化","ペットと人間の関係","オンライン学習vs対面","自動運転","フードロス","メンタルヘルス","ミニマリズム","グローバル化","ジェンダー平等","再生可能エネルギー","プライバシー問題","ボランティア活動","芸術の価値","世代間ギャップ","幸福とは何か"],
+    situation: ["職場での依頼","友人との再会","病院の受付","クレーム","お礼を言う","道を聞かれた","遅刻の連絡","提案する","断る","褒める","相談する","励ます","紹介する","電話を取る","注文を間違えられた","忘れ物を届ける","噂話を聞いた","サプライズを計画","値段を交渉","苦情を伝える","パーティーに招待","悪いニュースを伝える","助けを求める","意見の相違","謝罪する","約束を変更","推薦する","共感を示す","質問を聞き返す","別れの挨拶"],
+    pattern: ["I'm looking forward to","I used to","It depends on","I'm supposed to","I can't help but","There's no point in","I might as well","I'd rather","It's worth","I'm about to","I ended up","I'm getting used to","It turns out that","I wish I could","I should have","Not only...but also","The more...the more","I'm thinking of","Would you mind","As far as I know","I'm afraid","It's no wonder","What if","How come","I can't stand","I'm fed up with","I take it that","There's no way","Let alone","On top of that"],
   };
   var seeds = VARIETY_SEEDS[S.flashCategory] || VARIETY_SEEDS.daily;
   // Pick 3 random seeds for this session
   var picked = [];
   var shuffled = seeds.slice().sort(function() { return Math.random() - 0.5; });
   picked = shuffled.slice(0, 3);
+
+  // Style modifier for extra variety
+  var STYLES = ["日常のカジュアルな場面", "少しフォーマルな場面", "感情を伴う場面", "予想外の展開がある場面", "ユーモアがある場面", "困っている場面", "嬉しい場面", "緊張する場面", "初対面の場面", "久しぶりに会う場面"];
+  var stylePick = STYLES[Math.floor(Math.random() * STYLES.length)];
+
+  var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios: "${picked.join('", "')}". Style: ${stylePick}. Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
   var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios/topics this time: "${picked.join('", "')}". Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
 
   // In routine mode: override variety with the Free Talk topic for continuity
@@ -3136,11 +3142,14 @@ async function generateShadowSentences() {
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
     // Variety seeds for shadowing
-    var shTopics = ["旅行の思い出", "仕事の出来事", "友人との会話", "ニュース・時事", "趣味の話", "家族の話", "将来の計画", "食べ物・レストラン", "季節・天気", "映画・音楽", "スポーツ・運動", "テクノロジー", "買い物", "健康", "学校・勉強"];
+    var shTopics = ["旅行の思い出","仕事の出来事","友人との会話","ニュース・時事","趣味の話","家族の話","将来の計画","食べ物・レストラン","季節・天気","映画・音楽","スポーツ・運動","テクノロジー","買い物","健康","学校・勉強","ペットの話","週末の過ごし方","引っ越し体験","初めての経験","失敗談","嬉しかったこと","環境問題","文化の違い","朝のルーティン","おすすめの場所","読んだ本","習い事","ボランティア","夢・目標","子供の頃の思い出"];
+    var shStyles = ["independent statement","question and answer","expressing opinion","telling a story","giving advice","making a comparison","describing an experience","explaining a process"];
+    var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
+    var shStyle = shStyles[Math.floor(Math.random()*shStyles.length)];
     var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
 
     // In routine mode: use the Free Talk topic for continuity
-    var themeHint = `VARIETY: Use these topics: "${shPicked.join('", "')}". Each sentence MUST be about a DIFFERENT topic.`;
+    var themeHint = `VARIETY: Use these topics: "${shPicked.join('", "')}". Sentence style: ${shStyle}. Each sentence MUST be about a DIFFERENT topic and feel natural/conversational.`;
     if (S.routine.active && S.routine.topicLabel) {
       themeHint = `THEME CONTINUITY: The learner just practiced "${S.routine.topicLabel}". Generate ALL sentences related to this same topic/theme. Make the shadowing feel like a continuation of their conversation.`;
     }
@@ -3683,13 +3692,20 @@ function renderConvLog() {
       this.disabled = true;
       this.textContent = "⏳ 翻訳中...";
       try {
-        var conv = msgs.map(function(m){return (m.type==='user'?'You':'AI')+': '+m.text;}).join('\n');
-        var raw = await geminiChat([{ role: "user", content: `Translate each line of this English conversation to Japanese. Keep the speaker labels (You/AI). Return ONLY the translations, one per line, in the same order.\n\n${conv}` }], "Japanese translation only. One line per message.");
+        var conv = msgs.map(function(m, j){return '[' + (j+1) + '] ' + (m.type==='user'?'You':'AI')+': '+m.text;}).join('\n');
+        var raw = await geminiChat([{ role: "user", content: `Translate each numbered message below to Japanese. Rules:
+- Return EXACTLY ${msgs.length} lines
+- Each line must start with the same number [1], [2], etc.
+- Translate the ENGLISH to JAPANESE
+- Keep it natural Japanese
+- Do NOT merge, split, or reorder messages
+
+${conv}` }], "Return exactly " + msgs.length + " numbered translations.");
         var lines = raw.split('\n').filter(function(l){return l.trim();});
         var jaElements = $("logDetail"+idx).querySelectorAll('.ja-line');
         jaElements.forEach(function(el, j) {
-          var translated = (lines[j]||'').replace(/^(You|AI|あなた|AI):\s*/i,'');
-          el.textContent = '→ ' + translated;
+          var translated = (lines[j]||'').replace(/^\[\d+\]\s*/,'').replace(/^(You|AI|あなた|AI):\s*/i,'');
+          el.textContent = '→ ' + (translated || '(翻訳なし)');
           el.style.display = 'block';
         });
         this.textContent = "✅ 和訳表示中";

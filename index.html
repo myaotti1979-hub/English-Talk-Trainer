@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.30f";
+const VERSION = "v2026.05.30g";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -3550,11 +3550,12 @@ function renderVocabNotebook() {
       ${(v.note||v.context) ? `<div class="vocab-ctx" style="font-size:12px;color:var(--muted);margin-top:4px">💡 ${esc(v.note||v.context)}</div>` : ''}
       ${v.example ? `
         <div style="margin-top:8px;padding:10px 12px;background:#f0fdf4;border-radius:10px;font-size:14px;color:#065f46">
+          ${v.scene ? `<div style="font-size:11px;color:#059669;margin-bottom:4px">🏷️ ${esc(v.scene)}</div>` : ''}
           <div>📝 ${esc(v.example)}</div>
           <button class="btn-ghost text-xs vn-speak" data-text="${esc(v.example).replace(/"/g,'&quot;')}" style="margin-top:6px;color:var(--accent)">🔊 例文を再生</button>
         </div>
       ` : `
-        <button class="btn-ghost text-xs vn-gen" data-idx="${i}" style="margin-top:8px;color:var(--accent)">✨ 例文を生成（有料）</button>
+        <button class="btn-ghost text-xs vn-gen" data-idx="${i}" style="margin-top:8px;color:var(--accent)">✨ 例文＋使用シーンを生成（有料）</button>
       `}
     </div>`).join('')}
     ${vocab.length > 0 ? `<button class="btn btn-ghost w-full mt-16 mb-16" id="vnClear" style="color:var(--red)">🗑️ すべてクリア</button>` : ''}
@@ -3580,9 +3581,16 @@ function renderVocabNotebook() {
       this.textContent = "⏳ 生成中...";
       this.disabled = true;
       try {
-        var raw = await geminiChat([{ role: "user", content: `Create one natural English example sentence using the phrase "${v.en}". Keep it simple and practical. Return ONLY the sentence, no quotes, no explanation.` }], "Return only the example sentence.");
-        var example = raw.trim().replace(/^["']|["']$/g, '');
-        updateVocabEntry(idx, { example: example });
+        var raw = await geminiChat([{ role: "user", content: `For the English phrase "${v.en}":
+1. Create one natural example sentence using this phrase
+2. Describe in Japanese (15字以内) what situation/scene this phrase is most useful in
+
+Return JSON only: {"example": "example sentence", "scene": "使用シーン（日本語15字以内）"}` }], "JSON only.", true);
+        var parsed = {};
+        try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); } catch(e2) { parsed = { example: raw.trim(), scene: '' }; }
+        var example = (parsed.example || raw).trim().replace(/^["']|["']$/g, '');
+        var scene = parsed.scene || '';
+        updateVocabEntry(idx, { example: example, scene: scene });
         renderVocabNotebook();
       } catch(e) {
         this.textContent = "❌ 失敗 — リトライ";

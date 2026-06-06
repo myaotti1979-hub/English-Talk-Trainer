@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.05.30e";
+const VERSION = "v2026.05.30f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -3538,18 +3538,23 @@ function renderVocabNotebook() {
     ${vocab.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Free Talkを始めると、あなたが使ったフレーズが自動記録されます</div></div>' :
     vocab.map((v, i) => `<div class="card" style="padding:14px 16px;margin-bottom:8px">
       <div class="flex justify-between items-center">
-        <div class="vocab-en" style="flex:1">${esc(v.en)}</div>
-        <button class="btn-ghost text-xs vn-del" data-idx="${i}" style="color:var(--red);padding:4px 8px;font-size:18px">✕</button>
+        <div style="flex:1">
+          <div class="vocab-en" style="font-weight:600">${esc(v.en)}</div>
+          <div class="vocab-ja" style="font-size:13px;color:var(--muted);margin-top:2px">${esc(v.ja)}</div>
+        </div>
+        <div class="flex gap-4" style="flex-shrink:0">
+          <button class="btn-ghost text-xs vn-speak-phrase" data-text="${esc(v.en).replace(/"/g,'&quot;')}" style="color:var(--accent);padding:4px 8px;font-size:18px">🔊</button>
+          <button class="btn-ghost text-xs vn-del" data-idx="${i}" style="color:var(--red);padding:4px 8px;font-size:18px">✕</button>
+        </div>
       </div>
-      <div class="vocab-ja">${esc(v.ja)}</div>
-      ${(v.note||v.context) ? `<div class="vocab-ctx">${esc(v.note||v.context)}</div>` : ''}
+      ${(v.note||v.context) ? `<div class="vocab-ctx" style="font-size:12px;color:var(--muted);margin-top:4px">💡 ${esc(v.note||v.context)}</div>` : ''}
       ${v.example ? `
         <div style="margin-top:8px;padding:10px 12px;background:#f0fdf4;border-radius:10px;font-size:14px;color:#065f46">
           <div>📝 ${esc(v.example)}</div>
-          <button class="btn-ghost text-xs vn-speak" data-text="${esc(v.example).replace(/"/g,'&quot;')}" style="margin-top:6px;color:var(--accent)">🔊 再生</button>
+          <button class="btn-ghost text-xs vn-speak" data-text="${esc(v.example).replace(/"/g,'&quot;')}" style="margin-top:6px;color:var(--accent)">🔊 例文を再生</button>
         </div>
       ` : `
-        <button class="btn-ghost text-xs vn-gen" data-idx="${i}" style="margin-top:8px;color:var(--accent)">✨ 例文を生成</button>
+        <button class="btn-ghost text-xs vn-gen" data-idx="${i}" style="margin-top:8px;color:var(--accent)">✨ 例文を生成（有料）</button>
       `}
     </div>`).join('')}
     ${vocab.length > 0 ? `<button class="btn btn-ghost w-full mt-16 mb-16" id="vnClear" style="color:var(--red)">🗑️ すべてクリア</button>` : ''}
@@ -3586,6 +3591,19 @@ function renderVocabNotebook() {
     };
   });
 
+  // Speak phrase itself
+  document.querySelectorAll(".vn-speak-phrase").forEach(btn => {
+    btn.onclick = function(e) {
+      e.stopPropagation();
+      if (window.speechSynthesis) {
+        speechSynthesis.cancel();
+        var u = new SpeechSynthesisUtterance(this.dataset.text);
+        u.lang = 'en-US'; u.rate = 0.9;
+        speechSynthesis.speak(u);
+      }
+    };
+  });
+
   // Speak example
   document.querySelectorAll(".vn-speak").forEach(btn => {
     btn.onclick = function() {
@@ -3612,27 +3630,65 @@ function renderConvLog() {
       <button class="back" id="clBack">←</button>
       <div class="title">💬 会話ログ (${logs.length})</div>
     </div>
+    ${logs.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Free Talkの会話が自動保存されます</div></div>' : ''}
     ${logs.map((log, i) => {
       const d = new Date(log.date);
       const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-      return `<div class="card log-card" style="cursor:pointer" data-idx="${i}">
-        <div class="flex justify-between items-center">
-          <div class="text-sm" style="font-weight:600">🗣️ ${esc(log.topic || '')}</div>
-          <div class="text-xs text-muted">${dateStr}</div>
+      const msgs = (log.messages||[]).filter(m=>m.type==='ai'||m.type==='user');
+      return `<div class="card" style="margin-bottom:12px">
+        <div class="log-header" data-idx="${i}" style="cursor:pointer">
+          <div class="flex justify-between items-center">
+            <div class="text-sm" style="font-weight:600">🗣️ ${esc(log.topic || '')}</div>
+            <div class="text-xs text-muted">${dateStr}</div>
+          </div>
+          <div class="text-xs text-muted mt-4">${log.level || ''} · ${msgs.filter(m=>m.type==='user').length} turns</div>
         </div>
-        <div class="text-xs text-muted mt-8">${log.level || ''} · ${(log.messages||[]).filter(m=>m.type==='user').length} turns</div>
-        <div id="logDetail${i}" class="hidden mt-8" style="max-height:300px;overflow-y:auto">
-          ${(log.messages||[]).filter(m=>m.type==='ai'||m.type==='user').map(m => `<div style="padding:6px 0;font-size:13px;color:${m.type==='user'?'var(--accent)':'var(--text)'}"><strong>${m.type==='user'?'You':'AI'}:</strong> ${esc(m.text)}</div>`).join('')}
+        <div id="logDetail${i}" class="hidden mt-8">
+          <div style="max-height:400px;overflow-y:auto">
+            ${msgs.map(m => `<div style="padding:8px 0;font-size:13px;border-bottom:1px solid var(--border)">
+              <div style="color:${m.type==='user'?'var(--accent)':'var(--text)'}"><strong>${m.type==='user'?'🙋 You':'🤖 AI'}:</strong> ${esc(m.text)}</div>
+              <div class="ja-line" style="display:none;color:var(--muted);font-size:12px;margin-top:4px"></div>
+            </div>`).join('')}
+          </div>
+          <div class="flex gap-8 mt-12">
+            <button class="btn btn-ghost btn-sm log-translate" data-idx="${i}" style="color:var(--accent)">🇯🇵 和訳を表示（有料）</button>
+          </div>
         </div>
       </div>`;
     }).join('')}
   `;
   $("clBack").onclick = () => { S.screen = "home"; render(); };
   // Toggle detail
-  document.querySelectorAll('.card[data-idx]').forEach(card => {
-    card.onclick = () => {
-      const det = $("logDetail" + card.dataset.idx);
+  document.querySelectorAll('.log-header').forEach(header => {
+    header.onclick = () => {
+      const det = $("logDetail" + header.dataset.idx);
       if (det) det.classList.toggle("hidden");
+    };
+  });
+  // Translate button
+  document.querySelectorAll('.log-translate').forEach(btn => {
+    btn.onclick = async function(e) {
+      e.stopPropagation();
+      var idx = parseInt(this.dataset.idx);
+      var log = logs[idx];
+      var msgs = (log.messages||[]).filter(m=>m.type==='ai'||m.type==='user');
+      this.disabled = true;
+      this.textContent = "⏳ 翻訳中...";
+      try {
+        var conv = msgs.map(function(m){return (m.type==='user'?'You':'AI')+': '+m.text;}).join('\n');
+        var raw = await geminiChat([{ role: "user", content: `Translate each line of this English conversation to Japanese. Keep the speaker labels (You/AI). Return ONLY the translations, one per line, in the same order.\n\n${conv}` }], "Japanese translation only. One line per message.");
+        var lines = raw.split('\n').filter(function(l){return l.trim();});
+        var jaElements = $("logDetail"+idx).querySelectorAll('.ja-line');
+        jaElements.forEach(function(el, j) {
+          var translated = (lines[j]||'').replace(/^(You|AI|あなた|AI):\s*/i,'');
+          el.textContent = '→ ' + translated;
+          el.style.display = 'block';
+        });
+        this.textContent = "✅ 和訳表示中";
+      } catch(err) {
+        this.textContent = "❌ 翻訳失敗 — リトライ";
+        this.disabled = false;
+      }
     };
   });
 }

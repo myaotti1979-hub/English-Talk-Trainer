@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.06b";
+const VERSION = "v2026.06.07a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2641,6 +2641,7 @@ const FLASH_CATEGORIES = [
   { id: "opinion", label: "💭 意見・感想" },
   { id: "situation", label: "⚡ 状況反応" },
   { id: "pattern", label: "🔄 パターンドリル" },
+  { id: "describe", label: "🎨 描写トレーニング" },
 ];
 
 function initFlash() {
@@ -2671,6 +2672,7 @@ function renderFlashSetup() {
       <div class="text-xs text-muted mt-8">${
         S.flashCategory === 'situation' ? '⚡ 状況が日本語で表示 → 英語で即座に反応（翻訳ではなく応答）' :
         S.flashCategory === 'pattern' ? '🔄 同じパターンを3つの状況で反復 → チャンクの自動化' :
+        S.flashCategory === 'describe' ? '🎨 テーマについて自分の言葉で説明 → 段階的に難しくなる5問' :
         '日本語の文を見て英語に翻訳する従来モード'
       }</div>
     </div>
@@ -2720,7 +2722,6 @@ async function generateFlashQuestions() {
   var stylePick = STYLES[Math.floor(Math.random() * STYLES.length)];
 
   var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios: "${picked.join('", "')}". Style: ${stylePick}. Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
-  var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios/topics this time: "${picked.join('", "')}". Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
 
   // In routine mode: override variety with the Free Talk topic for continuity
   if (S.routine.active && S.routine.topicLabel) {
@@ -2729,7 +2730,54 @@ async function generateFlashQuestions() {
 
   var prompt;
 
-  if (S.flashCategory === 'situation') {
+  if (S.flashCategory === 'describe') {
+    // Description Training — vivid scenario-based prompts
+    var DESC_THEMES = ["職場でのハプニング","旅先での出来事","友人との思い出","家族のエピソード","買い物での体験","通勤・通学の出来事","料理にまつわる話","天気と予定の変更","ペットの話","健康・体調の話","テクノロジーのトラブル","休日の過ごし方","スポーツの体験","引っ越し","忘れ物・なくし物","初めての経験","文化の違い","季節の行事","お金にまつわる話","時間管理の失敗"];
+    var descTheme = S.routine.active && S.routine.topicLabel ? S.routine.topicLabel : DESC_THEMES[Math.floor(Math.random()*DESC_THEMES.length)];
+
+    // Situation modifiers for variety even with the same theme
+    var DESC_SETTINGS = ["朝の通勤中","海外旅行中","初めてのデート","大事な試験の日","雨の日","友人の結婚式","深夜","引っ越し当日","上司と一緒","子供を連れている時","電車の中","カフェで","SNSで話題になった","10年前の話","来月の予定"];
+    var DESC_TWISTS = ["予想外の展開","時間がない","言葉が通じない","お金が足りない","誰かに助けを求める","2つの選択肢で迷う","失敗から学ぶ","初めての経験","文化の違いに気づく","テクノロジーが役立つ/邪魔する"];
+    var descSetting = DESC_SETTINGS[Math.floor(Math.random()*DESC_SETTINGS.length)];
+    var descTwist = DESC_TWISTS[Math.floor(Math.random()*DESC_TWISTS.length)];
+
+    prompt = `You are creating a speaking exercise for a ${S.flashLevel} level English learner.
+
+${lvlRules}
+
+Theme: "${descTheme}"
+Setting modifier: "${descSetting}"
+Twist element: "${descTwist}"
+
+Generate exactly 5 scenario-based speaking prompts. CRITICAL RULES:
+- Incorporate the setting ("${descSetting}") and twist ("${descTwist}") into the scenarios
+- Each prompt must paint a SPECIFIC, VIVID situation with a concrete scene
+- Give the learner a ROLE and PURPOSE for speaking
+- Get progressively harder
+- Make it feel like a real moment in life, NOT a textbook exercise
+
+Progressive difficulty:
+1. Simple: Report a basic fact about the situation (1-2 sentences needed)
+2. Narrate: Tell what happened step by step (2-3 sentences)
+3. Explain: Give reasons or causes (2-3 sentences)
+4. Compare/Persuade: Compare options or convince someone (3-4 sentences)
+5. Improvise: Handle an unexpected twist in the scenario (3-4 sentences)
+
+Example (theme: 職場でのハプニング):
+1. "あなたの同僚が会議に遅刻してきました。上司に何が起きたか簡単に伝えてください"
+2. "昨日のオフィスで、コーヒーマシンが壊れて大騒ぎになりました。何が起きたか順を追って話してください"
+3. "チームメンバーが最近やる気をなくしています。なぜそうなったと思うか説明してください"
+4. "在宅勤務とオフィス勤務、それぞれの良い点を同僚に説明してください"
+5. "重要なプレゼン中にパソコンがフリーズしました。その場でどう対応するか説明してください"
+
+For each prompt, provide:
+- "ja": The scenario prompt in Japanese (vivid, specific situation + what to say)
+- "en": A model answer at ${S.flashLevel} level (natural spoken English)
+- "hint": 2-3 useful expressions for this scenario
+
+Respond ONLY in JSON:
+{"questions": [{"ja": "具体的なシナリオ", "en": "Model answer", "hint": "useful expressions", "alt": []}]}`;
+  } else if (S.flashCategory === 'situation') {
     prompt = `Generate 10 situation-response exercises for English conversation practice.
 
 ${lvlRules}
@@ -2807,8 +2855,9 @@ function renderFlashQuestion() {
   const progress = ((S.flashCurrent) / S.flashQuestions.length * 100).toFixed(0);
   const isSituation = S.flashCategory === 'situation';
   const isPattern = S.flashCategory === 'pattern';
-  const modeTitle = isSituation ? '⚡ Situation Response' : isPattern ? '🔄 Pattern Drill' : 'Flash Translation';
-  const promptLabel = isSituation ? '📌 この状況で英語で応答してください' : isPattern ? '🔄 パターンを使って答えてください' : '';
+  const isDescribe = S.flashCategory === 'describe';
+  const modeTitle = isSituation ? '⚡ Situation Response' : isPattern ? '🔄 Pattern Drill' : isDescribe ? '🎨 Description' : 'Flash Translation';
+  const promptLabel = isSituation ? '📌 この状況で英語で応答してください' : isPattern ? '🔄 パターンを使って答えてください' : isDescribe ? '🎨 自分の言葉で英語で説明してください' : '';
 
   app.innerHTML = `
     <div class="navbar">
@@ -2903,9 +2952,25 @@ async function evaluateFlashAnswer(userAnswer, q) {
   resultEl.innerHTML = '<div class="typing" style="justify-content:center"><span></span><span></span><span></span></div>';
 
   try {
-    var evalMode = S.flashCategory === 'situation' ? 'situation' : S.flashCategory === 'pattern' ? 'pattern' : 'translation';
+    var evalMode = S.flashCategory === 'situation' ? 'situation' : S.flashCategory === 'pattern' ? 'pattern' : S.flashCategory === 'describe' ? 'describe' : 'translation';
     var evalPrompt;
-    if (evalMode === 'situation') {
+    if (evalMode === 'describe') {
+      evalPrompt = `Evaluate the user's English description.
+
+Prompt: ${q.ja}
+Model answer: ${q.en}
+User's answer: ${userAnswer}
+
+RULES:
+- This is NOT a translation — the user describes in their own words
+- Evaluate: Is the content relevant? Is the grammar correct? Is vocabulary appropriate for the level?
+- IGNORE capitalization and punctuation
+- A short but correct answer is better than a long incorrect one
+- Score content (relevant?), vocabulary (range?), grammar (accurate?)
+
+JSON response:
+{"score": 75, "isCorrect": true, "feedback": "Japanese feedback on content quality, vocabulary range, and grammar. Suggest better expressions if applicable.", "correctedVersion": "A polished version of their answer"}`;
+    } else if (evalMode === 'situation') {
       evalPrompt = `Evaluate the user's English response to a situation.
 
 Situation (in Japanese): ${q.ja}
@@ -2975,7 +3040,7 @@ Scoring guide:
       <div class="flash-answer">
         <div style="font-size:32px;font-weight:800;color:${scoreColor};margin-bottom:8px">${ev.score}</div>
         <div class="text-sm mb-8"><strong>あなた:</strong> ${esc(userAnswer)}</div>
-        <div class="text-sm mb-8"><strong>${S.flashCategory==='situation'?'良い例':S.flashCategory==='pattern'?'パターン例':'模範'}:</strong> <span class="correct">${esc(q.en)}</span></div>
+        <div class="text-sm mb-8"><strong>${S.flashCategory==='situation'?'良い例':S.flashCategory==='pattern'?'パターン例':S.flashCategory==='describe'?'模範解答':'模範'}:</strong> <span class="correct">${esc(q.en)}</span></div>
         ${!ev.isCorrect ? `<div class="text-sm mb-8"><strong>修正:</strong> ${esc(ev.correctedVersion)}</div>` : ''}
         <div class="text-xs text-muted">${esc(ev.feedback)}</div>
       </div>

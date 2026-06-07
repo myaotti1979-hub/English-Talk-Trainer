@@ -33,7 +33,7 @@ li{margin:4px 0}
 <a href="./" style="font-weight:600;font-size:14px;text-decoration:none">← アプリに戻る</a>
 
 <h1>📘 English Talk Trainer</h1>
-<p>AI英会話トレーニング v2026.05.30g</p>
+<p>AI英会話トレーニング v2026.06.07a</p>
 
 <div class="toc">
 <strong>目次</strong>
@@ -95,7 +95,7 @@ li{margin:4px 0}
 <p>ターン開始から発話完了までの秒数を自動計測。フィードバック画面で「⚡ 平均応答 X.X秒」と表示。</p>
 
 <h2 id="flash">4. Flash Translation</h2>
-<p>6カテゴリ×CEFR 5段階。毎回ランダムなサブトピックで多様な問題を生成。</p>
+<p>7カテゴリ×CEFR 5段階。毎回ランダムなサブトピックで多様な問題を生成。</p>
 <table>
 <tr><th>カテゴリ</th><th>説明</th></tr>
 <tr><td>🏠 日常会話</td><td>日本語→英語の翻訳練習</td></tr>
@@ -104,8 +104,23 @@ li{margin:4px 0}
 <tr><td>💭 意見・感想</td><td>意見を英語で表現する練習</td></tr>
 <tr><td>⚡ 状況反応</td><td>日本語の状況説明→英語で即座に反応（翻訳ではなく応答）</td></tr>
 <tr><td>🔄 パターンドリル</td><td>同じパターンを3つの状況で反復→チャンクの自動化</td></tr>
+<tr><td>🎨 描写トレーニング</td><td>具体的な場面で自分の言葉で説明。段階的に難しくなる5問（テーマ×場面×展開で3,000+通り）</td></tr>
 </table>
 <div class="tip">💡 大文字・句読点は評価対象外（音声入力で制御不能なため）</div>
+
+<h3>🎨 描写トレーニング</h3>
+<p>具体的なシナリオで自分の言葉で説明する練習。DMM英会話のDescriptionレッスンのような形式。</p>
+<div class="card">
+<strong>例（テーマ: 職場でのハプニング × 設定: 朝の通勤中 × 展開: 予想外の展開）</strong>
+<ol>
+<li>🟢 通勤電車が止まった。上司に状況を簡単に伝えて（1-2文）</li>
+<li>🟡 駅でアナウンスを聞いて代替ルートを探した経験を話して（2-3文）</li>
+<li>🟡 電車遅延が多い原因を説明して（2-3文）</li>
+<li>🔴 バス通勤と電車通勤を比較して同僚に説明して（3-4文）</li>
+<li>🔴 重要な商談の日に電車が止まった！その場でどう対応する？（3-4文）</li>
+</ol>
+<p>3,000+通りの組み合わせ（20テーマ×15場面×10展開）で毎回異なる問題。</p>
+</div>
 
 <h2 id="shadow">5. Shadowing</h2>
 <p>AIの英語を聞く→繰り返す→Azure発音評価でスコア化。5文1セット。</p>
@@ -222,7 +237,7 @@ li{margin:4px 0}
 <p>Azure Speech Key必須。「認識」テキストが表示されればAzureは動作中。スコアが出ない場合はリトライ。</p>
 
 <div style="margin-top:40px;text-align:center;color:#5a6a7a;font-size:13px">
-<p>English Talk Trainer v2026.05.30g — Gemini AI × Azure Speech</p>
+<p>English Talk Trainer v2026.06.07a — Gemini AI × Azure Speech</p>
 </div>
 </div>
 </body>

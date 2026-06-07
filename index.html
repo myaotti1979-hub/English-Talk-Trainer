@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.07e";
+const VERSION = "v2026.06.07f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1528,18 +1528,25 @@ async function generateDescribeQuestions() {
     var raw = await geminiChat([{ role: "user", content: `Create a speaking exercise for a ${lvl.id} level English learner.
 ${lvl.flashRules}
 Theme: "${theme}" / Setting: "${setting}" / Twist: "${twist}"
-Generate exactly 5 scenario-based speaking prompts. Rules:
-- Incorporate the setting and twist
-- Each must be a SPECIFIC, VIVID situation
+Generate exactly 5 scenario-based speaking prompts.
+
+LEVEL-SPECIFIC RULES for ${lvl.id}:
+${lvl.id === 'A1' ? '- Use VERY simple, everyday situations (ordering food, greeting, asking directions)\n- Each prompt needs only 1 simple sentence as answer\n- Avoid complex scenarios — keep it concrete and visual' :
+  lvl.id === 'A2' ? '- Use familiar daily situations (shopping, making plans, describing routines)\n- Answers need 1-2 simple sentences\n- Keep scenarios concrete, avoid abstract topics' :
+  lvl.id === 'B1' ? '- Use moderately complex situations (explaining problems, giving opinions, narrating events)\n- Answers need 2-3 sentences with connectors\n- Include some cause/effect scenarios' :
+  lvl.id === 'B2' ? '- Use complex, realistic situations (negotiations, debates, analysis)\n- Answers need 3-4 sentences with varied structure\n- Include hypothetical and analytical scenarios' :
+  '- Use sophisticated, nuanced situations (ethical dilemmas, strategic decisions, cultural analysis)\n- Answers need 3-5 sentences with complex structure\n- Include scenarios requiring hedging, persuasion, and multi-perspective thinking'}
+
+Progressive difficulty:
+1. Report a basic fact (${lvl.id==='A1'?'1 sentence':'1-2 sentences'})
+2. Narrate what happened (${lvl.id==='A1'?'1-2 sentences':'2-3 sentences'})
+3. Explain reasons/causes (${lvl.id==='A1'?'1-2 sentences':'2-3 sentences'})
+4. Compare or persuade (${lvl.id==='A1'||lvl.id==='A2'?'2 sentences':'3-4 sentences'})
+5. Handle unexpected twist (${lvl.id==='A1'||lvl.id==='A2'?'2 sentences':'3-4 sentences'})
+
+- Make scenarios VIVID and SPECIFIC
 - Give a ROLE and PURPOSE for speaking
-- Progressive difficulty:
-  1. Report a basic fact (1-2 sentences)
-  2. Narrate what happened (2-3 sentences)
-  3. Explain reasons/causes (2-3 sentences)
-  4. Compare or persuade (3-4 sentences)
-  5. Handle unexpected twist (3-4 sentences)
-- Feel like real life, NOT textbook
-Return JSON: {"questions": [{"ja": "vivid scenario in Japanese", "en": "model answer", "hint": "useful expressions"}]}` }], "JSON only.", true);
+Return JSON: {"questions": [{"ja": "vivid scenario in Japanese", "en": "model answer at ${lvl.id} level", "hint": "useful expressions"}]}` }], "JSON only.", true);
     S.descQuestions = JSON.parse(raw.replace(/```json|```/g,'').trim()).questions || [];
     if (S.descQuestions.length === 0) throw new Error("生成失敗");
     S.descCurrent = 0;
@@ -1593,12 +1600,21 @@ function renderDescribePractice() {
     if (!answer) return;
     this.disabled = true; this.textContent = "⏳ 評価中...";
     try {
-      var evRaw = await geminiChat([{role:"user",content:`Evaluate this English description.
+      var evRaw = await geminiChat([{role:"user",content:`Evaluate this English description for a ${S.descLevel} level learner.
+
+${CEFR_LEVELS[S.descLevel]?.feedbackCriteria || ''}
+
 Scenario: ${q.ja}
 Model answer: ${q.en}
 User's answer: ${answer}
-This is NOT translation. Evaluate: content relevance, vocabulary range, grammar, fluency.
-JSON: {"score":75,"feedback":"Japanese feedback - good points and improvements","improved":"Polished version"}`}], "JSON only.", true);
+
+This is NOT translation. Evaluate:
+- Content: Is it relevant and complete for the scenario?
+- Vocabulary: Does it use appropriate vocabulary for ${S.descLevel} level? (not too simple, not too advanced)
+- Grammar: Accurate for ${S.descLevel} level?
+- Fluency: Natural sentence flow?
+
+JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvements, suggest ${S.descLevel}-appropriate expressions","improved":"Polished version at ${S.descLevel} level"}`}], "JSON only.", true);
       var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
       S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'' });
       var sc = ev.score||0, scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
@@ -2086,6 +2102,13 @@ async function startFreeTalkSession() {
   let sysPrompt;
   if (isNews) {
     const newsInstruction = topicPrompt.replace('__NEWS__:', '');
+    const newsLevelGuide = {
+      A1: 'Summarize in 30-50 words using ONLY present simple and basic vocabulary (500 words). Write 2-3 very short sentences. Ask 1 simple yes/no question.',
+      A2: 'Summarize in 50-70 words using simple past and present tenses. Write 3-4 short sentences. Ask 1 simple question.',
+      B1: 'Summarize in 80-100 words. Use standard vocabulary. Ask 1-2 opinion questions.',
+      B2: 'Summarize in 100-140 words with analysis. Use varied vocabulary and complex sentences. Ask 1-2 thought-provoking questions.',
+      C1: 'Summarize in 120-180 words with nuanced analysis, idioms, and sophisticated vocabulary. Ask 1-2 complex questions requiring multi-perspective answers.',
+    };
     sysPrompt = `You are an English conversation partner who discusses REAL current news.
 
 ${level.sysRules}
@@ -2097,12 +2120,12 @@ Format your FIRST response like this:
 📰 [Real headline from a real source]
 Source: [actual news source name]
 
-[Summarize the real article in 80-120 words, adapted to ${level.id} level English]
+[${newsLevelGuide[level.id] || newsLevelGuide.B1}]
 
 ---
-Then ask 1-2 discussion questions about this real news story.
+Then ask discussion questions about this real news story.
 
-After the first message, continue the discussion naturally. Ask follow-up questions, challenge opinions, and introduce relevant vocabulary.`;
+After the first message, continue the discussion naturally. Follow ALL level rules strictly.`;
   } else {
   const _openingStyles = [
   "Start with a friendly greeting and ask an open-ended question about the topic.",

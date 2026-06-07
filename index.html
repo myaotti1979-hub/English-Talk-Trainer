@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.07a";
+const VERSION = "v2026.06.07e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -473,7 +473,9 @@ const S = {
   // Shadowing
   shadowSentences: [], shadowCurrent: 0, shadowResults: [],
   shadowLevel: "B1", shadowHideText: false,
-  shadowLastRecordingUrl: null,  // #6: replay own recording
+  shadowLastRecordingUrl: null,
+  // Describe mode
+  descQuestions: [], descCurrent: 0, descResults: [], descLevel: "B1",  // #6: replay own recording
   // Routine mode
   routine: { active: false, theme: 'daily', step: 0, scores: [] },
   // Recording
@@ -1031,6 +1033,7 @@ function render() {
   else if (S.screen === "review") renderReview();
   else if (S.screen === "vocab") renderVocabNotebook();
   else if (S.screen === "convlog") renderConvLog();
+  else if (S.screen === "describe") renderDescribeSetup();
   else if (S.screen === "reviewquiz") renderReviewQuiz();
 }
 
@@ -1257,8 +1260,8 @@ function renderHome() {
 
     <div class="mode-card mode-flash mb-16" id="startFlash">
       <div class="icon">⚡</div>
-      <h3>Flash Translation</h3>
-      <p>瞬間英作文トレーニング</p>
+      <h3>Flash Training</h3>
+      <p>瞬間英作文・状況反応・パターンドリルの6モード</p>
       <div class="arrow">→</div>
     </div>
 
@@ -1266,6 +1269,20 @@ function renderHome() {
       <div class="icon">🎧</div>
       <h3>Shadowing</h3>
       <p>AIの発話を聞いて繰り返す。発音矯正</p>
+      <div class="arrow">→</div>
+    </div>
+
+    <div class="mode-card mb-16" id="startDescribe" style="background:#fef3c7;border:1.5px solid #fbbf24;color:#78350f">
+      <div class="icon">🎨</div>
+      <h3>Description</h3>
+      <p>シナリオで自分の言葉で説明する力を鍛える</p>
+      <div class="arrow">→</div>
+    </div>
+
+    <div class="mode-card mb-16" id="startNews" style="background:#e0e7ff;border:1.5px solid #818cf8;color:#312e81">
+      <div class="icon">📰</div>
+      <h3>News Discussion</h3>
+      <p>最新ニュースを読んで英語で議論</p>
       <div class="arrow">→</div>
     </div>
 
@@ -1282,6 +1299,8 @@ function renderHome() {
   $("startFreeTalk").onclick = () => initFreeTalk();
   $("startFlash").onclick = () => initFlash();
   $("startShadow").onclick = () => initShadow();
+  $("startDescribe").onclick = () => initDescribe();
+  if ($("startNews")) $("startNews").onclick = () => initNews();
 
   // Routine launcher
   if ($("routineCard")) {
@@ -1359,11 +1378,20 @@ function advanceRoutine() {
   S.routine.step++;
   var rt = ROUTINE_THEMES[S.routine.theme] || ROUTINE_THEMES.daily;
   if (S.routine.step === 1) {
+    // Step 1: Flash 5 questions
     S.flashCategory = rt.flashCat;
     S.screen = "flash";
     S.flashQuestions = []; S.flashCurrent = 0; S.flashResults = [];
+    S.routine.flashLimit = 5;  // Limit to 5 in routine
     generateFlashQuestions();
   } else if (S.routine.step === 2) {
+    // Step 2: Description 5 scenarios
+    S.descLevel = S.ftLevel;
+    S.descQuestions = []; S.descCurrent = 0; S.descResults = [];
+    S.screen = "describe";
+    generateDescribeQuestions();
+  } else if (S.routine.step === 3) {
+    // Step 3: Shadowing 5 sentences
     initShadow();
   } else {
     renderRoutineSummary();
@@ -1382,16 +1410,240 @@ function renderRoutineSummary() {
       <div class="label">ルーティン完了！(${esc(S.routine.label||'')})</div>
     </div>
     <div class="card">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;text-align:center">
         <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[0]!==undefined?scores[0]:'-'}</div><div class="text-xs text-muted">Free Talk</div></div>
         <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[1]!==undefined?scores[1]:'-'}</div><div class="text-xs text-muted">Flash</div></div>
-        <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[2]!==undefined?scores[2]:'-'}</div><div class="text-xs text-muted">Shadowing</div></div>
+        <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[2]!==undefined?scores[2]:'-'}</div><div class="text-xs text-muted">Description</div></div>
+        <div><div class="text-sm" style="font-weight:700;color:var(--accent)">${scores[3]!==undefined?scores[3]:'-'}</div><div class="text-xs text-muted">Shadowing</div></div>
       </div>
     </div>
     ${calcCostHTML()}
     <button class="btn btn-primary w-full mt-16 mb-16" id="rtHome">ホームに戻る</button>
   `;
   $("rtHome").onclick = function() { S.screen = "home"; render(); };
+}
+
+// ═══════════════════════════════════
+// NEWS DISCUSSION (standalone mode)
+// ═══════════════════════════════════
+
+function initNews() {
+  var newsTopics = FT_ALL_TOPICS.filter(function(t) { return t.id.startsWith('nw_') && t.prompt !== '__NEWS_CUSTOM__'; });
+  S.screen = "news_setup";
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="nwBack">←</button><div class="title">📰 News Discussion</div></div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${Object.values(CEFR_LEVELS).map(l => `<div class="level-chip ${S.ftLevel===l.id?'active':''}" data-nlvl="${l.id}">${l.label}</div>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📰 ジャンルを選択</div>
+      <div class="topic-grid">
+        ${newsTopics.map(t => `<div class="topic-pill" data-nid="${t.id}">${t.label}</div>`).join('')}
+      </div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">✏️ フリーワード</div>
+      <input class="input" id="nwCustom" placeholder="e.g. AI regulation, Tokyo Olympics..." autocomplete="off">
+    </div>
+  `;
+  $("nwBack").onclick = () => { S.screen = "home"; render(); };
+  document.querySelectorAll("[data-nlvl]").forEach(function(el) {
+    el.onclick = function() {
+      S.ftLevel = this.dataset.nlvl;
+      document.querySelectorAll("[data-nlvl]").forEach(e => e.classList.remove("active"));
+      this.classList.add("active");
+    };
+  });
+  document.querySelectorAll("[data-nid]").forEach(function(el) {
+    el.onclick = function() {
+      S.ftTopic = this.dataset.nid;
+      S.ftCustomTopic = '';
+      S.ftMaxTurns = 5;
+      S.ftUserStarts = false;
+      S.screen = "freetalk";
+      startFreeTalkSession();
+    };
+  });
+  if ($("nwCustom")) {
+    $("nwCustom").onkeydown = function(e) {
+      if (e.key === 'Enter' && this.value.trim()) {
+        S.ftTopic = 'nw_custom';
+        S.ftCustomTopic = this.value.trim();
+        S.ftMaxTurns = 5;
+        S.ftUserStarts = false;
+        S.screen = "freetalk";
+        startFreeTalkSession();
+      }
+    };
+  }
+}
+
+// ═══════════════════════════════════
+// DESCRIPTION TRAINING
+// ═══════════════════════════════════
+
+const DESC_THEMES = ["職場でのハプニング","旅先での出来事","友人との思い出","家族のエピソード","買い物での体験","通勤・通学","料理にまつわる話","天気と予定変更","ペットの話","健康・体調","テクノロジーのトラブル","休日の過ごし方","スポーツ","引っ越し","忘れ物","初めての経験","文化の違い","季節の行事","お金の話","時間管理の失敗"];
+const DESC_SETTINGS = ["朝の通勤中","海外旅行中","初めてのデート","大事な試験の日","雨の日","友人の結婚式","深夜","引っ越し当日","上司と一緒","子供を連れている時","電車の中","カフェで","SNSで話題になった","10年前の話","来月の予定"];
+const DESC_TWISTS = ["予想外の展開","時間がない","言葉が通じない","お金が足りない","誰かに助けを求める","2つの選択肢で迷う","失敗から学ぶ","初めての経験","文化の違いに気づく","テクノロジーが役立つ"];
+
+function initDescribe() {
+  S.screen = "describe";
+  S.descQuestions = []; S.descCurrent = 0; S.descResults = [];
+  renderDescribeSetup();
+}
+
+function renderDescribeSetup() {
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="dsBack">←</button><div class="title">🎨 Description Training</div></div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${Object.values(CEFR_LEVELS).map(l => `<div class="level-chip ${S.descLevel===l.id?'active':''}" data-id="${l.id}">${l.label}</div>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600">🎭 トレーニング内容</div>
+      <div class="text-xs text-muted mt-8">AIが具体的なシナリオを5つ出題。段階的に難しくなります。自分の言葉で英語で説明してください（2-4文）。</div>
+      <div class="text-xs mt-8" style="color:var(--accent)">テーマ×場面×展開で毎回異なる3,000+通り</div>
+    </div>
+    <button class="btn btn-primary w-full mt-16" id="dsStartBtn">🎨 スタート</button>
+  `;
+  $("dsBack").onclick = () => { S.screen = "home"; render(); };
+  document.querySelectorAll(".level-chip").forEach(el => {
+    el.onclick = () => { S.descLevel = el.dataset.id; renderDescribeSetup(); };
+  });
+  $("dsStartBtn").onclick = () => generateDescribeQuestions();
+}
+
+async function generateDescribeQuestions() {
+  app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">🎨 シナリオを作成中...</div></div>';
+  var theme = S.routine.active && S.routine.topicLabel ? S.routine.topicLabel : DESC_THEMES[Math.floor(Math.random()*DESC_THEMES.length)];
+  var setting = DESC_SETTINGS[Math.floor(Math.random()*DESC_SETTINGS.length)];
+  var twist = DESC_TWISTS[Math.floor(Math.random()*DESC_TWISTS.length)];
+  var lvl = CEFR_LEVELS[S.descLevel] || CEFR_LEVELS.B1;
+  try {
+    var raw = await geminiChat([{ role: "user", content: `Create a speaking exercise for a ${lvl.id} level English learner.
+${lvl.flashRules}
+Theme: "${theme}" / Setting: "${setting}" / Twist: "${twist}"
+Generate exactly 5 scenario-based speaking prompts. Rules:
+- Incorporate the setting and twist
+- Each must be a SPECIFIC, VIVID situation
+- Give a ROLE and PURPOSE for speaking
+- Progressive difficulty:
+  1. Report a basic fact (1-2 sentences)
+  2. Narrate what happened (2-3 sentences)
+  3. Explain reasons/causes (2-3 sentences)
+  4. Compare or persuade (3-4 sentences)
+  5. Handle unexpected twist (3-4 sentences)
+- Feel like real life, NOT textbook
+Return JSON: {"questions": [{"ja": "vivid scenario in Japanese", "en": "model answer", "hint": "useful expressions"}]}` }], "JSON only.", true);
+    S.descQuestions = JSON.parse(raw.replace(/```json|```/g,'').trim()).questions || [];
+    if (S.descQuestions.length === 0) throw new Error("生成失敗");
+    S.descCurrent = 0;
+    renderDescribePractice();
+  } catch(e) {
+    app.innerHTML = `<div class="card" style="text-align:center;padding:32px"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-16" onclick="initDescribe()">リトライ</button></div>`;
+  }
+}
+
+function renderDescribePractice() {
+  var q = S.descQuestions[S.descCurrent];
+  if (!q) { renderDescribeSummary(); return; }
+  var progress = (S.descCurrent / S.descQuestions.length * 100).toFixed(0);
+  var diffLabel = ["🟢 報告","🟢 叙述","🟡 説明","🔴 比較・説得","🔴 即興対応"][S.descCurrent] || '';
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="dspBack">←</button><div class="title">🎨 Description ${S.descCurrent+1}/5</div></div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+    <div class="card" style="padding:24px">
+      <div class="text-xs mb-8" style="color:var(--accent);font-weight:600">${diffLabel}</div>
+      <div class="text-sm" style="font-weight:600;line-height:1.8;font-size:16px">${esc(q.ja)}</div>
+      <div class="text-xs text-muted mt-12">💡 ${esc(q.hint || '')}</div>
+    </div>
+    <div id="dsInputArea" class="card" style="padding:20px">
+      <div class="text-xs text-muted mb-8">🎤 英語で説明してください（2-4文）</div>
+      ${srSupported() ? '<button class="mic-btn idle" id="dsMic" style="margin:0 auto 12px;display:flex">🎤</button>' : ''}
+      <textarea id="dsTextInput" class="input" rows="3" placeholder="Describe in English..." style="border-radius:12px;resize:none;width:100%;font-size:15px"></textarea>
+      <button class="btn btn-primary w-full mt-8" id="dsSubmit">送信して評価 →</button>
+      <button class="btn btn-ghost w-full mt-8" id="dsSkip" style="font-size:13px">スキップ →</button>
+    </div>
+    <div id="dsResult" class="hidden"></div>
+  `;
+  $("dspBack").onclick = () => { if(confirm("中断しますか？")) { srCancel(); S.screen="home"; render(); } };
+  $("dsSkip").onclick = () => { S.descResults.push({ ja:q.ja, score:0, skipped:true }); S.descCurrent++; renderDescribePractice(); };
+  if ($("dsMic")) {
+    $("dsMic").onclick = async function() {
+      if (srIsActive()) {
+        this.disabled = true; this.textContent = "⏳"; this.className = "mic-btn processing";
+        srStop();
+      } else {
+        var btn = this;
+        var started = srStart(function(text) {
+          if ($("dsTextInput")) $("dsTextInput").value = ($("dsTextInput").value + ' ' + text).trim();
+          btn.textContent = "🎤"; btn.className = "mic-btn idle"; btn.disabled = false;
+        });
+        if (started) { this.textContent = "⏹"; this.className = "mic-btn recording"; }
+      }
+    };
+  }
+  $("dsSubmit").onclick = async function() {
+    var answer = $("dsTextInput")?.value?.trim();
+    if (!answer) return;
+    this.disabled = true; this.textContent = "⏳ 評価中...";
+    try {
+      var evRaw = await geminiChat([{role:"user",content:`Evaluate this English description.
+Scenario: ${q.ja}
+Model answer: ${q.en}
+User's answer: ${answer}
+This is NOT translation. Evaluate: content relevance, vocabulary range, grammar, fluency.
+JSON: {"score":75,"feedback":"Japanese feedback - good points and improvements","improved":"Polished version"}`}], "JSON only.", true);
+      var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
+      S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'' });
+      var sc = ev.score||0, scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
+      $("dsInputArea").classList.add("hidden");
+      $("dsResult").classList.remove("hidden");
+      $("dsResult").innerHTML = `<div class="card" style="padding:20px">
+        <div style="font-size:32px;font-weight:800;color:${scCol};text-align:center">${sc}</div>
+        <div class="text-xs text-muted mt-12">🗣️ あなた:</div><div class="text-sm mt-4">${esc(answer)}</div>
+        <div class="text-xs mt-12" style="color:var(--green)">✅ 模範:</div><div class="text-sm mt-4" style="color:var(--green)">${esc(q.en)}</div>
+        ${ev.improved?'<div class="text-xs mt-12" style="color:var(--accent)">✨ 改善案:</div><div class="text-sm mt-4" style="color:var(--accent)">'+esc(ev.improved)+'</div>':''}
+        <div class="text-xs text-muted mt-12">${esc(ev.feedback||'')}</div>
+        <button class="btn btn-primary w-full mt-16" id="dsNext">次へ →</button>
+      </div>`;
+      $("dsNext").onclick = () => { S.descCurrent++; renderDescribePractice(); };
+    } catch(e) {
+      S.descResults.push({ ja:q.ja, answer:answer, score:0 });
+      $("dsInputArea").classList.add("hidden");
+      $("dsResult").classList.remove("hidden");
+      $("dsResult").innerHTML = `<div class="card"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-8" id="dsNext">次へ</button></div>`;
+      $("dsNext").onclick = () => { S.descCurrent++; renderDescribePractice(); };
+    }
+  };
+}
+
+function renderDescribeSummary() {
+  var results = S.descResults;
+  var scored = results.filter(r => !r.skipped && r.score > 0);
+  var avg = scored.length > 0 ? Math.round(scored.reduce((a,r) => a+r.score,0)/scored.length) : 0;
+  var scCol = avg>=80?'var(--green)':avg>=60?'var(--yellow)':'var(--red)';
+  updateStreak();
+  saveSession({ mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5 });
+  addToCumulativeCost(calcSessionTotal());
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="dssBack">←</button><div class="title">🎨 Description 結果</div></div>
+    <div class="summary-header"><div class="score" style="color:${scCol}">${avg}</div><div class="label">平均スコア</div></div>
+    <div class="card">${results.map(r => `<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div class="flex justify-between"><div class="text-xs" style="flex:1">${esc((r.ja||'').slice(0,50))}...</div><div style="font-weight:700;color:${r.skipped?'var(--muted)':r.score>=80?'var(--green)':r.score>=60?'var(--yellow)':'var(--red)'}">${r.skipped?'Skip':r.score}</div></div></div>`).join('')}</div>
+    ${calcCostHTML()}
+    <button class="btn btn-primary w-full mt-16" id="dssHome">${S.routine.active?"▶ 次へ (Shadowing)":"ホームに戻る"}</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="dssAgain">もう一度</button>
+  `;
+  $("dssBack").onclick = $("dssHome").onclick = () => {
+    if (S.routine.active) { S.routine.scores.push(avg); advanceRoutine(); }
+    else { S.screen = "home"; render(); }
+  };
+  $("dssAgain").onclick = () => initDescribe();
 }
 
 // ═══════════════════════════════════
@@ -2618,7 +2870,7 @@ function renderReview() {
       <div class="text-sm">${esc(fb.encouragement)}</div>
     </div>` : ''}
 
-    <button class="btn btn-primary w-full mt-16" id="revHome">${S.routine.active?"▶ 次へ (Flash英作文)":"ホームに戻る"}</button>
+    <button class="btn btn-primary w-full mt-16" id="revHome">${S.routine.active?"▶ 次へ (Flash)":"ホームに戻る"}</button>
     <button class="btn btn-secondary w-full mt-8 mb-16" id="revAgain">もう一度練習する</button>
   `;
   // Insert cost card before buttons
@@ -2641,7 +2893,6 @@ const FLASH_CATEGORIES = [
   { id: "opinion", label: "💭 意見・感想" },
   { id: "situation", label: "⚡ 状況反応" },
   { id: "pattern", label: "🔄 パターンドリル" },
-  { id: "describe", label: "🎨 描写トレーニング" },
 ];
 
 function initFlash() {
@@ -2672,7 +2923,7 @@ function renderFlashSetup() {
       <div class="text-xs text-muted mt-8">${
         S.flashCategory === 'situation' ? '⚡ 状況が日本語で表示 → 英語で即座に反応（翻訳ではなく応答）' :
         S.flashCategory === 'pattern' ? '🔄 同じパターンを3つの状況で反復 → チャンクの自動化' :
-        S.flashCategory === 'describe' ? '🎨 テーマについて自分の言葉で説明 → 段階的に難しくなる5問' :
+        
         '日本語の文を見て英語に翻訳する従来モード'
       }</div>
     </div>
@@ -2730,54 +2981,7 @@ async function generateFlashQuestions() {
 
   var prompt;
 
-  if (S.flashCategory === 'describe') {
-    // Description Training — vivid scenario-based prompts
-    var DESC_THEMES = ["職場でのハプニング","旅先での出来事","友人との思い出","家族のエピソード","買い物での体験","通勤・通学の出来事","料理にまつわる話","天気と予定の変更","ペットの話","健康・体調の話","テクノロジーのトラブル","休日の過ごし方","スポーツの体験","引っ越し","忘れ物・なくし物","初めての経験","文化の違い","季節の行事","お金にまつわる話","時間管理の失敗"];
-    var descTheme = S.routine.active && S.routine.topicLabel ? S.routine.topicLabel : DESC_THEMES[Math.floor(Math.random()*DESC_THEMES.length)];
-
-    // Situation modifiers for variety even with the same theme
-    var DESC_SETTINGS = ["朝の通勤中","海外旅行中","初めてのデート","大事な試験の日","雨の日","友人の結婚式","深夜","引っ越し当日","上司と一緒","子供を連れている時","電車の中","カフェで","SNSで話題になった","10年前の話","来月の予定"];
-    var DESC_TWISTS = ["予想外の展開","時間がない","言葉が通じない","お金が足りない","誰かに助けを求める","2つの選択肢で迷う","失敗から学ぶ","初めての経験","文化の違いに気づく","テクノロジーが役立つ/邪魔する"];
-    var descSetting = DESC_SETTINGS[Math.floor(Math.random()*DESC_SETTINGS.length)];
-    var descTwist = DESC_TWISTS[Math.floor(Math.random()*DESC_TWISTS.length)];
-
-    prompt = `You are creating a speaking exercise for a ${S.flashLevel} level English learner.
-
-${lvlRules}
-
-Theme: "${descTheme}"
-Setting modifier: "${descSetting}"
-Twist element: "${descTwist}"
-
-Generate exactly 5 scenario-based speaking prompts. CRITICAL RULES:
-- Incorporate the setting ("${descSetting}") and twist ("${descTwist}") into the scenarios
-- Each prompt must paint a SPECIFIC, VIVID situation with a concrete scene
-- Give the learner a ROLE and PURPOSE for speaking
-- Get progressively harder
-- Make it feel like a real moment in life, NOT a textbook exercise
-
-Progressive difficulty:
-1. Simple: Report a basic fact about the situation (1-2 sentences needed)
-2. Narrate: Tell what happened step by step (2-3 sentences)
-3. Explain: Give reasons or causes (2-3 sentences)
-4. Compare/Persuade: Compare options or convince someone (3-4 sentences)
-5. Improvise: Handle an unexpected twist in the scenario (3-4 sentences)
-
-Example (theme: 職場でのハプニング):
-1. "あなたの同僚が会議に遅刻してきました。上司に何が起きたか簡単に伝えてください"
-2. "昨日のオフィスで、コーヒーマシンが壊れて大騒ぎになりました。何が起きたか順を追って話してください"
-3. "チームメンバーが最近やる気をなくしています。なぜそうなったと思うか説明してください"
-4. "在宅勤務とオフィス勤務、それぞれの良い点を同僚に説明してください"
-5. "重要なプレゼン中にパソコンがフリーズしました。その場でどう対応するか説明してください"
-
-For each prompt, provide:
-- "ja": The scenario prompt in Japanese (vivid, specific situation + what to say)
-- "en": A model answer at ${S.flashLevel} level (natural spoken English)
-- "hint": 2-3 useful expressions for this scenario
-
-Respond ONLY in JSON:
-{"questions": [{"ja": "具体的なシナリオ", "en": "Model answer", "hint": "useful expressions", "alt": []}]}`;
-  } else if (S.flashCategory === 'situation') {
+  if (S.flashCategory === 'situation') {
     prompt = `Generate 10 situation-response exercises for English conversation practice.
 
 ${lvlRules}
@@ -2832,6 +3036,10 @@ Respond ONLY in JSON:
     const data = safeJSON(raw);
     S.flashQuestions = data.questions || [];
     if (S.flashQuestions.length === 0) throw new Error("問題が生成されませんでした");
+    // Limit to 5 in routine mode
+    if (S.routine.active && S.routine.flashLimit) {
+      S.flashQuestions = S.flashQuestions.slice(0, S.routine.flashLimit);
+    }
     S.flashCurrent = 0;
     S.flashResults = [];
     renderFlashQuestion();
@@ -2855,9 +3063,9 @@ function renderFlashQuestion() {
   const progress = ((S.flashCurrent) / S.flashQuestions.length * 100).toFixed(0);
   const isSituation = S.flashCategory === 'situation';
   const isPattern = S.flashCategory === 'pattern';
-  const isDescribe = S.flashCategory === 'describe';
-  const modeTitle = isSituation ? '⚡ Situation Response' : isPattern ? '🔄 Pattern Drill' : isDescribe ? '🎨 Description' : 'Flash Translation';
-  const promptLabel = isSituation ? '📌 この状況で英語で応答してください' : isPattern ? '🔄 パターンを使って答えてください' : isDescribe ? '🎨 自分の言葉で英語で説明してください' : '';
+  
+  const modeTitle = isSituation ? '⚡ Situation Response' : isPattern ? '🔄 Pattern Drill' : 'Flash Translation';
+  const promptLabel = isSituation ? '📌 この状況で英語で応答してください' : isPattern ? '🔄 パターンを使って答えてください' : '';
 
   app.innerHTML = `
     <div class="navbar">
@@ -2952,25 +3160,9 @@ async function evaluateFlashAnswer(userAnswer, q) {
   resultEl.innerHTML = '<div class="typing" style="justify-content:center"><span></span><span></span><span></span></div>';
 
   try {
-    var evalMode = S.flashCategory === 'situation' ? 'situation' : S.flashCategory === 'pattern' ? 'pattern' : S.flashCategory === 'describe' ? 'describe' : 'translation';
+    var evalMode = S.flashCategory === 'situation' ? 'situation' : S.flashCategory === 'pattern' ? 'pattern' : 'translation';
     var evalPrompt;
-    if (evalMode === 'describe') {
-      evalPrompt = `Evaluate the user's English description.
-
-Prompt: ${q.ja}
-Model answer: ${q.en}
-User's answer: ${userAnswer}
-
-RULES:
-- This is NOT a translation — the user describes in their own words
-- Evaluate: Is the content relevant? Is the grammar correct? Is vocabulary appropriate for the level?
-- IGNORE capitalization and punctuation
-- A short but correct answer is better than a long incorrect one
-- Score content (relevant?), vocabulary (range?), grammar (accurate?)
-
-JSON response:
-{"score": 75, "isCorrect": true, "feedback": "Japanese feedback on content quality, vocabulary range, and grammar. Suggest better expressions if applicable.", "correctedVersion": "A polished version of their answer"}`;
-    } else if (evalMode === 'situation') {
+    if (evalMode === 'situation') {
       evalPrompt = `Evaluate the user's English response to a situation.
 
 Situation (in Japanese): ${q.ja}
@@ -3040,7 +3232,7 @@ Scoring guide:
       <div class="flash-answer">
         <div style="font-size:32px;font-weight:800;color:${scoreColor};margin-bottom:8px">${ev.score}</div>
         <div class="text-sm mb-8"><strong>あなた:</strong> ${esc(userAnswer)}</div>
-        <div class="text-sm mb-8"><strong>${S.flashCategory==='situation'?'良い例':S.flashCategory==='pattern'?'パターン例':S.flashCategory==='describe'?'模範解答':'模範'}:</strong> <span class="correct">${esc(q.en)}</span></div>
+        <div class="text-sm mb-8"><strong>${S.flashCategory==='situation'?'良い例':S.flashCategory==='pattern'?'パターン例':'模範'}:</strong> <span class="correct">${esc(q.en)}</span></div>
         ${!ev.isCorrect ? `<div class="text-sm mb-8"><strong>修正:</strong> ${esc(ev.correctedVersion)}</div>` : ''}
         <div class="text-xs text-muted">${esc(ev.feedback)}</div>
       </div>
@@ -3121,7 +3313,7 @@ function renderFlashSummary() {
       ${reviewItems}
     </div>
 
-    <button class="btn btn-primary w-full mt-16" id="fsHome">${S.routine.active?"▶ 次へ (Shadowing)":"ホームに戻る"}</button>
+    <button class="btn btn-primary w-full mt-16" id="fsHome">${S.routine.active?"▶ 次へ (Description)":"ホームに戻る"}</button>
     <button class="btn btn-secondary w-full mt-8 mb-16" id="fsAgain">もう10問</button>
   `;
   // Insert cost card

@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.07f";
+const VERSION = "v2026.06.09a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1045,8 +1045,12 @@ function renderHistory() {
   // 分析データ
   const ftSessions = hist.filter(h => h.mode === "freetalk");
   const flSessions = hist.filter(h => h.mode === "flash");
+  const dsSessions = hist.filter(h => h.mode === "describe");
+  const shSessions = hist.filter(h => h.mode === "shadow");
   const avgFT = ftSessions.length > 0 ? Math.round(ftSessions.reduce((a,h) => a + (h.score||0), 0) / ftSessions.length) : 0;
   const avgFL = flSessions.length > 0 ? Math.round(flSessions.reduce((a,h) => a + (h.score||0), 0) / flSessions.length) : 0;
+  const avgDS = dsSessions.length > 0 ? Math.round(dsSessions.reduce((a,h) => a + (h.score||0), 0) / dsSessions.length) : 0;
+  const avgSH = shSessions.length > 0 ? Math.round(shSessions.reduce((a,h) => a + (h.score||0), 0) / shSessions.length) : 0;
 
   // 直近7セッションのスコア推移
   const recentScores = hist.slice(-7).map(h => h.score || 0);
@@ -1062,14 +1066,16 @@ function renderHistory() {
       <div class="stat-card"><div class="val text-green">${S.totalMinutes}</div><div class="lbl">総練習時間(分)</div></div>
     </div>
 
-    ${ftSessions.length + flSessions.length > 0 ? `
+    ${hist.length > 0 ? `
     <div class="card">
       <div style="font-size:15px;font-weight:600;margin-bottom:12px">📊 平均スコア</div>
-      <div class="stats-grid">
-        <div class="stat-card"><div class="val" style="color:${avgFT>=70?'var(--green)':'var(--yellow)'}">${avgFT || '-'}</div><div class="lbl">🗣️ Free Talk</div></div>
-        <div class="stat-card"><div class="val" style="color:${avgFL>=70?'var(--green)':'var(--yellow)'}">${avgFL || '-'}</div><div class="lbl">⚡ Flash</div></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px">
+        ${ftSessions.length>0?'<div class="stat-card"><div class="val" style="color:'+(avgFT>=70?"var(--green)":"var(--yellow)")+'">'+avgFT+'</div><div class="lbl">🗣️ Talk</div></div>':''}
+        ${flSessions.length>0?'<div class="stat-card"><div class="val" style="color:'+(avgFL>=70?"var(--green)":"var(--yellow)")+'">'+avgFL+'</div><div class="lbl">⚡ Flash</div></div>':''}
+        ${dsSessions.length>0?'<div class="stat-card"><div class="val" style="color:'+(avgDS>=70?"var(--green)":"var(--yellow)")+'">'+avgDS+'</div><div class="lbl">🎨 Desc</div></div>':''}
+        ${shSessions.length>0?'<div class="stat-card"><div class="val" style="color:'+(avgSH>=70?"var(--green)":"var(--yellow)")+'">'+avgSH+'</div><div class="lbl">🎧 Shadow</div></div>':''}
       </div>
-      <div style="font-size:13px;color:var(--muted);margin-top:8px">Free Talk ${ftSessions.length}回 / Flash ${flSessions.length}回</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">Talk ${ftSessions.length}回 / Flash ${flSessions.length}回 / Desc ${dsSessions.length}回 / Shadow ${shSessions.length}回</div>
     </div>` : ''}
 
     <div class="card">
@@ -1078,7 +1084,7 @@ function renderHistory() {
       reversed.map(h => {
         const d = new Date(h.date);
         const dateStr = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-        const icon = h.mode === 'freetalk' ? '🗣️' : '⚡';
+        const icon = h.mode === 'freetalk' ? '🗣️' : h.mode === 'flash' ? '⚡' : h.mode === 'describe' ? '🎨' : h.mode === 'shadow' ? '🎧' : '📰';
         const scoreColor = (h.score||0) >= 80 ? 'var(--green)' : (h.score||0) >= 60 ? 'var(--yellow)' : 'var(--muted)';
         const voiceShort = (h.voice || '').replace('Neural','').replace('en-','').replace('-',' ');
         return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +

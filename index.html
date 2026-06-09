@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09a";
+const VERSION = "v2026.06.09b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1467,7 +1467,7 @@ function initNews() {
     el.onclick = function() {
       S.ftTopic = this.dataset.nid;
       S.ftCustomTopic = '';
-      S.ftMaxTurns = 5;
+      S.ftMaxTurns = 3;
       S.ftUserStarts = false;
       S.screen = "freetalk";
       startFreeTalkSession();
@@ -1478,7 +1478,7 @@ function initNews() {
       if (e.key === 'Enter' && this.value.trim()) {
         S.ftTopic = 'nw_custom';
         S.ftCustomTopic = this.value.trim();
-        S.ftMaxTurns = 5;
+        S.ftMaxTurns = 3;
         S.ftUserStarts = false;
         S.screen = "freetalk";
         startFreeTalkSession();

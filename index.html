@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09b";
+const VERSION = "v2026.06.09c";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1435,6 +1435,7 @@ function renderRoutineSummary() {
 
 function initNews() {
   var newsTopics = FT_ALL_TOPICS.filter(function(t) { return t.id.startsWith('nw_') && t.prompt !== '__NEWS_CUSTOM__'; });
+  var nwTurns = 3;
   S.screen = "news_setup";
   app.innerHTML = `
     <div class="navbar"><button class="back" id="nwBack">←</button><div class="title">📰 News Discussion</div></div>
@@ -1442,6 +1443,13 @@ function initNews() {
       <div class="text-sm" style="font-weight:600;margin-bottom:12px">📊 レベル</div>
       <div class="level-select">
         ${Object.values(CEFR_LEVELS).map(l => `<div class="level-chip ${S.ftLevel===l.id?'active':''}" data-nlvl="${l.id}">${l.label}</div>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">🔄 あなたのターン数</div>
+      <div class="text-xs text-muted mb-8">AIの記事紹介＋最後の締めは別カウント</div>
+      <div class="level-select">
+        ${[3,5,7].map(n => `<div class="level-chip ${n===3?'active':''}" data-nturns="${n}">${n}回</div>`).join('')}
       </div>
     </div>
     <div class="card">
@@ -1463,11 +1471,18 @@ function initNews() {
       this.classList.add("active");
     };
   });
+  document.querySelectorAll("[data-nturns]").forEach(function(el) {
+    el.onclick = function() {
+      nwTurns = parseInt(this.dataset.nturns);
+      document.querySelectorAll("[data-nturns]").forEach(e => e.classList.remove("active"));
+      this.classList.add("active");
+    };
+  });
   document.querySelectorAll("[data-nid]").forEach(function(el) {
     el.onclick = function() {
       S.ftTopic = this.dataset.nid;
       S.ftCustomTopic = '';
-      S.ftMaxTurns = 3;
+      S.ftMaxTurns = nwTurns;
       S.ftUserStarts = false;
       S.screen = "freetalk";
       startFreeTalkSession();
@@ -1478,7 +1493,7 @@ function initNews() {
       if (e.key === 'Enter' && this.value.trim()) {
         S.ftTopic = 'nw_custom';
         S.ftCustomTopic = this.value.trim();
-        S.ftMaxTurns = 3;
+        S.ftMaxTurns = nwTurns;
         S.ftUserStarts = false;
         S.screen = "freetalk";
         startFreeTalkSession();
@@ -2250,7 +2265,7 @@ function renderFreeTalkChat() {
     <div class="chat-input-bar">
       ${S.ftWhoseTurn === 'ending' ? '<div class="turn-indicator turn-ai">⏳ フィードバック生成中...</div>' :
         S.ftWhoseTurn === 'ai' ? '<div class="turn-indicator turn-ai">🔊 AIが話しています...</div>' :
-        `<div class="turn-indicator turn-you">🎤 あなたのターンです${S.ftMaxTurns > 0 ? ' (' + S.ftTurnCount + '/' + S.ftMaxTurns + ')' : ''}${S.ftMaxTurns === 0 && S.ftTurnCount >= 1 ? ' <button class="btn-ghost" id="ftEndInline" style="font-size:12px;padding:2px 10px;border:1.5px solid var(--accent);border-radius:12px;color:var(--accent);margin-left:8px">🏁 終了してフィードバック</button>' : ''}</div>`}
+        `<div class="turn-indicator turn-you">🎤 あなたのターンです${S.ftMaxTurns > 0 ? ' (あなた' + S.ftTurnCount + '/' + S.ftMaxTurns + ')' : ''}${S.ftMaxTurns === 0 && S.ftTurnCount >= 1 ? ' <button class="btn-ghost" id="ftEndInline" style="font-size:12px;padding:2px 10px;border:1.5px solid var(--accent);border-radius:12px;color:var(--accent);margin-left:8px">🏁 終了してフィードバック</button>' : ''}</div>`}
       <div id="liveTranscript" style="display:${_srActive?'block':'none'};max-width:520px;margin:0 auto 6px;padding:8px 14px;background:rgba(220,38,38,.08);border-radius:12px;font-size:13px;color:var(--red);min-height:24px;word-break:break-word"><span style="animation:pulse 1.5s infinite;display:inline-block">🔴</span> <span id="liveText">${esc(_srBuf)}</span></div>
       <div class="inner" ${S.ftWhoseTurn==='ending'?'style="display:none"':''}>
         <input class="input" id="chatInput" placeholder="${S.ftWhoseTurn==='ai'?'AIが話しています...':'Type in English...'}" autocomplete="off" ${S.ftWhoseTurn!=='you'?'disabled':''}>

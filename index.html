@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09c";
+const VERSION = "v2026.06.09e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1220,6 +1220,28 @@ function renderHome() {
       ${renderCalendarHTML()}
     </div>
 
+    ${(function() {
+      var hist = getHistory();
+      var now = new Date();
+      var weekAgo = new Date(now.getTime() - 7 * 86400000);
+      var weekSessions = hist.filter(function(h) { return new Date(h.date) >= weekAgo; });
+      var weekMinutes = weekSessions.reduce(function(a,h) { return a + (h.minutes||0); }, 0);
+      var weekByMode = {};
+      weekSessions.forEach(function(h) { weekByMode[h.mode] = (weekByMode[h.mode]||0) + 1; });
+      if (weekSessions.length === 0) return '';
+      return '<div class="card"><div class="text-sm" style="font-weight:600;margin-bottom:8px">📅 今週の学習</div>' +
+        '<div class="stats-grid">' +
+        '<div class="stat-card"><div class="val text-accent">' + weekSessions.length + '</div><div class="lbl">セッション</div></div>' +
+        '<div class="stat-card"><div class="val text-green">' + weekMinutes + '分</div><div class="lbl">学習時間</div></div>' +
+        '</div>' +
+        '<div class="text-xs text-muted mt-8">' +
+        Object.entries(weekByMode).map(function(e) {
+          var icon = e[0]==='freetalk'?'🗣️':e[0]==='flash'?'⚡':e[0]==='describe'?'🎨':e[0]==='shadow'?'🎧':'📰';
+          return icon + ' ' + e[1] + '回';
+        }).join(' / ') +
+        '</div></div>';
+    })()}
+
     ${cefrSuggest ? `
     <div class="card" style="background:#f0fdf4;border-color:#86efac">
       <div class="text-sm"><strong>🎯 おすすめレベル: ${cefrSuggest.suggest}</strong></div>
@@ -1668,6 +1690,21 @@ function renderDescribeSummary() {
   updateStreak();
   saveSession({ mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5 });
   addToCumulativeCost(calcSessionTotal());
+
+  // Save as conversation log for review
+  var descMessages = [];
+  results.forEach(function(r, i) {
+    if (r.skipped) return;
+    var diffLabel = ["報告","叙述","説明","比較・説得","即興対応"][i] || '';
+    descMessages.push({ type: "ai", text: "📌 [" + diffLabel + "] " + (r.ja || '') });
+    descMessages.push({ type: "user", text: r.answer || '(skip)' });
+    descMessages.push({ type: "ai", text: "✅ 模範: " + (r.en || '') + (r.feedback ? "\n💡 " + r.feedback : '') });
+  });
+  saveConversationLog({
+    mode: "describe", topic: "🎨 Description",
+    level: S.descLevel,
+    messages: descMessages.slice(0, 20),
+  });
   app.innerHTML = `
     <div class="navbar"><button class="back" id="dssBack">←</button><div class="title">🎨 Description 結果</div></div>
     <div class="summary-header"><div class="score" style="color:${scCol}">${avg}</div><div class="label">平均スコア</div></div>

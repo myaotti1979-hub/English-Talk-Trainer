@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09g";
+const VERSION = "v2026.06.09h";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -4112,7 +4112,7 @@ function renderConvLog() {
             </div>`).join('')}
           </div>
           <div class="flex gap-8 mt-12">
-            <button class="btn btn-ghost btn-sm log-translate" data-idx="${i}" style="color:var(--accent)">🇯🇵 和訳を表示（有料）</button>
+            <button class="btn btn-ghost btn-sm log-translate" data-idx="${i}" style="color:var(--accent)">${log.translations ? '✅ 和訳を表示' : '🇯🇵 和訳を表示（有料）'}</button>
           </div>
         </div>
       </div>`;
@@ -4134,12 +4134,25 @@ function renderConvLog() {
       var log = logs[idx];
       var msgs = (log.messages||[]).filter(m=>m.type==='ai'||m.type==='user');
       var isDescribe = log.mode === 'describe' || (log.topic||'').includes('Description');
+      var jaElements = $("logDetail"+idx).querySelectorAll('.ja-line');
+
+      // If translations already saved, just display them
+      if (log.translations) {
+        log.translations.forEach(function(t) {
+          if (t.idx < jaElements.length && t.text) {
+            jaElements[t.idx].textContent = '→ ' + t.text;
+            jaElements[t.idx].style.display = 'block';
+          }
+        });
+        this.textContent = "✅ 和訳表示中";
+        return;
+      }
+
       this.disabled = true;
       this.textContent = "⏳ 翻訳中...";
       try {
-        // For Description: only translate user messages (AI messages already contain Japanese)
         var userMsgs = [];
-        var userIdxMap = [];  // maps userMsgs index to msgs index
+        var userIdxMap = [];
         msgs.forEach(function(m, j) {
           if (isDescribe) {
             if (m.type === 'user') { userMsgs.push(m); userIdxMap.push(j); }
@@ -4159,27 +4172,40 @@ function renderConvLog() {
 
 ${conv}` }], "Return exactly " + userMsgs.length + " numbered translations.");
         var lines = raw.split('\n').filter(function(l){return l.trim();});
-        var jaElements = $("logDetail"+idx).querySelectorAll('.ja-line');
 
+        // Build translations array and display
+        var savedTranslations = [];
         if (isDescribe) {
-          // Only show translation for user messages
           var transIdx = 0;
           jaElements.forEach(function(el, j) {
             if (userIdxMap.includes(j)) {
               var translated = (lines[transIdx]||'').replace(/^\[\d+\]\s*/,'').replace(/^(You|あなた):\s*/i,'');
               el.textContent = '→ ' + (translated || '(翻訳なし)');
               el.style.display = 'block';
+              savedTranslations.push({ idx: j, text: translated });
               transIdx++;
             }
-            // AI messages in describe: no translation needed (already Japanese)
           });
         } else {
           jaElements.forEach(function(el, j) {
             var translated = (lines[j]||'').replace(/^\[\d+\]\s*/,'').replace(/^(You|AI|あなた|AI):\s*/i,'');
             el.textContent = '→ ' + (translated || '(翻訳なし)');
             el.style.display = 'block';
+            savedTranslations.push({ idx: j, text: translated });
           });
         }
+
+        // Save translations to log
+        try {
+          var allLogs = getConversationLogs();
+          var realIdx = allLogs.length - 1 - idx;  // logs are reversed
+          if (allLogs[realIdx]) {
+            allLogs[realIdx].translations = savedTranslations;
+            safeLSSet("ett_convlogs", allLogs);
+            logs[idx].translations = savedTranslations;  // update local ref
+          }
+        } catch(se) { console.warn("Translation save failed:", se); }
+
         this.textContent = "✅ 和訳表示中";
       } catch(err) {
         this.textContent = "❌ 翻訳失敗 — リトライ";

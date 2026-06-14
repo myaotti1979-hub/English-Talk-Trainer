@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09f";
+const VERSION = "v2026.06.09g";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -4133,25 +4133,53 @@ function renderConvLog() {
       var idx = parseInt(this.dataset.idx);
       var log = logs[idx];
       var msgs = (log.messages||[]).filter(m=>m.type==='ai'||m.type==='user');
+      var isDescribe = log.mode === 'describe' || (log.topic||'').includes('Description');
       this.disabled = true;
       this.textContent = "⏳ 翻訳中...";
       try {
-        var conv = msgs.map(function(m, j){return '[' + (j+1) + '] ' + (m.type==='user'?'You':'AI')+': '+m.text;}).join('\n');
-        var raw = await geminiChat([{ role: "user", content: `Translate each numbered message below to Japanese. Rules:
-- Return EXACTLY ${msgs.length} lines
-- Each line must start with the same number [1], [2], etc.
-- Translate the ENGLISH to JAPANESE
-- Keep it natural Japanese
-- Do NOT merge, split, or reorder messages
+        // For Description: only translate user messages (AI messages already contain Japanese)
+        var userMsgs = [];
+        var userIdxMap = [];  // maps userMsgs index to msgs index
+        msgs.forEach(function(m, j) {
+          if (isDescribe) {
+            if (m.type === 'user') { userMsgs.push(m); userIdxMap.push(j); }
+          } else {
+            userMsgs.push(m); userIdxMap.push(j);
+          }
+        });
 
-${conv}` }], "Return exactly " + msgs.length + " numbered translations.");
+        if (userMsgs.length === 0) { this.textContent = "✅ 和訳不要"; return; }
+
+        var conv = userMsgs.map(function(m, j){return '[' + (j+1) + '] ' + m.text;}).join('\n');
+        var raw = await geminiChat([{ role: "user", content: `Translate each numbered English message below to Japanese. Rules:
+- Return EXACTLY ${userMsgs.length} lines
+- Each line must start with [1], [2], etc.
+- Translate to natural Japanese
+- Do NOT merge, split, or reorder
+
+${conv}` }], "Return exactly " + userMsgs.length + " numbered translations.");
         var lines = raw.split('\n').filter(function(l){return l.trim();});
         var jaElements = $("logDetail"+idx).querySelectorAll('.ja-line');
-        jaElements.forEach(function(el, j) {
-          var translated = (lines[j]||'').replace(/^\[\d+\]\s*/,'').replace(/^(You|AI|あなた|AI):\s*/i,'');
-          el.textContent = '→ ' + (translated || '(翻訳なし)');
-          el.style.display = 'block';
-        });
+
+        if (isDescribe) {
+          // Only show translation for user messages
+          var transIdx = 0;
+          jaElements.forEach(function(el, j) {
+            if (userIdxMap.includes(j)) {
+              var translated = (lines[transIdx]||'').replace(/^\[\d+\]\s*/,'').replace(/^(You|あなた):\s*/i,'');
+              el.textContent = '→ ' + (translated || '(翻訳なし)');
+              el.style.display = 'block';
+              transIdx++;
+            }
+            // AI messages in describe: no translation needed (already Japanese)
+          });
+        } else {
+          jaElements.forEach(function(el, j) {
+            var translated = (lines[j]||'').replace(/^\[\d+\]\s*/,'').replace(/^(You|AI|あなた|AI):\s*/i,'');
+            el.textContent = '→ ' + (translated || '(翻訳なし)');
+            el.style.display = 'block';
+          });
+        }
         this.textContent = "✅ 和訳表示中";
       } catch(err) {
         this.textContent = "❌ 翻訳失敗 — リトライ";

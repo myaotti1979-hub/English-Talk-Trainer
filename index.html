@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09h";
+const VERSION = "v2026.06.09j";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1635,7 +1635,7 @@ function initNews() {
 // ═══════════════════════════════════
 
 const DESC_THEMES = ["職場でのハプニング","旅先での出来事","友人との思い出","家族のエピソード","買い物での体験","通勤・通学","料理にまつわる話","天気と予定変更","ペットの話","健康・体調","テクノロジーのトラブル","休日の過ごし方","スポーツ","引っ越し","忘れ物","初めての経験","文化の違い","季節の行事","お金の話","時間管理の失敗"];
-const DESC_SETTINGS = ["朝の通勤中","海外旅行中","初めてのデート","大事な試験の日","雨の日","友人の結婚式","深夜","引っ越し当日","上司と一緒","子供を連れている時","電車の中","カフェで","SNSで話題になった","10年前の話","来月の予定"];
+const DESC_SETTINGS = ["朝の通勤中","海外旅行中","初対面の相手と","大事なプレゼンの日","雨の日","友人の結婚式","夜遅く","引っ越し当日","上司と一緒","子供を連れている時","電車の中","カフェで","レストランで","オフィスで","病院の待合室で"];
 const DESC_TWISTS = ["予想外の展開","時間がない","言葉が通じない","お金が足りない","誰かに助けを求める","2つの選択肢で迷う","失敗から学ぶ","初めての経験","文化の違いに気づく","テクノロジーが役立つ"];
 
 function initDescribe() {
@@ -1674,28 +1674,49 @@ async function generateDescribeQuestions() {
   var twist = DESC_TWISTS[Math.floor(Math.random()*DESC_TWISTS.length)];
   var lvl = CEFR_LEVELS[S.descLevel] || CEFR_LEVELS.B1;
   try {
-    var raw = await geminiChat([{ role: "user", content: `Create a speaking exercise for a ${lvl.id} level English learner.
-${lvl.flashRules}
-Theme: "${theme}" / Setting: "${setting}" / Twist: "${twist}"
-Generate exactly 5 scenario-based speaking prompts.
+    var raw = await geminiChat([{ role: "user", content: `あなたは英会話レッスンの先生です。${lvl.id}レベルの日本人学習者向けに、「${theme}」をテーマにした英語スピーキング練習を作ってください。
 
-LEVEL-SPECIFIC RULES for ${lvl.id}:
-${lvl.id === 'A1' ? '- Use VERY simple, everyday situations (ordering food, greeting, asking directions)\n- Each prompt needs only 1 simple sentence as answer\n- Avoid complex scenarios — keep it concrete and visual' :
-  lvl.id === 'A2' ? '- Use familiar daily situations (shopping, making plans, describing routines)\n- Answers need 1-2 simple sentences\n- Keep scenarios concrete, avoid abstract topics' :
-  lvl.id === 'B1' ? '- Use moderately complex situations (explaining problems, giving opinions, narrating events)\n- Answers need 2-3 sentences with connectors\n- Include some cause/effect scenarios' :
-  lvl.id === 'B2' ? '- Use complex, realistic situations (negotiations, debates, analysis)\n- Answers need 3-4 sentences with varied structure\n- Include hypothetical and analytical scenarios' :
-  '- Use sophisticated, nuanced situations (ethical dilemmas, strategic decisions, cultural analysis)\n- Answers need 3-5 sentences with complex structure\n- Include scenarios requiring hedging, persuasion, and multi-perspective thinking'}
+■ あなたの仕事:
+日常で実際に遭遇しそうな具体的なシチュエーションを5つ作る。
+学習者はそのシチュエーションで英語を話す練習をします。
 
-Progressive difficulty:
-1. Report a basic fact (${lvl.id==='A1'?'1 sentence':'1-2 sentences'})
-2. Narrate what happened (${lvl.id==='A1'?'1-2 sentences':'2-3 sentences'})
-3. Explain reasons/causes (${lvl.id==='A1'?'1-2 sentences':'2-3 sentences'})
-4. Compare or persuade (${lvl.id==='A1'||lvl.id==='A2'?'2 sentences':'3-4 sentences'})
-5. Handle unexpected twist (${lvl.id==='A1'||lvl.id==='A2'?'2 sentences':'3-4 sentences'})
+■ シチュエーションの書き方ルール:
+- 友達に「こんなことがあってさ〜」と話すような自然な日本語で書く
+- 「〜について説明してください」のような教科書的な書き方は禁止
+- 場所、人物、状況を具体的に（「ある日」ではなく「今朝」「昨日の会議で」など）
+- 最後に「英語でなんて言う？」「どう説明する？」で締める
 
-- Make scenarios VIVID and SPECIFIC
-- Give a ROLE and PURPOSE for speaking
-Return JSON: {"questions": [{"ja": "vivid scenario in Japanese", "en": "model answer at ${lvl.id} level", "hint": "useful expressions"}]}` }], "JSON only.", true);
+■ 良い例:
+「今朝、駅でコーヒーをこぼしちゃって、隣にいた外国人のコートを汚してしまった。英語でなんて謝る？」
+「同僚が転職するか悩んでいて相談してきた。給料は上がるけど通勤が大変になるらしい。英語でアドバイスするとしたら？」
+「旅行先のホテルで隣の部屋がうるさすぎて眠れない。フロントに電話して状況を説明してみて。」
+
+■ 悪い例（こう書かないで）:
+「事故について説明してください」→ 抽象的すぎる
+「あなたの趣味を述べなさい」→ 教科書的
+「10年前の旅行の思い出を話してください」→ 不自然な時間設定
+
+■ 5問の難易度:
+1. 簡単: ひとこと〜2文で伝えればOK（報告・お願い・質問）
+2. やや簡単: 2〜3文で状況を説明
+3. 普通: なぜそうなったか理由も含めて説明
+4. やや難: 2つの選択肢を比較して自分の意見を言う
+5. 難: 予想外の展開に臨機応変に対応
+
+■ ${lvl.id}レベルの目安:
+${lvl.id === 'A1' ? '超初級。1文でOK。注文、挨拶、簡単な質問の場面。' :
+  lvl.id === 'A2' ? '初級。1-2文。買い物、道案内、簡単な相談の場面。' :
+  lvl.id === 'B1' ? '中級。2-3文。意見、経験談、問題説明の場面。' :
+  lvl.id === 'B2' ? '中上級。3-4文。議論、分析、説得の場面。' :
+  '上級。3-5文。複雑な議論、ニュアンスのある説明、戦略的な場面。'}
+
+■ 背景のヒント（全部使わなくていい、自然なものだけ取り入れて）:
+場面: ${setting} / 展開: ${twist}
+
+JSON形式で返してください:
+{"questions": [
+  {"ja": "具体的なシチュエーション（自然な日本語）", "en": "模範回答（${lvl.id}レベルの英語）", "hint": "使える表現2-3個"}
+]}` }], "JSON only.", true);
     S.descQuestions = JSON.parse(raw.replace(/```json|```/g,'').trim()).questions || [];
     if (S.descQuestions.length === 0) throw new Error("生成失敗");
     S.descCurrent = 0;

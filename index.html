@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.09j";
+const VERSION = "v2026.06.21a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -749,7 +749,7 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
 
   try {
     const url = `https://${S.azureRegion}.tts.speech.microsoft.com/cognitiveservices/v1`;
-    const res = await fetchT(url, {
+    const opts = {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": S.azureKey,
@@ -757,7 +757,16 @@ async function speakText(text, voiceId = "en-US-JennyNeural") {
         "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3"
       },
       body: ssml
-    });
+    };
+    var res;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      res = await fetchT(url, opts);
+      if (res.status === 429) {
+        await new Promise(r => setTimeout(r, (attempt + 1) * 2000));
+        continue;
+      }
+      break;
+    }
     if (!res.ok) throw new Error(`Azure TTS ${res.status}`);
     const audioBlob = await res.blob();
     const blobUrl = URL.createObjectURL(audioBlob);
@@ -856,22 +865,29 @@ async function recordWav(maxMs, onAutoStop, costKey) {
 // ── Azure STT (Speech-to-Text) ──
 async function azureSTT(wavBlob) {
   if (!S.azureKey) throw new Error("Azure Speech キーが未設定です");
-  if (!wavBlob || wavBlob.size <= 44) return ""; // empty audio
+  if (!wavBlob || wavBlob.size <= 44) return "";
   const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/dictation/cognitiveservices/v1?language=en-US&format=detailed&profanity=raw`;
-  const res = await fetchT(url, {
+  const opts = {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
       "Content-Type": "audio/wav; codecs=audio/pcm; samplerate=16000"
     },
     body: wavBlob
-  });
-  if (!res.ok) throw new Error(`Azure STT ${res.status}`);
-  const data = await res.json();
-  if (data.RecognitionStatus === "InitialSilenceTimeout" || data.RecognitionStatus === "NoMatch") return "";
-  if (data.RecognitionStatus !== "Success") throw new Error(`Recognition: ${data.RecognitionStatus}`);
-  // Detailed format: use NBest[0].Display for best accuracy, fall back to DisplayText
-  return data.NBest?.[0]?.Display || data.DisplayText || "";
+  };
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var res = await fetchT(url, opts);
+    if (res.status === 429) {
+      await new Promise(r => setTimeout(r, (attempt + 1) * 3000));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Azure STT ${res.status}`);
+    const data = await res.json();
+    if (data.RecognitionStatus === "InitialSilenceTimeout" || data.RecognitionStatus === "NoMatch") return "";
+    if (data.RecognitionStatus !== "Success") throw new Error(`Recognition: ${data.RecognitionStatus}`);
+    return data.NBest?.[0]?.Display || data.DisplayText || "";
+  }
+  throw new Error("Azure STT 429 — レート制限");
 }
 
 // ── Azure Pronunciation Assessment ──
@@ -885,7 +901,7 @@ async function azurePronAssess(wavBlob, refText) {
     EnableMiscue: true
   }));
   const url = `https://${S.azureRegion}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
-  const res = await fetchT(url, {
+  const opts = {
     method: "POST",
     headers: {
       "Ocp-Apim-Subscription-Key": S.azureKey,
@@ -893,11 +909,22 @@ async function azurePronAssess(wavBlob, refText) {
       "Pronunciation-Assessment": pronConfig
     },
     body: wavBlob
-  });
-  if (!res.ok) throw new Error(`Azure PronAssess ${res.status}`);
-  var data = await res.json();
-  console.log("PronAssess:", JSON.stringify(data).slice(0, 800));
-  return data;
+  };
+  // Try up to 3 times with backoff for 429 (rate limit)
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var res = await fetchT(url, opts);
+    if (res.status === 429) {
+      var waitSec = (attempt + 1) * 3;  // 3s, 6s, 9s
+      console.log("Azure 429, waiting " + waitSec + "s...");
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      continue;
+    }
+    if (!res.ok) throw new Error(`Azure PronAssess ${res.status}`);
+    var data = await res.json();
+    console.log("PronAssess:", JSON.stringify(data).slice(0, 800));
+    return data;
+  }
+  throw new Error("Azure PronAssess 429 — レート制限。少し待ってからリトライしてください");
 }
 
 // ── Utility ──

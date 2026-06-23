@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.21d";
+const VERSION = "v2026.06.21e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1107,6 +1107,7 @@ function render() {
   else if (S.screen === "review") renderReview();
   else if (S.screen === "vocab") renderVocabNotebook();
   else if (S.screen === "convlog") renderConvLog();
+  else if (S.screen === "analysis") renderAnalysis();
   else if (S.screen === "describe") renderDescribeSetup();
   else if (S.screen === "reviewquiz") renderReviewQuiz();
 }
@@ -1115,148 +1116,16 @@ function render() {
 function renderHistory() {
   const hist = getHistory();
   const reversed = [...hist].reverse();
-  const now = Date.now();
-  const DAY = 86400000;
-
-  // Period filters
-  const week2 = hist.filter(h => now - new Date(h.date).getTime() < 14*DAY);
-  const month1 = hist.filter(h => now - new Date(h.date).getTime() < 30*DAY);
-
-  // Averages by mode for each period
-  function modeAvg(arr, mode) {
-    var f = arr.filter(h => h.mode === mode && h.score > 0);
-    return f.length > 0 ? Math.round(f.reduce((a,h) => a+(h.score||0),0)/f.length) : 0;
-  }
-  var modes = ['freetalk','flash','describe','shadow'];
-  var labels = ['Talk','Flash','Desc','Shadow'];
-  var icons = ['🗣️','⚡','🎨','🎧'];
-  var w2 = modes.map(m => modeAvg(week2, m));
-  var m1 = modes.map(m => modeAvg(month1, m));
-
-  // Radar chart SVG
-  function radarSVG(w2vals, m1vals) {
-    var cx=130, cy=130, r=100, n=4;
-    var angles = [0,1,2,3].map(i => (Math.PI*2*i/n) - Math.PI/2);
-    function pt(angle, val) { var s=val/100*r; return [cx+Math.cos(angle)*s, cy+Math.sin(angle)*s]; }
-    var grid = [20,40,60,80,100].map(v =>
-      '<polygon points="'+angles.map(a=>pt(a,v).join(',')).join(' ')+'" fill="none" stroke="#e2e8f0" stroke-width="1"/>'
-    ).join('');
-    var axes = angles.map((a,i) => {
-      var ep = pt(a,105);
-      var lp = pt(a,120);
-      return '<line x1="'+cx+'" y1="'+cy+'" x2="'+ep[0]+'" y2="'+ep[1]+'" stroke="#e2e8f0" stroke-width="1"/>' +
-        '<text x="'+lp[0]+'" y="'+(lp[1]+4)+'" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600">'+labels[i]+'</text>';
-    }).join('');
-    var poly1 = m1vals.some(v=>v>0) ? '<polygon points="'+angles.map((a,i)=>pt(a,m1vals[i]).join(',')).join(' ')+'" fill="rgba(99,102,241,.1)" stroke="#818cf8" stroke-width="2" stroke-dasharray="4,3"/>' : '';
-    var poly2 = w2vals.some(v=>v>0) ? '<polygon points="'+angles.map((a,i)=>pt(a,w2vals[i]).join(',')).join(' ')+'" fill="rgba(16,185,129,.15)" stroke="#059669" stroke-width="2.5"/>' : '';
-    var dots = w2vals.map((v,i) => v>0?'<circle cx="'+pt(angles[i],v)[0]+'" cy="'+pt(angles[i],v)[1]+'" r="4" fill="#059669"/>':'').join('');
-    return '<svg viewBox="0 0 260 260" style="width:100%;max-width:300px;margin:0 auto;display:block">'+grid+axes+poly1+poly2+dots+'</svg>';
-  }
-
-  // All mode averages for stats
-  var allAvg = modes.map(m => modeAvg(hist, m));
-
   app.innerHTML = `
-    <div class="navbar">
-      <button class="back" id="histBack">←</button>
-      <div class="title">学習履歴</div>
-    </div>
-
+    <div class="navbar"><button class="back" id="histBack">←</button><div class="title">📋 学習履歴</div></div>
     <div class="stats-grid mb-16">
       <div class="stat-card"><div class="val text-accent">${S.totalSessions}</div><div class="lbl">総セッション</div></div>
       <div class="stat-card"><div class="val text-green">${S.totalMinutes}</div><div class="lbl">総練習時間(分)</div></div>
     </div>
-
-    ${month1.length > 0 ? `
-    <div class="card">
-      <div style="font-size:15px;font-weight:600;margin-bottom:4px">📊 スキルバランス（モード別）</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
-        <span style="color:#059669">━━</span> 直近2週間　
-        <span style="color:#818cf8">- - -</span> 直近1ヶ月
-      </div>
-      ${radarSVG(w2, m1)}
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:12px;text-align:center;font-size:12px">
-        ${modes.map((m,i) => '<div>'+icons[i]+'<br><span style="color:#059669;font-weight:700">'+w2[i]+'</span> / <span style="color:#818cf8">'+m1[i]+'</span></div>').join('')}
-      </div>
-    </div>` : ''}
-
-    ${(function(){
-      // Weakness Analysis Radar — 6 skills from sub-scores
-      var ftHist = month1.filter(h => h.mode==='freetalk' && h.grammar > 0);
-      var shHist = month1.filter(h => h.mode==='shadow' && h.accuracy > 0);
-      if (ftHist.length + shHist.length < 2) return '';
-
-      var skills = [
-        { name:'発音', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.accuracy||0),0)/shHist.length) : 0 },
-        { name:'流暢さ', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.fluency||0),0)/shHist.length) : 0 },
-        { name:'文法', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.grammar||0),0)/ftHist.length) : 0 },
-        { name:'語彙', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.vocabulary||0),0)/ftHist.length) : 0 },
-        { name:'自然さ', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.naturalness||0),0)/ftHist.length) : 0 },
-        { name:'瞬発力', val: ftHist.length>0 ? Math.min(100, Math.round(100 - (ftHist.reduce((a,h)=>a+(h.avgResponseTime||8000),0)/ftHist.length - 2000) / 100)) : 0 },
-      ];
-      // Clamp values
-      skills.forEach(function(s){ s.val = Math.max(0, Math.min(100, s.val)); });
-      var weakest = skills.reduce(function(a,b){ return (a.val>0 && a.val<b.val)||(b.val===0) ? a : b; });
-
-      // SVG radar
-      var cx=140,cy=140,r=110,n=6;
-      var angles = [];
-      for(var ai=0;ai<n;ai++) angles.push(Math.PI*2*ai/n - Math.PI/2);
-      function pt(a,v){ var s=v/100*r; return [cx+Math.cos(a)*s, cy+Math.sin(a)*s]; }
-      var grid='';
-      [20,40,60,80,100].forEach(function(v){
-        grid+='<polygon points="'+angles.map(function(a){return pt(a,v).join(',');}).join(' ')+'" fill="none" stroke="#e2e8f0" stroke-width="1"/>';
-      });
-      var axLines = angles.map(function(a,i){
-        var ep=pt(a,108); var lp=pt(a,125);
-        return '<line x1="'+cx+'" y1="'+cy+'" x2="'+ep[0]+'" y2="'+ep[1]+'" stroke="#e2e8f0"/>' +
-          '<text x="'+lp[0]+'" y="'+(lp[1]+4)+'" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600">'+skills[i].name+'</text>';
-      }).join('');
-      var poly = '<polygon points="'+angles.map(function(a,i){return pt(a,skills[i].val).join(',');}).join(' ')+'" fill="rgba(245,158,11,.15)" stroke="#f59e0b" stroke-width="2.5"/>';
-      var dots = skills.map(function(s,i){ return s.val>0?'<circle cx="'+pt(angles[i],s.val)[0]+'" cy="'+pt(angles[i],s.val)[1]+'" r="4" fill="#f59e0b"/>':''; }).join('');
-
-      return '<div class="card"><div style="font-size:15px;font-weight:600;margin-bottom:4px">🎯 弱点分析（直近1ヶ月）</div>' +
-        '<svg viewBox="0 0 280 280" style="width:100%;max-width:300px;margin:0 auto;display:block">'+grid+axLines+poly+dots+'</svg>' +
-        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;text-align:center;font-size:12px">' +
-        skills.map(function(s){ var col = s.val>=70?'#059669':s.val>=50?'#f59e0b':'#dc2626'; return '<div><span style="font-weight:700;color:'+col+'">'+s.val+'</span> '+s.name+'</div>'; }).join('') +
-        '</div>' +
-        (weakest.val > 0 && weakest.val < 70 ? '<div class="tip" style="margin-top:12px">💡 <strong>'+weakest.name+'</strong> が弱点です。' +
-          (weakest.name==='発音'?'Shadowingで正確さを意識して練習しましょう':
-           weakest.name==='流暢さ'?'Shadowingで止まらずに話す練習をしましょう':
-           weakest.name==='文法'?'Flash英作文で文法パターンを反復しましょう':
-           weakest.name==='語彙'?'チャレンジ表現を意識的に使いましょう':
-           weakest.name==='自然さ'?'Free Talkでネイティブらしい表現を真似しましょう':
-           '応答を素早くする練習をしましょう。考え込まずにまず話し始めることが大切です') +
-          '</div>' : '') +
-        '</div>';
-    })()}
-
-    <div class="card">
-      <div style="font-size:15px;font-weight:600;margin-bottom:8px">📈 スコア推移（直近1ヶ月）</div>
-      <canvas id="scoreChart" height="200" style="width:100%"></canvas>
-    </div>
-
-    <div class="card">
-      <div style="font-size:15px;font-weight:600;margin-bottom:4px">📅 週別の学習推移</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
-        <span style="color:#4f46e5">■</span> セッション数　
-        <span style="color:#059669">━</span> 学習時間(分)
-      </div>
-      <canvas id="weeklyChart" height="180" style="width:100%"></canvas>
-    </div>
-
-    ${hist.length > 0 ? `
-    <div class="card">
-      <div style="font-size:15px;font-weight:600;margin-bottom:12px">📊 全体平均</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px">
-        ${modes.map((m,i) => allAvg[i]>0?'<div class="stat-card"><div class="val" style="color:'+(allAvg[i]>=70?'var(--green)':'var(--yellow)')+'">'+allAvg[i]+'</div><div class="lbl">'+icons[i]+' '+labels[i]+'</div></div>':'').join('')}
-      </div>
-    </div>` : ''}
-
     <div class="card">
       <div style="font-size:15px;font-weight:600;margin-bottom:12px">📋 全セッション (${hist.length})</div>
       ${reversed.length === 0 ? '<div class="text-sm text-muted" style="text-align:center;padding:24px">まだ履歴がありません</div>' :
-      reversed.slice(0,30).map(h => {
+      reversed.slice(0,50).map(h => {
         const d = new Date(h.date);
         const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
         const icon = h.mode==='freetalk'?'🗣️':h.mode==='flash'?'⚡':h.mode==='describe'?'🎨':h.mode==='shadow'?'🎧':'📰';
@@ -1269,15 +1138,122 @@ function renderHistory() {
           (h.level?'<div class="text-xs text-muted">'+esc(h.level)+'</div>':'')+
           '</div>';
       }).join('')}
-      ${reversed.length > 30 ? '<div class="text-xs text-muted" style="text-align:center;padding:12px">直近30件を表示中（全'+hist.length+'件）</div>' : ''}
+      ${reversed.length > 50 ? '<div class="text-xs text-muted" style="text-align:center;padding:12px">直近50件を表示中（全'+hist.length+'件）</div>' : ''}
     </div>
-
     <button class="btn btn-danger w-full mt-16 mb-16" id="histClear">🗑️ 履歴をすべてクリア</button>
   `;
   $("histBack").onclick = () => { S.screen = "home"; render(); };
   $("histClear").onclick = clearAllData;
+}
 
-  // Draw line chart
+function renderAnalysis() {
+  const hist = getHistory();
+  const now = Date.now();
+  const DAY = 86400000;
+  const week2 = hist.filter(h => now - new Date(h.date).getTime() < 14*DAY);
+  const month1 = hist.filter(h => now - new Date(h.date).getTime() < 30*DAY);
+
+  function modeAvg(arr, mode) {
+    var f = arr.filter(h => h.mode === mode && h.score > 0);
+    return f.length > 0 ? Math.round(f.reduce((a,h) => a+(h.score||0),0)/f.length) : 0;
+  }
+  var modes = ['freetalk','flash','describe','shadow'];
+  var labels = ['Talk','Flash','Desc','Shadow'];
+  var icons = ['🗣️','⚡','🎨','🎧'];
+  var w2 = modes.map(m => modeAvg(week2, m));
+  var m1 = modes.map(m => modeAvg(month1, m));
+
+  function radarSVG(w2vals, m1vals, labelsArr) {
+    var cx=130, cy=130, r=100, n=labelsArr.length;
+    var angles = [];
+    for(var ai=0;ai<n;ai++) angles.push(Math.PI*2*ai/n - Math.PI/2);
+    function pt(angle, val) { var s=val/100*r; return [cx+Math.cos(angle)*s, cy+Math.sin(angle)*s]; }
+    var grid = [20,40,60,80,100].map(v =>
+      '<polygon points="'+angles.map(a=>pt(a,v).join(',')).join(' ')+'" fill="none" stroke="#e2e8f0" stroke-width="1"/>'
+    ).join('');
+    var axes = angles.map((a,i) => {
+      var ep = pt(a,105); var lp = pt(a,122);
+      return '<line x1="'+cx+'" y1="'+cy+'" x2="'+ep[0]+'" y2="'+ep[1]+'" stroke="#e2e8f0" stroke-width="1"/>' +
+        '<text x="'+lp[0]+'" y="'+(lp[1]+4)+'" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600">'+labelsArr[i]+'</text>';
+    }).join('');
+    var poly1 = m1vals.some(v=>v>0) ? '<polygon points="'+angles.map((a,i)=>pt(a,m1vals[i]).join(',')).join(' ')+'" fill="rgba(99,102,241,.1)" stroke="#818cf8" stroke-width="2" stroke-dasharray="4,3"/>' : '';
+    var poly2 = w2vals.some(v=>v>0) ? '<polygon points="'+angles.map((a,i)=>pt(a,w2vals[i]).join(',')).join(' ')+'" fill="rgba(16,185,129,.15)" stroke="#059669" stroke-width="2.5"/>' : '';
+    var dots = w2vals.map((v,i) => v>0?'<circle cx="'+pt(angles[i],v)[0]+'" cy="'+pt(angles[i],v)[1]+'" r="4" fill="#059669"/>':'').join('');
+    return '<svg viewBox="0 0 260 260" style="width:100%;max-width:300px;margin:0 auto;display:block">'+grid+axes+poly1+poly2+dots+'</svg>';
+  }
+
+  // Weakness analysis data
+  var ftHist = month1.filter(h => h.mode==='freetalk' && h.grammar > 0);
+  var shHist = month1.filter(h => h.mode==='shadow' && h.accuracy > 0);
+  var skills = [
+    { name:'発音', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.accuracy||0),0)/shHist.length) : 0 },
+    { name:'流暢さ', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.fluency||0),0)/shHist.length) : 0 },
+    { name:'文法', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.grammar||0),0)/ftHist.length) : 0 },
+    { name:'語彙', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.vocabulary||0),0)/ftHist.length) : 0 },
+    { name:'自然さ', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.naturalness||0),0)/ftHist.length) : 0 },
+    { name:'瞬発力', val: ftHist.length>0 ? Math.min(100, Math.round(100 - (ftHist.reduce((a,h)=>a+(h.avgResponseTime||8000),0)/ftHist.length - 2000) / 100)) : 0 },
+  ];
+  skills.forEach(function(s){ s.val = Math.max(0, Math.min(100, s.val)); });
+  var hasWeakness = ftHist.length + shHist.length >= 2;
+  var weakest = skills.reduce(function(a,b){ return (a.val>0 && (b.val===0 || a.val<b.val)) ? a : b; });
+
+  // Weakness radar
+  var weaknessRadar = '';
+  if (hasWeakness) {
+    var cx2=140,cy2=140,r2=110,n2=6;
+    var ang2=[]; for(var ai=0;ai<n2;ai++) ang2.push(Math.PI*2*ai/n2 - Math.PI/2);
+    function pt2(a,v){ var s=v/100*r2; return [cx2+Math.cos(a)*s, cy2+Math.sin(a)*s]; }
+    var g2=[20,40,60,80,100].map(v=>'<polygon points="'+ang2.map(a=>pt2(a,v).join(',')).join(' ')+'" fill="none" stroke="#e2e8f0" stroke-width="1"/>').join('');
+    var ax2=ang2.map((a,i)=>{var ep=pt2(a,108);var lp=pt2(a,126);return '<line x1="'+cx2+'" y1="'+cy2+'" x2="'+ep[0]+'" y2="'+ep[1]+'" stroke="#e2e8f0"/><text x="'+lp[0]+'" y="'+(lp[1]+4)+'" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600">'+skills[i].name+'</text>';}).join('');
+    var po2='<polygon points="'+ang2.map((a,i)=>pt2(a,skills[i].val).join(',')).join(' ')+'" fill="rgba(245,158,11,.15)" stroke="#f59e0b" stroke-width="2.5"/>';
+    var do2=skills.map((s,i)=>s.val>0?'<circle cx="'+pt2(ang2[i],s.val)[0]+'" cy="'+pt2(ang2[i],s.val)[1]+'" r="4" fill="#f59e0b"/>':'').join('');
+    weaknessRadar = '<svg viewBox="0 0 280 280" style="width:100%;max-width:300px;margin:0 auto;display:block">'+g2+ax2+po2+do2+'</svg>';
+  }
+
+  var allAvg = modes.map(m => modeAvg(hist, m));
+
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="anaBack">←</button><div class="title">📊 学習分析</div></div>
+
+    ${month1.length > 0 ? '<div class="card">' +
+      '<div style="font-size:15px;font-weight:600;margin-bottom:4px">📊 スキルバランス（モード別）</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-bottom:12px"><span style="color:#059669">━━</span> 直近2週間　<span style="color:#818cf8">- - -</span> 直近1ヶ月</div>' +
+      radarSVG(w2, m1, labels) +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:12px;text-align:center;font-size:12px">' +
+      modes.map((m,i) => '<div>'+icons[i]+'<br><span style="color:#059669;font-weight:700">'+w2[i]+'</span> / <span style="color:#818cf8">'+m1[i]+'</span></div>').join('') +
+      '</div></div>' : ''}
+
+    ${hasWeakness ? '<div class="card">' +
+      '<div style="font-size:15px;font-weight:600;margin-bottom:4px">🎯 弱点分析（直近1ヶ月）</div>' +
+      weaknessRadar +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;text-align:center;font-size:12px">' +
+      skills.map(function(s){ var col=s.val>=70?'#059669':s.val>=50?'#f59e0b':'#dc2626'; return '<div><span style="font-weight:700;color:'+col+'">'+s.val+'</span> '+s.name+'</div>'; }).join('') +
+      '</div>' +
+      (weakest.val > 0 && weakest.val < 70 ? '<div class="tip" style="margin-top:12px">💡 <strong>'+weakest.name+'</strong>が弱点です。' +
+        (weakest.name==='発音'?'Shadowingで正確さを意識して練習しましょう':weakest.name==='流暢さ'?'Shadowingで止まらずに話す練習をしましょう':weakest.name==='文法'?'Flash英作文で文法パターンを反復しましょう':weakest.name==='語彙'?'チャレンジ表現を意識的に使いましょう':weakest.name==='自然さ'?'Free Talkでネイティブらしい表現を真似しましょう':'応答を素早くする練習をしましょう') +
+        '</div>' : '') +
+      '</div>' : '<div class="card"><div class="text-sm text-muted" style="text-align:center;padding:24px">🎯 弱点分析にはFree TalkとShadowingのデータが必要です<br>（サブスコアは今回のバージョン以降に保存されます）</div></div>'}
+
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:8px">📈 スコア推移（直近1ヶ月）</div>
+      <canvas id="scoreChart" height="200" style="width:100%"></canvas>
+    </div>
+
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">📅 週別の学習推移</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px"><span style="color:#4f46e5">■</span> セッション数　<span style="color:#059669">━</span> 学習時間(分)</div>
+      <canvas id="weeklyChart" height="180" style="width:100%"></canvas>
+    </div>
+
+    ${hist.length > 0 ? '<div class="card">' +
+      '<div style="font-size:15px;font-weight:600;margin-bottom:12px">📊 全体平均</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px">' +
+      modes.map((m,i) => allAvg[i]>0?'<div class="stat-card"><div class="val" style="color:'+(allAvg[i]>=70?'var(--green)':'var(--yellow)')+'">'+allAvg[i]+'</div><div class="lbl">'+icons[i]+' '+labels[i]+'</div></div>':'').join('') +
+      '</div></div>' : ''}
+  `;
+  $("anaBack").onclick = () => { S.screen = "home"; render(); };
+
+  // Draw score trend chart
   var canvas = $("scoreChart");
   if (canvas && month1.length > 0) {
     var ctx = canvas.getContext("2d");
@@ -1285,8 +1261,6 @@ function renderHistory() {
     canvas.width = W * 2; canvas.height = 400;
     ctx.scale(2, 2);
     var H = 200, pad = 30, chartW = W - pad*2, chartH = H - pad*2;
-
-    // Grid
     ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 0.5;
     for (var g = 0; g <= 100; g += 20) {
       var gy = pad + chartH - (g/100)*chartH;
@@ -1294,8 +1268,6 @@ function renderHistory() {
       ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
       ctx.fillText(g, 4, gy+3);
     }
-
-    // Group by date and mode
     var colors = {freetalk:'#3b82f6', flash:'#f59e0b', describe:'#8b5cf6', shadow:'#059669'};
     var modeNames = {freetalk:'Talk', flash:'Flash', describe:'Desc', shadow:'Shadow'};
     var days30 = [];
@@ -1303,43 +1275,25 @@ function renderHistory() {
       var dd = new Date(now - di*DAY);
       days30.push(dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0'));
     }
-
     modes.forEach(function(mode) {
       var modeHist = month1.filter(h => h.mode === mode && h.score > 0);
       if (modeHist.length < 2) return;
       var byDay = {};
-      modeHist.forEach(function(h) {
-        var dk = h.date.slice(0,10);
-        if (!byDay[dk]) byDay[dk] = [];
-        byDay[dk].push(h.score);
-      });
+      modeHist.forEach(function(h) { var dk = h.date.slice(0,10); if (!byDay[dk]) byDay[dk] = []; byDay[dk].push(h.score); });
       var points = [];
       days30.forEach(function(dk, xi) {
-        if (byDay[dk]) {
-          var avg = Math.round(byDay[dk].reduce((a,b)=>a+b,0)/byDay[dk].length);
-          points.push([pad + (xi/29)*chartW, pad + chartH - (avg/100)*chartH, avg]);
-        }
+        if (byDay[dk]) { var avg = Math.round(byDay[dk].reduce((a,b)=>a+b,0)/byDay[dk].length); points.push([pad + (xi/29)*chartW, pad + chartH - (avg/100)*chartH]); }
       });
       if (points.length < 2) return;
-      ctx.strokeStyle = colors[mode] || '#999';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      points.forEach(function(p,i) { i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]); });
-      ctx.stroke();
-      points.forEach(function(p) {
-        ctx.fillStyle = colors[mode]; ctx.beginPath();
-        ctx.arc(p[0],p[1],3,0,Math.PI*2); ctx.fill();
-      });
+      ctx.strokeStyle = colors[mode]; ctx.lineWidth = 2; ctx.beginPath();
+      points.forEach(function(p,i) { i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]); }); ctx.stroke();
+      points.forEach(function(p) { ctx.fillStyle = colors[mode]; ctx.beginPath(); ctx.arc(p[0],p[1],3,0,Math.PI*2); ctx.fill(); });
     });
-
-    // Legend
     var lx = pad;
     modes.forEach(function(mode) {
       if (month1.filter(h=>h.mode===mode&&h.score>0).length < 2) return;
       ctx.fillStyle = colors[mode]; ctx.fillRect(lx, H-12, 12, 8);
-      ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
-      ctx.fillText(modeNames[mode], lx+15, H-5);
-      lx += 55;
+      ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.fillText(modeNames[mode], lx+15, H-5); lx += 55;
     });
   }
 
@@ -1351,79 +1305,41 @@ function renderHistory() {
     wCanvas.width = wW * 2; wCanvas.height = 360;
     wCtx.scale(2, 2);
     var wH = 180, wPad = 35, wChartW = wW - wPad*2, wChartH = wH - wPad - 10;
-
-    // Calculate weekly data (past 8 weeks)
     var weeks = [];
     for (var wi = 7; wi >= 0; wi--) {
-      var weekStart = new Date(now - (wi*7 + new Date(now).getDay()) * DAY);
-      weekStart.setHours(0,0,0,0);
+      var weekStart = new Date(now - (wi*7 + new Date(now).getDay()) * DAY); weekStart.setHours(0,0,0,0);
       var weekEnd = new Date(weekStart.getTime() + 7*DAY);
-      var weekHist = hist.filter(function(h) {
-        var d = new Date(h.date).getTime();
-        return d >= weekStart.getTime() && d < weekEnd.getTime();
-      });
-      weeks.push({
-        label: (weekStart.getMonth()+1) + '/' + weekStart.getDate(),
-        sessions: weekHist.length,
-        minutes: weekHist.reduce(function(a,h){return a+(h.minutes||0);}, 0)
-      });
+      var weekHist = hist.filter(function(h) { var d = new Date(h.date).getTime(); return d >= weekStart.getTime() && d < weekEnd.getTime(); });
+      weeks.push({ label: (weekStart.getMonth()+1) + '/' + weekStart.getDate(), sessions: weekHist.length, minutes: weekHist.reduce(function(a,h){return a+(h.minutes||0);}, 0) });
     }
-
-    var maxSessions = Math.max.apply(null, weeks.map(function(w){return w.sessions;})) || 1;
-    var maxMinutes = Math.max.apply(null, weeks.map(function(w){return w.minutes;})) || 1;
-    // Round up to nice numbers
-    maxSessions = Math.ceil(maxSessions / 5) * 5 || 5;
-    maxMinutes = Math.ceil(maxMinutes / 10) * 10 || 10;
-
+    var maxS = Math.max.apply(null, weeks.map(w=>w.sessions)) || 1; maxS = Math.ceil(maxS/5)*5 || 5;
+    var maxM = Math.max.apply(null, weeks.map(w=>w.minutes)) || 1; maxM = Math.ceil(maxM/10)*10 || 10;
     var barW = wChartW / 8 * 0.5;
-
-    // Grid lines (sessions axis - left)
     wCtx.strokeStyle = '#e2e8f0'; wCtx.lineWidth = 0.5;
     for (var gi = 0; gi <= 4; gi++) {
       var gy = wPad + wChartH - (gi/4)*wChartH;
       wCtx.beginPath(); wCtx.moveTo(wPad, gy); wCtx.lineTo(wW-wPad, gy); wCtx.stroke();
-      wCtx.fillStyle = '#818cf8'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'right';
-      wCtx.fillText(Math.round(maxSessions*gi/4), wPad-4, gy+3);
-      wCtx.fillStyle = '#059669'; wCtx.textAlign = 'left';
-      wCtx.fillText(Math.round(maxMinutes*gi/4)+'分', wW-wPad+3, gy+3);
+      wCtx.fillStyle = '#818cf8'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'right'; wCtx.fillText(Math.round(maxS*gi/4), wPad-4, gy+3);
+      wCtx.fillStyle = '#059669'; wCtx.textAlign = 'left'; wCtx.fillText(Math.round(maxM*gi/4)+'分', wW-wPad+3, gy+3);
     }
-
-    // Bars (sessions) + Line (minutes)
     var linePoints = [];
     weeks.forEach(function(w, i) {
       var cx = wPad + (i+0.5) * (wChartW/8);
-      // Bar
-      var bh = (w.sessions/maxSessions) * wChartH;
-      wCtx.fillStyle = 'rgba(79,70,229,0.6)';
-      wCtx.fillRect(cx - barW/2, wPad + wChartH - bh, barW, bh);
-      // Session count on bar
-      if (w.sessions > 0) {
-        wCtx.fillStyle = '#4f46e5'; wCtx.font = 'bold 10px sans-serif'; wCtx.textAlign = 'center';
-        wCtx.fillText(w.sessions, cx, wPad + wChartH - bh - 4);
-      }
-      // Line point
-      var ly = wPad + wChartH - (w.minutes/maxMinutes) * wChartH;
-      linePoints.push([cx, ly, w.minutes]);
-      // X label
-      wCtx.fillStyle = '#64748b'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'center';
-      wCtx.fillText(w.label, cx, wH - 2);
+      var bh = (w.sessions/maxS) * wChartH;
+      wCtx.fillStyle = 'rgba(79,70,229,0.6)'; wCtx.fillRect(cx - barW/2, wPad + wChartH - bh, barW, bh);
+      if (w.sessions > 0) { wCtx.fillStyle = '#4f46e5'; wCtx.font = 'bold 10px sans-serif'; wCtx.textAlign = 'center'; wCtx.fillText(w.sessions, cx, wPad + wChartH - bh - 4); }
+      var ly = wPad + wChartH - (w.minutes/maxM) * wChartH; linePoints.push([cx, ly, w.minutes]);
+      wCtx.fillStyle = '#64748b'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'center'; wCtx.fillText(w.label, cx, wH - 2);
     });
-
-    // Draw line
-    wCtx.strokeStyle = '#059669'; wCtx.lineWidth = 2;
-    wCtx.beginPath();
-    linePoints.forEach(function(p,i) { i===0?wCtx.moveTo(p[0],p[1]):wCtx.lineTo(p[0],p[1]); });
-    wCtx.stroke();
-    // Dots + minute labels
+    wCtx.strokeStyle = '#059669'; wCtx.lineWidth = 2; wCtx.beginPath();
+    linePoints.forEach(function(p,i) { i===0?wCtx.moveTo(p[0],p[1]):wCtx.lineTo(p[0],p[1]); }); wCtx.stroke();
     linePoints.forEach(function(p) {
       wCtx.fillStyle = '#059669'; wCtx.beginPath(); wCtx.arc(p[0],p[1],3,0,Math.PI*2); wCtx.fill();
-      if (p[2] > 0) {
-        wCtx.fillStyle = '#059669'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'center';
-        wCtx.fillText(p[2]+'分', p[0], p[1]-6);
-      }
+      if (p[2] > 0) { wCtx.fillStyle = '#059669'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'center'; wCtx.fillText(p[2]+'分', p[0], p[1]-6); }
     });
   }
 }
+
 
 // ── API Key Screen ──
 function renderApiKey() {
@@ -1639,6 +1555,7 @@ function renderHome() {
       ${vocabCount > 0 ? `<button class="btn btn-ghost" id="vocabBtn">📚 フレーズ集 (${vocabCount})</button>` : ''}
       ${logCount > 0 ? `<button class="btn btn-ghost" id="convlogBtn">💬 会話ログ (${logCount})</button>` : ''}
       ${hist.length > 0 ? `<button class="btn btn-ghost" id="histBtn">📋 履歴 (${hist.length})</button>` : ''}
+      ${hist.length > 2 ? `<button class="btn btn-ghost" id="analysisBtn">📊 分析</button>` : ''}
       <button class="btn btn-ghost" id="settingsBtn">⚙️ 設定</button>
       <a href="manual.html" class="btn btn-ghost" style="text-decoration:none">📘 マニュアル</a>
     </div>
@@ -1679,6 +1596,7 @@ function renderHome() {
     };
   }
   $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
+  if ($("analysisBtn")) $("analysisBtn").onclick = () => { S.screen = "analysis"; render(); };
   if ($("clearDataBtn")) $("clearDataBtn").onclick = clearAllData;
   if ($("exportDataBtn")) $("exportDataBtn").onclick = exportAllData;
   if ($("importDataBtn")) $("importDataBtn").onclick = function() { $("importFileInput")?.click(); };

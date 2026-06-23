@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.21a";
+const VERSION = "v2026.06.21c";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1122,7 +1122,7 @@ function renderHistory() {
 
     ${month1.length > 0 ? `
     <div class="card">
-      <div style="font-size:15px;font-weight:600;margin-bottom:4px">📊 スキルバランス</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">📊 スキルバランス（モード別）</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
         <span style="color:#059669">━━</span> 直近2週間　
         <span style="color:#818cf8">- - -</span> 直近1ヶ月
@@ -1133,9 +1133,69 @@ function renderHistory() {
       </div>
     </div>` : ''}
 
+    ${(function(){
+      // Weakness Analysis Radar — 6 skills from sub-scores
+      var ftHist = month1.filter(h => h.mode==='freetalk' && h.grammar > 0);
+      var shHist = month1.filter(h => h.mode==='shadow' && h.accuracy > 0);
+      if (ftHist.length + shHist.length < 2) return '';
+
+      var skills = [
+        { name:'発音', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.accuracy||0),0)/shHist.length) : 0 },
+        { name:'流暢さ', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.fluency||0),0)/shHist.length) : 0 },
+        { name:'文法', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.grammar||0),0)/ftHist.length) : 0 },
+        { name:'語彙', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.vocabulary||0),0)/ftHist.length) : 0 },
+        { name:'自然さ', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.naturalness||0),0)/ftHist.length) : 0 },
+        { name:'瞬発力', val: ftHist.length>0 ? Math.min(100, Math.round(100 - (ftHist.reduce((a,h)=>a+(h.avgResponseTime||8000),0)/ftHist.length - 2000) / 100)) : 0 },
+      ];
+      // Clamp values
+      skills.forEach(function(s){ s.val = Math.max(0, Math.min(100, s.val)); });
+      var weakest = skills.reduce(function(a,b){ return (a.val>0 && a.val<b.val)||(b.val===0) ? a : b; });
+
+      // SVG radar
+      var cx=140,cy=140,r=110,n=6;
+      var angles = [];
+      for(var ai=0;ai<n;ai++) angles.push(Math.PI*2*ai/n - Math.PI/2);
+      function pt(a,v){ var s=v/100*r; return [cx+Math.cos(a)*s, cy+Math.sin(a)*s]; }
+      var grid='';
+      [20,40,60,80,100].forEach(function(v){
+        grid+='<polygon points="'+angles.map(function(a){return pt(a,v).join(',');}).join(' ')+'" fill="none" stroke="#e2e8f0" stroke-width="1"/>';
+      });
+      var axLines = angles.map(function(a,i){
+        var ep=pt(a,108); var lp=pt(a,125);
+        return '<line x1="'+cx+'" y1="'+cy+'" x2="'+ep[0]+'" y2="'+ep[1]+'" stroke="#e2e8f0"/>' +
+          '<text x="'+lp[0]+'" y="'+(lp[1]+4)+'" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600">'+skills[i].name+'</text>';
+      }).join('');
+      var poly = '<polygon points="'+angles.map(function(a,i){return pt(a,skills[i].val).join(',');}).join(' ')+'" fill="rgba(245,158,11,.15)" stroke="#f59e0b" stroke-width="2.5"/>';
+      var dots = skills.map(function(s,i){ return s.val>0?'<circle cx="'+pt(angles[i],s.val)[0]+'" cy="'+pt(angles[i],s.val)[1]+'" r="4" fill="#f59e0b"/>':''; }).join('');
+
+      return '<div class="card"><div style="font-size:15px;font-weight:600;margin-bottom:4px">🎯 弱点分析（直近1ヶ月）</div>' +
+        '<svg viewBox="0 0 280 280" style="width:100%;max-width:300px;margin:0 auto;display:block">'+grid+axLines+poly+dots+'</svg>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;text-align:center;font-size:12px">' +
+        skills.map(function(s){ var col = s.val>=70?'#059669':s.val>=50?'#f59e0b':'#dc2626'; return '<div><span style="font-weight:700;color:'+col+'">'+s.val+'</span> '+s.name+'</div>'; }).join('') +
+        '</div>' +
+        (weakest.val > 0 && weakest.val < 70 ? '<div class="tip" style="margin-top:12px">💡 <strong>'+weakest.name+'</strong> が弱点です。' +
+          (weakest.name==='発音'?'Shadowingで正確さを意識して練習しましょう':
+           weakest.name==='流暢さ'?'Shadowingで止まらずに話す練習をしましょう':
+           weakest.name==='文法'?'Flash英作文で文法パターンを反復しましょう':
+           weakest.name==='語彙'?'チャレンジ表現を意識的に使いましょう':
+           weakest.name==='自然さ'?'Free Talkでネイティブらしい表現を真似しましょう':
+           '応答を素早くする練習をしましょう。考え込まずにまず話し始めることが大切です') +
+          '</div>' : '') +
+        '</div>';
+    })()}
+
     <div class="card">
       <div style="font-size:15px;font-weight:600;margin-bottom:8px">📈 スコア推移（直近1ヶ月）</div>
       <canvas id="scoreChart" height="200" style="width:100%"></canvas>
+    </div>
+
+    <div class="card">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">📅 週別の学習推移</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+        <span style="color:#4f46e5">■</span> セッション数　
+        <span style="color:#059669">━</span> 学習時間(分)
+      </div>
+      <canvas id="weeklyChart" height="180" style="width:100%"></canvas>
     </div>
 
     ${hist.length > 0 ? `
@@ -1233,6 +1293,87 @@ function renderHistory() {
       ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
       ctx.fillText(modeNames[mode], lx+15, H-5);
       lx += 55;
+    });
+  }
+
+  // Draw weekly trends chart
+  var wCanvas = $("weeklyChart");
+  if (wCanvas && hist.length > 0) {
+    var wCtx = wCanvas.getContext("2d");
+    var wW = wCanvas.offsetWidth;
+    wCanvas.width = wW * 2; wCanvas.height = 360;
+    wCtx.scale(2, 2);
+    var wH = 180, wPad = 35, wChartW = wW - wPad*2, wChartH = wH - wPad - 10;
+
+    // Calculate weekly data (past 8 weeks)
+    var weeks = [];
+    for (var wi = 7; wi >= 0; wi--) {
+      var weekStart = new Date(now - (wi*7 + new Date(now).getDay()) * DAY);
+      weekStart.setHours(0,0,0,0);
+      var weekEnd = new Date(weekStart.getTime() + 7*DAY);
+      var weekHist = hist.filter(function(h) {
+        var d = new Date(h.date).getTime();
+        return d >= weekStart.getTime() && d < weekEnd.getTime();
+      });
+      weeks.push({
+        label: (weekStart.getMonth()+1) + '/' + weekStart.getDate(),
+        sessions: weekHist.length,
+        minutes: weekHist.reduce(function(a,h){return a+(h.minutes||0);}, 0)
+      });
+    }
+
+    var maxSessions = Math.max.apply(null, weeks.map(function(w){return w.sessions;})) || 1;
+    var maxMinutes = Math.max.apply(null, weeks.map(function(w){return w.minutes;})) || 1;
+    // Round up to nice numbers
+    maxSessions = Math.ceil(maxSessions / 5) * 5 || 5;
+    maxMinutes = Math.ceil(maxMinutes / 10) * 10 || 10;
+
+    var barW = wChartW / 8 * 0.5;
+
+    // Grid lines (sessions axis - left)
+    wCtx.strokeStyle = '#e2e8f0'; wCtx.lineWidth = 0.5;
+    for (var gi = 0; gi <= 4; gi++) {
+      var gy = wPad + wChartH - (gi/4)*wChartH;
+      wCtx.beginPath(); wCtx.moveTo(wPad, gy); wCtx.lineTo(wW-wPad, gy); wCtx.stroke();
+      wCtx.fillStyle = '#818cf8'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'right';
+      wCtx.fillText(Math.round(maxSessions*gi/4), wPad-4, gy+3);
+      wCtx.fillStyle = '#059669'; wCtx.textAlign = 'left';
+      wCtx.fillText(Math.round(maxMinutes*gi/4)+'分', wW-wPad+3, gy+3);
+    }
+
+    // Bars (sessions) + Line (minutes)
+    var linePoints = [];
+    weeks.forEach(function(w, i) {
+      var cx = wPad + (i+0.5) * (wChartW/8);
+      // Bar
+      var bh = (w.sessions/maxSessions) * wChartH;
+      wCtx.fillStyle = 'rgba(79,70,229,0.6)';
+      wCtx.fillRect(cx - barW/2, wPad + wChartH - bh, barW, bh);
+      // Session count on bar
+      if (w.sessions > 0) {
+        wCtx.fillStyle = '#4f46e5'; wCtx.font = 'bold 10px sans-serif'; wCtx.textAlign = 'center';
+        wCtx.fillText(w.sessions, cx, wPad + wChartH - bh - 4);
+      }
+      // Line point
+      var ly = wPad + wChartH - (w.minutes/maxMinutes) * wChartH;
+      linePoints.push([cx, ly, w.minutes]);
+      // X label
+      wCtx.fillStyle = '#64748b'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'center';
+      wCtx.fillText(w.label, cx, wH - 2);
+    });
+
+    // Draw line
+    wCtx.strokeStyle = '#059669'; wCtx.lineWidth = 2;
+    wCtx.beginPath();
+    linePoints.forEach(function(p,i) { i===0?wCtx.moveTo(p[0],p[1]):wCtx.lineTo(p[0],p[1]); });
+    wCtx.stroke();
+    // Dots + minute labels
+    linePoints.forEach(function(p) {
+      wCtx.fillStyle = '#059669'; wCtx.beginPath(); wCtx.arc(p[0],p[1],3,0,Math.PI*2); wCtx.fill();
+      if (p[2] > 0) {
+        wCtx.fillStyle = '#059669'; wCtx.font = '9px sans-serif'; wCtx.textAlign = 'center';
+        wCtx.fillText(p[2]+'分', p[0], p[1]-6);
+      }
     });
   }
 }
@@ -2977,6 +3118,10 @@ COMPACT JSON. Keep strings SHORT. Max 3 corrections.
     saveSession({
       mode: "freetalk", topic: topic?.label || S.ftTopic,
       level: S.ftLevel, score: fb.overallScore || 0,
+      grammar: fb.grammar?.score || 0,
+      vocabulary: fb.vocabulary?.score || 0,
+      naturalness: fb.naturalness?.score || 0,
+      avgResponseTime: S.ftResponseTimes.length > 0 ? Math.round(S.ftResponseTimes.reduce((a,b)=>a+b,0)/S.ftResponseTimes.length) : 0,
       minutes: elapsed, turns: S.ftTurnCount, voice: S.ftVoice,
     });
     addToCumulativeCost(calcSessionTotal());
@@ -3811,7 +3956,11 @@ function renderShadowSummary() {
   const results = S.shadowResults;
   const avg = results.length > 0 ? Math.round(results.reduce((a,r) => a+r.score, 0) / results.length) : 0;
   updateStreak();
-  saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: avg, minutes: 3, voice: S.ftVoice });
+  var scoredResults = results.filter(r => r.score > 0);
+  var avgAcc = scoredResults.length > 0 ? Math.round(scoredResults.reduce((a,r) => a+(r.accuracy||0),0)/scoredResults.length) : 0;
+  var avgFlu = scoredResults.length > 0 ? Math.round(scoredResults.reduce((a,r) => a+(r.fluency||0),0)/scoredResults.length) : 0;
+  var avgComp = scoredResults.length > 0 ? Math.round(scoredResults.reduce((a,r) => a+(r.completeness||0),0)/scoredResults.length) : 0;
+  saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: avg, accuracy: avgAcc, fluency: avgFlu, completeness: avgComp, minutes: 3, voice: S.ftVoice });
   addToCumulativeCost(calcSessionTotal());
   const scoreColor = avg >= 80 ? 'var(--green)' : avg >= 60 ? 'var(--yellow)' : 'var(--red)';
 

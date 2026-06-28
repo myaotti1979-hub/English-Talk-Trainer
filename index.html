@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.21f";
+const VERSION = "v2026.06.28b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -483,6 +483,7 @@ const S = {
   srMode: localStorage.getItem("ett_sr_mode") || "azure",
   // Response time tracking (#1)
   ftResponseTimes: [],  // timestamps in ms
+  ftTotalWords: 0,      // total words spoken by user
   ftTurnStartTime: 0,   // when "your turn" started  // azure default for reliability
   // Cost tracking
   cost: { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
@@ -1191,7 +1192,15 @@ function renderAnalysis() {
     { name:'文法', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.grammar||0),0)/ftHist.length) : 0 },
     { name:'語彙', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.vocabulary||0),0)/ftHist.length) : 0 },
     { name:'自然さ', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.naturalness||0),0)/ftHist.length) : 0 },
-    { name:'瞬発力', val: ftHist.length>0 ? Math.min(100, Math.round(100 - (ftHist.reduce((a,h)=>a+(h.avgResponseTime||8000),0)/ftHist.length - 2000) / 100)) : 0 },
+    { name:'瞬発力', val: (function(){
+      if (ftHist.length === 0) return 0;
+      var avgResp = ftHist.reduce((a,h)=>a+(h.avgResponseTime||15000),0)/ftHist.length;
+      var avgWpm = ftHist.filter(h=>h.wordsPerMin>0);
+      var wpm = avgWpm.length>0 ? avgWpm.reduce((a,h)=>a+h.wordsPerMin,0)/avgWpm.length : 0;
+      var speedScore = Math.max(0, Math.min(100, Math.round(100 - (avgResp - 5000) / 250)));
+      var wpmScore = wpm > 0 ? Math.min(100, Math.round(wpm * 0.8)) : speedScore;
+      return Math.round(speedScore * 0.4 + wpmScore * 0.6);
+    })() },
   ];
   skills.forEach(function(s){ s.val = Math.max(0, Math.min(100, s.val)); });
   var hasWeakness = ftHist.length + shHist.length >= 2;
@@ -2495,6 +2504,7 @@ async function startFreeTalkSession() {
   S.ftSessionId = (S.ftSessionId || 0) + 1;
   S.ftStartTime = Date.now();
   S.ftResponseTimes = [];
+  S.ftTotalWords = 0;
   S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
 
   // 音声自動選択
@@ -3058,6 +3068,7 @@ async function handleUserMessage(text) {
     S.ftResponseTimes.push(Date.now() - S.ftTurnStartTime);
     S.ftTurnStartTime = 0;
   }
+  S.ftTotalWords += text.trim().split(/\s+/).length;
   S.chatMessages.push({ type: "user", text });
   S.chatHistory.push({ role: "user", content: text });
   S.ftTurnCount++;
@@ -3175,6 +3186,7 @@ COMPACT JSON. Keep strings SHORT. Max 3 corrections.
       vocabulary: fb.vocabulary?.score || 0,
       naturalness: fb.naturalness?.score || 0,
       avgResponseTime: S.ftResponseTimes.length > 0 ? Math.round(S.ftResponseTimes.reduce((a,b)=>a+b,0)/S.ftResponseTimes.length) : 0,
+      wordsPerMin: S.ftResponseTimes.length > 0 && S.ftTotalWords > 0 ? Math.round(S.ftTotalWords / (S.ftResponseTimes.reduce((a,b)=>a+b,0) / 60000)) : 0,
       minutes: elapsed, turns: S.ftTurnCount, voice: S.ftVoice,
     });
     addToCumulativeCost(calcSessionTotal());
@@ -4013,7 +4025,13 @@ function renderShadowSummary() {
   var avgAcc = scoredResults.length > 0 ? Math.round(scoredResults.reduce((a,r) => a+(r.accuracy||0),0)/scoredResults.length) : 0;
   var avgFlu = scoredResults.length > 0 ? Math.round(scoredResults.reduce((a,r) => a+(r.fluency||0),0)/scoredResults.length) : 0;
   var avgComp = scoredResults.length > 0 ? Math.round(scoredResults.reduce((a,r) => a+(r.completeness||0),0)/scoredResults.length) : 0;
-  saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: avg, accuracy: avgAcc, fluency: avgFlu, completeness: avgComp, minutes: 3, voice: S.ftVoice });
+  // Normalize Shadowing scores: text-hidden gets 10% bonus, higher levels get bonus
+  var levelBonus = {A1: 0.85, A2: 0.92, B1: 1.0, B2: 1.08, C1: 1.15};
+  var hideBonus = S.shadowHideText ? 1.10 : 1.0;
+  var normalizedAvg = Math.min(100, Math.round(avg * (levelBonus[S.shadowLevel] || 1.0) * hideBonus));
+  var normalizedAcc = Math.min(100, Math.round(avgAcc * (levelBonus[S.shadowLevel] || 1.0) * hideBonus));
+  var normalizedFlu = Math.min(100, Math.round(avgFlu * (levelBonus[S.shadowLevel] || 1.0) * hideBonus));
+  saveSession({ mode: "shadow", topic: "Shadowing", level: S.shadowLevel, score: normalizedAvg, accuracy: normalizedAcc, fluency: normalizedFlu, completeness: avgComp, hideText: S.shadowHideText, rawScore: avg, minutes: 3, voice: S.ftVoice });
   addToCumulativeCost(calcSessionTotal());
   const scoreColor = avg >= 80 ? 'var(--green)' : avg >= 60 ? 'var(--yellow)' : 'var(--red)';
 

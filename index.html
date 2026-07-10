@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.06.28b";
+const VERSION = "v2026.07.07a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1193,10 +1193,11 @@ function renderAnalysis() {
     { name:'語彙', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.vocabulary||0),0)/ftHist.length) : 0 },
     { name:'自然さ', val: ftHist.length>0 ? Math.round(ftHist.reduce((a,h)=>a+(h.naturalness||0),0)/ftHist.length) : 0 },
     { name:'瞬発力', val: (function(){
-      if (ftHist.length === 0) return 0;
-      var avgResp = ftHist.reduce((a,h)=>a+(h.avgResponseTime||15000),0)/ftHist.length;
-      var avgWpm = ftHist.filter(h=>h.wordsPerMin>0);
-      var wpm = avgWpm.length>0 ? avgWpm.reduce((a,h)=>a+h.wordsPerMin,0)/avgWpm.length : 0;
+      var allWithResp = month1.filter(h => (h.mode==='freetalk'||h.mode==='flash') && h.avgResponseTime > 0);
+      if (allWithResp.length === 0) return 0;
+      var avgResp = allWithResp.reduce((a,h)=>a+h.avgResponseTime,0)/allWithResp.length;
+      var withWpm = allWithResp.filter(h=>h.wordsPerMin>0);
+      var wpm = withWpm.length>0 ? withWpm.reduce((a,h)=>a+h.wordsPerMin,0)/withWpm.length : 0;
       var speedScore = Math.max(0, Math.min(100, Math.round(100 - (avgResp - 5000) / 250)));
       var wpmScore = wpm > 0 ? Math.min(100, Math.round(wpm * 0.8)) : speedScore;
       return Math.round(speedScore * 0.4 + wpmScore * 0.6);
@@ -1959,6 +1960,7 @@ JSON形式で返してください:
 function renderDescribePractice() {
   var q = S.descQuestions[S.descCurrent];
   if (!q) { renderDescribeSummary(); return; }
+  S._qStartTime = Date.now();  // Track response time
   var progress = (S.descCurrent / S.descQuestions.length * 100).toFixed(0);
   var diffLabel = ["🟢 報告","🟢 叙述","🟡 説明","🔴 比較・説得","🔴 即興対応"][S.descCurrent] || '';
   app.innerHTML = `
@@ -2016,7 +2018,8 @@ This is NOT translation. Evaluate:
 
 JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvements, suggest ${S.descLevel}-appropriate expressions","improved":"Polished version at ${S.descLevel} level"}`}], "JSON only.", true);
       var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
-      S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'' });
+      var dqResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
+      S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'', responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length });
       var sc = ev.score||0, scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
       $("dsInputArea").classList.add("hidden");
       $("dsResult").classList.remove("hidden");
@@ -2045,7 +2048,12 @@ function renderDescribeSummary() {
   var avg = scored.length > 0 ? Math.round(scored.reduce((a,r) => a+r.score,0)/scored.length) : 0;
   var scCol = avg>=80?'var(--green)':avg>=60?'var(--yellow)':'var(--red)';
   updateStreak();
-  saveSession({ mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5 });
+  var dTimedResults = results.filter(r => !r.skipped && r.responseTime > 0);
+  var descAvgResp = dTimedResults.length > 0 ? Math.round(dTimedResults.reduce((a,r)=>a+r.responseTime,0)/dTimedResults.length) : 0;
+  var descTotalWords = dTimedResults.reduce((a,r)=>a+(r.wordCount||0),0);
+  var descTotalTime = dTimedResults.reduce((a,r)=>a+r.responseTime,0);
+  var descWpm = descTotalTime > 0 ? Math.round(descTotalWords / (descTotalTime / 60000)) : 0;
+  saveSession({ mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5, avgResponseTime:descAvgResp, wordsPerMin:descWpm });
   addToCumulativeCost(calcSessionTotal());
 
   // Save as conversation log for review
@@ -3505,6 +3513,7 @@ Respond ONLY in JSON:
 function renderFlashQuestion() {
   const q = S.flashQuestions[S.flashCurrent];
   if (!q) { renderFlashSummary(); return; }
+  S._qStartTime = Date.now();  // Track response time
   const progress = ((S.flashCurrent) / S.flashQuestions.length * 100).toFixed(0);
   const isSituation = S.flashCategory === 'situation';
   const isPattern = S.flashCategory === 'pattern';
@@ -3684,9 +3693,11 @@ Scoring guide:
       <button class="btn btn-primary w-full mt-16" id="flashNextBtn">次の問題 →</button>
     `;
 
+    var qResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
     S.flashResults.push({
       ja: q.ja, en: q.en, userAnswer, score: ev.score,
-      isCorrect: ev.isCorrect, feedback: ev.feedback
+      isCorrect: ev.isCorrect, feedback: ev.feedback,
+      responseTime: qResponseTime, wordCount: userAnswer.trim().split(/\s+/).length
     });
 
     $("flashNextBtn").onclick = () => { S.flashCurrent++; renderFlashQuestion(); };
@@ -3709,12 +3720,19 @@ function renderFlashSummary() {
   const good = results.filter(r => r.score >= 60 && r.score < 90).length;
   const poor = results.filter(r => r.score < 60).length;
 
+  var timedResults = results.filter(r => r.responseTime > 0);
+  var flashAvgResp = timedResults.length > 0 ? Math.round(timedResults.reduce((a,r)=>a+r.responseTime,0)/timedResults.length) : 0;
+  var flashTotalWords = timedResults.reduce((a,r)=>a+(r.wordCount||0),0);
+  var flashTotalTime = timedResults.reduce((a,r)=>a+r.responseTime,0);
+  var flashWpm = flashTotalTime > 0 ? Math.round(flashTotalWords / (flashTotalTime / 60000)) : 0;
+
   S.totalSessions++;
   S.totalMinutes += 5;
   saveSession({
     mode: "flash",
     topic: FLASH_CATEGORIES.find(c => c.id === S.flashCategory)?.label || S.flashCategory,
     level: S.flashLevel, score: avg, minutes: 5, voice: S.ftVoice,
+    avgResponseTime: flashAvgResp, wordsPerMin: flashWpm,
   });
   addToCumulativeCost(calcSessionTotal());
   updateStreak();

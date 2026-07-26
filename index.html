@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.07a";
+const VERSION = "v2026.07.26a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -533,25 +533,33 @@ function getStreakDays() {
   }
   return count;
 }
-function renderCalendarHTML() {
+function renderCalendarHTML(offset) {
+  if (typeof offset === 'undefined') offset = S._calOffset || 0;
+  S._calOffset = offset;
   const s = getStreak();
   const now = new Date();
-  const year = now.getFullYear(), month = now.getMonth();
-  const first = new Date(year, month, 1);
+  const viewDate = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const year = viewDate.getFullYear(), month = viewDate.getMonth();
   const lastDay = new Date(year, month + 1, 0).getDate();
-  const startDow = first.getDay();
-  const today = now.getDate();
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  let html = `<div class="cal-header"><span class="text-sm" style="font-weight:600">${months[month]} ${year}</span>`;
+  const startDow = viewDate.getDay();
+  const isCurrentMonth = offset === 0;
+  const todayDate = isCurrentMonth ? now.getDate() : -1;
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
   const streak = getStreakDays();
-  if (streak > 0) html += `<span class="streak-badge">🔥 ${streak}日連続</span>`;
-  html += '</div><div class="cal-grid">';
+  let html = `<div class="cal-header" style="display:flex;align-items:center;justify-content:space-between">
+    <button class="btn-ghost" id="calPrev" style="font-size:18px;padding:4px 8px;${offset <= -5 ? 'visibility:hidden' : ''}">&lt;</button>
+    <div style="text-align:center">
+      <span class="text-sm" style="font-weight:600">${year}年${months[month]}</span>
+      ${isCurrentMonth && streak > 0 ? `<span class="streak-badge">🔥 ${streak}日連続</span>` : ''}
+    </div>
+    <button class="btn-ghost" id="calNext" style="font-size:18px;padding:4px 8px;${offset >= 0 ? 'visibility:hidden' : ''}">&gt;</button>
+  </div><div class="cal-grid">`;
   ['日','月','火','水','木','金','土'].forEach(d => { html += `<div class="cal-day empty" style="font-size:10px;color:var(--muted)">${d}</div>`; });
   for (let i = 0; i < startDow; i++) html += '<div class="cal-day empty"></div>';
   for (let d = 1; d <= lastDay; d++) {
     const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const done = !!s[key];
-    const isToday = d === today;
+    const isToday = d === todayDate;
     html += `<div class="cal-day ${done?'yes':'no'} ${isToday?'today':''}">${d}</div>`;
   }
   html += '</div>';
@@ -1049,7 +1057,7 @@ function clearAllData() {
 }
 
 function exportAllData() {
-  var keys = ["ett_history","ett_total_sessions","ett_total_minutes","ett_streak","ett_mistakes","ett_vocab","ett_convlogs","ett_challenge_used","ett_total_cost","gemini_api_key","azure_speech_key","azure_speech_region","gemini_model","ett_sr_mode","ett_cached_version"];
+  var keys = ["ett_history","ett_total_sessions","ett_total_minutes","ett_streak","ett_mistakes","ett_vocab","ett_convlogs","ett_challenge_used","ett_total_cost","ett_pron_weak","gemini_api_key","azure_speech_key","azure_speech_region","gemini_model","ett_sr_mode","ett_cached_version"];
   var data = { _version: VERSION, _date: new Date().toISOString() };
   keys.forEach(function(k) {
     var v = localStorage.getItem(k);
@@ -1109,6 +1117,7 @@ function render() {
   else if (S.screen === "vocab") renderVocabNotebook();
   else if (S.screen === "convlog") renderConvLog();
   else if (S.screen === "analysis") renderAnalysis();
+  else if (S.screen === "pronpractice") renderPronPractice();
   else if (S.screen === "describe") renderDescribeSetup();
   else if (S.screen === "reviewquiz") renderReviewQuiz();
 }
@@ -1541,7 +1550,7 @@ function renderHome() {
       <div class="sub">Gemini ${GEMINI_MODELS.find(function(m){return m.id===GEMINI_MODEL;})?.label.split('（')[0] || 'Flash'} × Azure Speech — ${VERSION}</div>
     </div>
 
-    <div class="card">
+    <div class="card" id="calendarCard">
       ${renderCalendarHTML()}
     </div>
 
@@ -1592,8 +1601,8 @@ function renderHome() {
     </div>` : ''}
 
     <div class="card mb-16" id="routineCard" style="background:linear-gradient(135deg,${new Date().getHours()<12?'#fef3c7,#fde68a':'#e0e7ff,#c7d2fe'});border:none;cursor:pointer">
-      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅':'🌙'} 自動ルーティン（10分）</div>
-      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Shadowing 5文を自動連続</div>
+      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅':'🌙'} 自動ルーティン（約15分）</div>
+      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Description 5問 → Shadowing 5文を自動連続</div>
       <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップしてテーマを選択</div>
     </div>
     <div class="card mb-16 hidden" id="routineSetup">
@@ -1644,6 +1653,7 @@ function renderHome() {
       ${logCount > 0 ? `<button class="btn btn-ghost" id="convlogBtn">💬 会話ログ (${logCount})</button>` : ''}
       ${hist.length > 0 ? `<button class="btn btn-ghost" id="histBtn">📋 履歴 (${hist.length})</button>` : ''}
       ${hist.length > 2 ? `<button class="btn btn-ghost" id="analysisBtn">📊 分析</button>` : ''}
+      ${getPronWeakWords().length > 0 ? `<button class="btn btn-ghost" id="pronBtn">🎯 発音練習 (${getPronWeakWords().length})</button>` : ''}
       <button class="btn btn-ghost" id="settingsBtn">⚙️ 設定</button>
       <a href="manual.html" class="btn btn-ghost" style="text-decoration:none">📘 マニュアル</a>
     </div>
@@ -1683,8 +1693,15 @@ function renderHome() {
       startRoutine(_rTheme);
     };
   }
+  if ($("pronBtn")) $("pronBtn").onclick = () => { S.screen = "pronpractice"; render(); };
   $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
   if ($("analysisBtn")) $("analysisBtn").onclick = () => { S.screen = "analysis"; render(); };
+  // Calendar navigation
+  function bindCalNav() {
+    if ($("calPrev")) $("calPrev").onclick = () => { $("calendarCard").innerHTML = renderCalendarHTML((S._calOffset||0) - 1); bindCalNav(); };
+    if ($("calNext")) $("calNext").onclick = () => { $("calendarCard").innerHTML = renderCalendarHTML((S._calOffset||0) + 1); bindCalNav(); };
+  }
+  bindCalNav();
   if ($("clearDataBtn")) $("clearDataBtn").onclick = clearAllData;
   if ($("exportDataBtn")) $("exportDataBtn").onclick = exportAllData;
   if ($("importDataBtn")) $("importDataBtn").onclick = function() { $("importFileInput")?.click(); };
@@ -2083,6 +2100,135 @@ function renderDescribeSummary() {
     else { S.screen = "home"; render(); }
   };
   $("dssAgain").onclick = () => initDescribe();
+}
+
+// ═══════════════════════════════════
+// PRONUNCIATION WEAK WORDS
+// ═══════════════════════════════════
+
+function getPronWeakWords() {
+  try { return JSON.parse(localStorage.getItem("ett_pron_weak") || "[]"); } catch { return []; }
+}
+function savePronWeakWord(word, score, sentence) {
+  var list = getPronWeakWords();
+  var existing = list.find(w => w.word === word);
+  if (existing) {
+    existing.attempts++;
+    existing.lastScore = score;
+    existing.lastDate = new Date().toISOString();
+    if (score > existing.bestScore) existing.bestScore = score;
+  } else {
+    list.push({ word: word, attempts: 1, lastScore: score, bestScore: score, lastDate: new Date().toISOString(), sentence: sentence });
+  }
+  while (list.length > 100) list.shift();
+  safeLSSet("ett_pron_weak", list);
+}
+
+function renderPronPractice() {
+  var words = getPronWeakWords().sort((a,b) => a.lastScore - b.lastScore);
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="ppBack">←</button><div class="title">🎯 発音練習 (${words.length}語)</div></div>
+    ${words.length === 0 ? '<div class="card" style="text-align:center;padding:40px"><div class="text-sm text-muted">Shadowingで不正確だった単語が自動的に追加されます</div></div>' : `
+    <div class="card">
+      <div class="text-xs text-muted mb-8">スコアが低い順。タップで発音を聞けます。</div>
+      ${words.map((w,i) => {
+        var col = w.lastScore >= 50 ? 'var(--yellow)' : 'var(--red)';
+        return `<div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div style="flex:1">
+            <div style="font-size:18px;font-weight:700">${esc(w.word)}</div>
+            <div class="text-xs text-muted">${w.attempts}回不正確 · ベスト${w.bestScore}点</div>
+            ${w.sentence ? '<div class="text-xs text-muted" style="margin-top:2px">📝 '+esc(w.sentence.slice(0,50))+'...</div>' : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-weight:700;color:${col}">${w.lastScore}</span>
+            <button class="btn-ghost pp-speak" data-word="${esc(w.word)}" style="font-size:20px">🔊</button>
+            <button class="btn-ghost pp-del" data-idx="${i}" style="font-size:16px;color:var(--red)">✕</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn btn-primary w-full mt-16" id="ppStartDrill">🎯 発音ドリル開始（上位10語）</button>
+    <button class="btn btn-ghost w-full mt-8 mb-16" id="ppClear" style="color:var(--red);font-size:13px">全クリア</button>`}
+  `;
+  $("ppBack").onclick = () => { S.screen = "home"; render(); };
+  document.querySelectorAll(".pp-speak").forEach(btn => {
+    btn.onclick = function() { if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(this.dataset.word);u.lang='en-US';u.rate=0.8;speechSynthesis.speak(u);} };
+  });
+  document.querySelectorAll(".pp-del").forEach(btn => {
+    btn.onclick = function() { var list=getPronWeakWords(); list.splice(parseInt(this.dataset.idx),1); safeLSSet("ett_pron_weak",list); renderPronPractice(); };
+  });
+  if ($("ppClear")) $("ppClear").onclick = function() { if(confirm("発音リストを全削除しますか？")){localStorage.removeItem("ett_pron_weak");renderPronPractice();} };
+  if ($("ppStartDrill")) $("ppStartDrill").onclick = startPronDrill;
+}
+
+async function startPronDrill() {
+  var words = getPronWeakWords().sort((a,b) => a.lastScore - b.lastScore).slice(0, 10);
+  if (words.length === 0) return;
+
+  app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">🎯 練習文を生成中...</div></div>';
+
+  try {
+    var wordList = words.map(w => w.word).join(', ');
+    var raw = await geminiChat([{ role: "user", content: `Create pronunciation practice for these English words: ${wordList}
+
+For each word provide:
+1. Simple pronunciation tip in Japanese (how to move mouth/tongue, common Japanese speaker mistakes)
+2. Two short example sentences using the word naturally
+
+Return JSON:
+{"drills": [{"word": "example", "tip": "日本語での発音アドバイス", "sentences": ["Example sentence 1.", "Example sentence 2."]}]}` }], "JSON only.", true);
+    var data = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    var drills = data.drills || [];
+    if (drills.length === 0) throw new Error("生成失敗");
+    S._pronDrills = drills;
+    S._pronDrillIdx = 0;
+    renderPronDrillStep();
+  } catch(e) {
+    app.innerHTML = `<div class="card"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-8" onclick="renderPronPractice()">戻る</button></div>`;
+  }
+}
+
+function renderPronDrillStep() {
+  var drills = S._pronDrills || [];
+  var idx = S._pronDrillIdx || 0;
+  if (idx >= drills.length) {
+    app.innerHTML = `
+      <div class="navbar"><div class="title">🎯 発音ドリル完了</div></div>
+      <div class="summary-header"><div class="score" style="color:var(--green)">✅</div><div class="label">${drills.length}語 練習完了</div></div>
+      <div class="card"><div class="text-sm text-muted" style="text-align:center">Shadowingを繰り返してスコアの変化を確認しましょう</div></div>
+      <button class="btn btn-primary w-full mt-16" onclick="S.screen='home';render()">ホームに戻る</button>
+    `;
+    return;
+  }
+  var d = drills[idx];
+  var progress = Math.round(idx / drills.length * 100);
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="pdBack">←</button><div class="title">🎯 発音ドリル ${idx+1}/${drills.length}</div></div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+    <div class="card" style="padding:24px;text-align:center">
+      <div style="font-size:32px;font-weight:800;color:var(--accent)">${esc(d.word)}</div>
+      <button class="btn btn-ghost mt-8" id="pdSpeak" style="font-size:24px">🔊 お手本</button>
+      <div class="tip mt-16" style="text-align:left">${esc(d.tip || '')}</div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">📝 例文で練習</div>
+      ${(d.sentences||[]).map((s,si) => `
+        <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+          <div class="text-sm">${esc(s)}</div>
+          <button class="btn-ghost pd-speak-sent" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px;margin-top:4px">🔊 再生</button>
+        </div>
+      `).join('')}
+    </div>
+    <button class="btn btn-primary w-full mt-16" id="pdNext">次の単語 →</button>
+  `;
+  $("pdBack").onclick = () => { if(confirm("中断しますか？")) renderPronPractice(); };
+  $("pdSpeak").onclick = function() {
+    if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(d.word);u.lang='en-US';u.rate=0.7;speechSynthesis.speak(u);}
+  };
+  document.querySelectorAll(".pd-speak-sent").forEach(btn => {
+    btn.onclick = function() { if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(this.dataset.text);u.lang='en-US';u.rate=0.85;speechSynthesis.speak(u);} };
+  });
+  $("pdNext").onclick = () => { S._pronDrillIdx++; renderPronDrillStep(); };
 }
 
 // ═══════════════════════════════════
@@ -2510,6 +2656,7 @@ async function startFreeTalkSession() {
   S.ftSessionActive = true;
   S.ftWhoseTurn = 'ai';
   S.ftSessionId = (S.ftSessionId || 0) + 1;
+  S.ftTurnCount = 0;  // Reset turn count for News and other direct starts
   S.ftStartTime = Date.now();
   S.ftResponseTimes = [];
   S.ftTotalWords = 0;
@@ -3726,8 +3873,7 @@ function renderFlashSummary() {
   var flashTotalTime = timedResults.reduce((a,r)=>a+r.responseTime,0);
   var flashWpm = flashTotalTime > 0 ? Math.round(flashTotalWords / (flashTotalTime / 60000)) : 0;
 
-  S.totalSessions++;
-  S.totalMinutes += 5;
+  // (totalSessions / totalMinutes are recomputed inside saveSession)
   saveSession({
     mode: "flash",
     topic: FLASH_CATEGORIES.find(c => c.id === S.flashCategory)?.label || S.flashCategory,
@@ -3866,7 +4012,6 @@ async function generateShadowSentences() {
     var shStyles = ["independent statement","question and answer","expressing opinion","telling a story","giving advice","making a comparison","describing an experience","explaining a process"];
     var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
     var shStyle = shStyles[Math.floor(Math.random()*shStyles.length)];
-    var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
 
     // In routine mode: use the Free Talk topic for continuity
     var themeHint = `VARIETY: Use these topics: "${shPicked.join('", "')}". Sentence style: ${shStyle}. Each sentence MUST be about a DIFFERENT topic and feel natural/conversational.`;
@@ -3971,11 +4116,12 @@ async function renderShadowPractice() {
             if (pronScore !== undefined) {
               const score = Math.round(pronScore);
               const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+              // Word-level data — must be defined BEFORE it is stored/used
+              var words = nb?.Words || pa?.Words || [];
               S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0), words: words });
 
               // Word-level accuracy visualization
               var wordsHtml = '';
-              var words = nb?.Words || pa?.Words || [];
               if (words.length > 0) {
                 wordsHtml = '<div style="margin-top:12px;line-height:2.2;font-size:15px;display:flex;flex-wrap:wrap;gap:2px 6px">' +
                   words.map(function(w) {
@@ -3991,6 +4137,18 @@ async function renderShadowPractice() {
                     return '<span style="color:' + color + ';text-decoration:' + decoration + ';font-weight:600" title="' + Math.round(wacc) + '点">' +
                            esc(w.Word || '') + label + '</span>';
                   }).join('') + '</div>';
+              }
+
+              // Collect mispronounced words for pronunciation practice
+              if (words && words.length > 0) {
+                words.forEach(function(w) {
+                  var wpa = w.PronunciationAssessment || w;
+                  var wacc = wpa.AccuracyScore ?? 100;
+                  var errType = wpa.ErrorType || 'None';
+                  if (wacc < 70 && errType !== 'Insertion' && w.Word && w.Word.length > 1) {
+                    savePronWeakWord(w.Word.toLowerCase(), Math.round(wacc), sent.en);
+                  }
+                });
               }
 
               $("shResult").classList.remove("hidden");
@@ -4037,6 +4195,21 @@ async function renderShadowPractice() {
 
 function renderShadowSummary() {
   const results = S.shadowResults;
+  // Guard: no evaluated sentences (e.g. Azure key missing) — avoid crashing on results[worstIdx]
+  if (results.length === 0) {
+    app.innerHTML = `
+      <div class="navbar"><button class="back" id="shsBack0">←</button><div class="title">Shadowing 結果</div></div>
+      <div class="card" style="text-align:center;padding:40px">
+        <div class="text-sm text-muted">評価できた文がありませんでした。<br>Shadowingの発音採点には Azure Speech キーが必要です。<br>⚙️ 設定から登録してください。</div>
+      </div>
+      <button class="btn btn-primary w-full mt-16 mb-16" id="shsHome0">ホームに戻る</button>`;
+    const shsBack = () => {
+      if (S.routine.active) { S.routine.scores.push(0); advanceRoutine(); }
+      else { S.screen = "home"; render(); }
+    };
+    $("shsBack0").onclick = $("shsHome0").onclick = shsBack;
+    return;
+  }
   const avg = results.length > 0 ? Math.round(results.reduce((a,r) => a+r.score, 0) / results.length) : 0;
   updateStreak();
   var scoredResults = results.filter(r => r.score > 0);

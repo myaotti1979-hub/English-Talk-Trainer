@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26c";
+const VERSION = "v2026.07.26d";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -578,16 +578,27 @@ function addMistake(entry) {
   while (m.length > 200) m.shift();
   safeLSSet("ett_mistakes", m);
 }
-function getReviewQueue() {
+// Review is kept fresh: anything not touched within REVIEW_MAX_DAYS is discarded,
+// so the queue stays in sync with recent (morning) practice instead of an endless backlog.
+const REVIEW_MAX_DAYS = 3;
+function pruneMistakes() {
   const m = getMistakes();
   const now = Date.now();
+  const kept = m.filter(e => (now - new Date(e.date).getTime()) / 86400000 <= REVIEW_MAX_DAYS);
+  if (kept.length !== m.length) safeLSSet("ett_mistakes", kept);
+  return kept;
+}
+function getReviewQueue() {
+  const m = pruneMistakes();
+  const now = Date.now();
+  // Short, capped spacing (0→1→3 days). Nothing waits longer than 3 days.
+  const intervals = [0, 1, 3];
   return m.filter(e => {
     const age = (now - new Date(e.date).getTime()) / 86400000;
-    // Spaced repetition: 0 (immediate), 1, 3, 7, 14, 30 days
-    const intervals = [0, 1, 3, 7, 14, 30];
-    const nextReview = intervals[Math.min(e.reviewed, intervals.length - 1)] || 30;
+    const nextReview = intervals[Math.min(e.reviewed || 0, intervals.length - 1)];
     return age >= nextReview;
-  }).slice(0, 10);
+  }).sort((a, b) => new Date(b.date) - new Date(a.date)) // freshest (today's morning) first
+    .slice(0, 10);
 }
 function markReviewed(idx) {
   const m = getMistakes();
@@ -1619,7 +1630,7 @@ function renderHome() {
         <div class="text-sm" style="font-weight:700">🌙 夜の弱点コーチング（約15分）</div>
         ${new Date().getHours() >= 16 || new Date().getHours() < 4 ? '<span class="tag tag-accent">今の時間のおすすめ</span>' : ''}
       </div>
-      <div class="text-xs mt-4" style="color:#1a2a3a">復習 → あなたの弱点を自動で強化 → 仕上げ</div>
+      <div class="text-xs mt-4" style="color:#1a2a3a">その日の朝に練習した内容を、夜に復習して定着</div>
       <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップして今夜のメニューを開始</div>
     </div>
 
@@ -1762,6 +1773,8 @@ function startRoutine(theme) {
   // Save topic info for Flash/Shadowing continuity
   S.routine.topicLabel = pick.label || '';
   S.routine.topicPrompt = pick.prompt || '';
+  // Persist today's practice so the evening coaching can reinforce THIS morning's content
+  safeLSSet("ett_today", { date: localDateKey(), themeKey: theme, themeLabel: rt.label, topicLabel: pick.label || '', topicPrompt: pick.prompt || '' });
   S.screen = "freetalk";
   startFreeTalkSession();
 }
@@ -2431,15 +2444,44 @@ function getWeakestSkill() {
   return s.reduce(function(a,b){ return a.val <= b.val ? a : b; });
 }
 
+// What did the learner practice TODAY? (used to make evening coaching follow the morning)
+function getTodayPractice() {
+  var today = localDateKey();
+  var marker = null;
+  try { marker = JSON.parse(localStorage.getItem("ett_today") || "null"); } catch(e) {}
+  if (marker && marker.date !== today) marker = null;
+  var mistakes = getMistakes().filter(function(m){ return (m.date || '').slice(0,10) === today; });
+  var pron = getPronWeakWords().filter(function(w){ return (w.lastDate || '').slice(0,10) === today; });
+  var sessions = getHistory().filter(function(h){ return (h.date || '').slice(0,10) === today; });
+  return { today:today, marker:marker, mistakes:mistakes, pron:pron, sessions:sessions, has: !!(marker || mistakes.length || pron.length || sessions.length) };
+}
+
 function initCoach() {
+  var tp = getTodayPractice();
   var weak = getWeakestSkill();
   var weakKey = weak ? weak.key : 'fluency';
   var weakName = weak ? weak.name : '流暢さ';
+
+  // Block selection. In "daily" mode we bias toward the morning's material.
   var block;
-  if (weakKey === 'pron') block = S.azureKey ? 'pron' : 'fluency';
-  else if (weakKey === 'fluency' || weakKey === 'speed') block = 'fluency';
-  else block = 'upgrade'; // grammar / vocab / natural
-  S.coach = { active:true, view:'intro', weakKey:weakKey, weakName:weakName, block:block, data:{}, startTime:Date.now() };
+  if (tp.pron.length >= 1 && S.azureKey) {
+    block = 'pron';                                   // reinforce this morning's mispronounced words
+  } else if (weakKey === 'fluency' || weakKey === 'speed') {
+    block = 'fluency';
+  } else if (weakKey === 'pron') {
+    block = S.azureKey ? 'pron' : 'fluency';
+  } else {
+    block = 'upgrade';                                // grammar / vocab / natural
+  }
+
+  S.coach = {
+    active:true, view:'intro', weakKey:weakKey, weakName:weakName, block:block,
+    daily: tp.has,
+    themeLabel: tp.marker ? (tp.marker.topicLabel || tp.marker.themeLabel || '') : '',
+    themeName:  tp.marker ? (tp.marker.themeLabel || '') : '',
+    todayPronWords: tp.pron.map(function(w){ return w.word; }),
+    data:{}, startTime:Date.now()
+  };
   S.cost = { sttSeconds:0, pronSeconds:0, ttsChars:0, geminiInTokens:0, geminiOutTokens:0, searchCalls:0 };
   S.screen = 'coach';
   renderCoachIntro();
@@ -2456,17 +2498,20 @@ function renderCoachCurrent() {
 function renderCoachIntro() {
   S.coach.view = 'intro';
   var q = getReviewQueue().length;
-  var blockLabel = S.coach.block==='pron' ? '🎧 発音の集中練習（録音採点）' : S.coach.block==='fluency' ? '⚡ 4/3/2 フリューエンシー（90→60→40秒）' : '✨ 言い換えラダー（B1→B2に引き上げ）';
-  var weak = getWeakestSkill();
+  var themed = S.coach.daily && S.coach.themeLabel;
+  var blockLabel = S.coach.block==='pron' ? '🎧 発音の集中練習（録音採点' + (S.coach.todayPronWords.length ? '・今朝の苦手単語' : '') + '）' : S.coach.block==='fluency' ? '⚡ 4/3/2 フリューエンシー（90→60→40秒）' + (themed ? '・朝のテーマで' : '') : '✨ 言い換えラダー（B1→B2に引き上げ）' + (themed ? '・朝のテーマで' : '');
+  var lead = S.coach.daily
+    ? ('今朝の練習' + (S.coach.themeLabel ? '「' + esc(S.coach.themeLabel) + '」' : '') + 'の内容を、夜にもう一度なぞって定着させます。')
+    : (getWeakestSkill() ? '今日は朝の練習が見つからないので、弱点データから組みました。' : 'まだデータが少ないので、まずは流暢さを鍛えます。');
   app.innerHTML =
     '<div class="navbar"><button class="back" id="coBack">←</button><div class="title">🌙 夜のコーチング</div></div>' +
     '<div class="card" style="background:linear-gradient(135deg,#e0e7ff,#c7d2fe);border:none">' +
-      '<div class="text-sm" style="font-weight:700">今夜のメニュー（約15分）</div>' +
-      '<div class="text-xs mt-8" style="color:#1a2a3a">' + (weak ? 'あなたの弱点データから自動で組みました。' : 'まだデータが少ないので、まずは流暢さを鍛えます。データが貯まると弱点に自動で最適化されます。') + '</div>' +
+      '<div class="text-sm" style="font-weight:700">' + (S.coach.daily ? '今朝の復習コーチング（約15分）' : '今夜のメニュー（約15分）') + '</div>' +
+      '<div class="text-xs mt-8" style="color:#1a2a3a">' + lead + '</div>' +
     '</div>' +
     '<div class="card">' +
-      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>① 復習</strong> <span class="text-xs text-muted">' + (q>0 ? q+'問の間隔反復' : '（今日は対象なし・スキップ）') + '</span></div>' +
-      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>② 弱点強化：' + esc(S.coach.weakName) + '</strong><div class="text-xs text-muted">' + blockLabel + '</div></div>' +
+      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>① 復習</strong> <span class="text-xs text-muted">' + (q>0 ? q+'問（今日〜直近3日の間違い）' : '（今日は対象なし・スキップ）') + '</span></div>' +
+      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>② 強化：' + esc(S.coach.weakName) + '</strong><div class="text-xs text-muted">' + blockLabel + '</div></div>' +
       '<div style="padding:10px 0"><strong>③ 仕上げ</strong> <span class="text-xs text-muted">今日の要点＋目標表現を復習へ</span></div>' +
     '</div>' +
     (S.coach.block==='pron' && !S.azureKey ? '<p class="text-xs text-red" style="text-align:center">⚠️ 発音採点にはAzure Speechキーが必要です</p>' : '') +
@@ -2524,14 +2569,18 @@ async function startCoach432() {
   if (!srSupported()) { startCoachUpgrade(); return; }  // needs speech recognition
   app.innerHTML = _coachLoading('🎯 話題を準備中...');
   var lvl = S.ftLevel || 'B1';
-  try {
+  // Follow the morning theme when available; otherwise pick a random topic
+  var topicArea = S.coach.themeLabel;
+  if (!topicArea) {
     var topics = FT_ALL_TOPICS.filter(function(t){ return !t.id.startsWith('si_') && t.prompt!=='__CUSTOM__' && !t.prompt.startsWith('__NEWS') && t.id!=='free_random' && t.id!=='free_any'; });
-    var pick = topics[Math.floor(Math.random()*topics.length)];
-    var raw = await geminiChat([{ role:'user', content:'Create ONE concrete speaking cue for a ' + lvl + ' Japanese English learner to talk about for 90 seconds. Topic area: ' + (pick.label||'daily life') + '. Make it personal and easy to start. Return JSON: {"cue_ja":"日本語でお題（具体的に1文）","cue_en":"English version"}' }], "JSON only.", true);
+    topicArea = (topics[Math.floor(Math.random()*topics.length)] || {}).label || 'daily life';
+  }
+  try {
+    var raw = await geminiChat([{ role:'user', content:'Create ONE concrete speaking cue for a ' + lvl + ' Japanese English learner to talk about for 90 seconds. Topic area: ' + topicArea + '. Make it personal and easy to start. Return JSON: {"cue_ja":"日本語でお題（具体的に1文）","cue_en":"English version"}' }], "JSON only.", true);
     var d = safeJSON(raw);
-    S.coach.data.cue = d.cue_ja || (pick.label + 'について話してください');
+    S.coach.data.cue = d.cue_ja || (topicArea + 'について話してください');
     S.coach.data.cueEn = d.cue_en || '';
-  } catch(e) { S.coach.data.cue = '最近あった出来事について話してください'; S.coach.data.cueEn = ''; }
+  } catch(e) { S.coach.data.cue = (topicArea || '最近あった出来事') + 'について話してください'; S.coach.data.cueEn = ''; }
   S.coach.data.round = 0;
   S.coach.data.times = [90, 60, 40];
   S.coach.data.wpm = [];
@@ -2627,10 +2676,11 @@ async function renderCoachUpgrade() {
   var lvl = S.ftLevel || 'B1';
   var focusMap = { grammar:'grammatical accuracy (tenses, articles, agreement)', vocab:'richer vocabulary and natural collocations', natural:'natural, native-like phrasing' };
   var focus = focusMap[S.coach.weakKey] || 'natural phrasing';
+  var themeCtx = S.coach.themeLabel ? ' Relate the situation to the theme "' + S.coach.themeLabel + '" (what they practiced this morning).' : '';
   try {
-    var raw0 = await geminiChat([{ role:'user', content:'Give ONE short, concrete speaking prompt for a ' + lvl + ' Japanese learner — a real everyday situation to respond to in 1-2 English sentences. Return JSON: {"ja":"日本語のお題（1文・具体的に）","hint":"使えるヒント（日本語）"}' }], "JSON only.", true);
+    var raw0 = await geminiChat([{ role:'user', content:'Give ONE short, concrete speaking prompt for a ' + lvl + ' Japanese learner — a real everyday situation to respond to in 1-2 English sentences.' + themeCtx + ' Return JSON: {"ja":"日本語のお題（1文・具体的に）","hint":"使えるヒント（日本語）"}' }], "JSON only.", true);
     S.coach.data.upPrompt = safeJSON(raw0);
-  } catch(e) { S.coach.data.upPrompt = { ja:'週末の予定を友人に英語で伝えてください', hint:'' }; }
+  } catch(e) { S.coach.data.upPrompt = { ja:(S.coach.themeLabel ? '「'+S.coach.themeLabel+'」について英語で話してください' : '週末の予定を友人に英語で伝えてください'), hint:'' }; }
   var q = S.coach.data.upPrompt || { ja:'', hint:'' };
   app.innerHTML =
     '<div class="navbar"><button class="back" id="cuBack">←</button><div class="title">✨ 言い換え ' + (i+1) + '/' + S.coach.data.upCount + '</div></div>' +
@@ -2687,9 +2737,13 @@ async function startCoachPron() {
   app.innerHTML = _coachLoading('🎧 発音文を準備中...');
   var lvl = CEFR_LEVELS[S.ftLevel] || CEFR_LEVELS.B1;
   try {
-    var weakWords = getPronWeakWords().sort(function(a,b){ return a.lastScore-b.lastScore; }).slice(0,5).map(function(w){ return w.word; });
+    // Prefer THIS MORNING's mispronounced words; otherwise the overall weakest
+    var weakWords = (S.coach.todayPronWords && S.coach.todayPronWords.length)
+      ? S.coach.todayPronWords.slice(0, 5)
+      : getPronWeakWords().sort(function(a,b){ return a.lastScore-b.lastScore; }).slice(0,5).map(function(w){ return w.word; });
     var extra = weakWords.length ? 'Try to naturally include some of these words the learner struggles with: ' + weakWords.join(', ') + '.' : '';
-    var raw = await geminiChat([{ role:'user', content:'Generate 3 natural spoken English sentences for shadowing at ' + lvl.id + ' level.\n' + lvl.shadowRules + '\n' + extra + '\nReturn JSON: {"sentences":[{"en":"...","ja":"..."}]}' }], "JSON only.", true);
+    var themeExtra = S.coach.themeLabel ? ' Keep the sentences related to the theme "' + S.coach.themeLabel + '".' : '';
+    var raw = await geminiChat([{ role:'user', content:'Generate 3 natural spoken English sentences for shadowing at ' + lvl.id + ' level.\n' + lvl.shadowRules + '\n' + extra + themeExtra + '\nReturn JSON: {"sentences":[{"en":"...","ja":"..."}]}' }], "JSON only.", true);
     S.coach.data.pron = safeJSON(raw).sentences || [];
   } catch(e) { S.coach.data.pron = []; }
   if (!S.coach.data.pron.length) { startCoach432(); return; }  // fallback
@@ -2768,7 +2822,7 @@ function renderCoachWrap() {
     '<div class="summary-header" style="padding-top:40px">' +
       '<div style="font-size:48px">🌙</div>' +
       '<div class="label">今夜のコーチング完了！</div>' +
-      '<div class="text-sm text-muted mt-8">弱点「' + esc(S.coach.weakName) + '」を強化しました</div>' +
+      '<div class="text-sm text-muted mt-8">' + (S.coach.daily ? ('今朝の練習' + (S.coach.themeLabel ? '「' + esc(S.coach.themeLabel) + '」' : '') + 'を復習しました') : ('弱点「' + esc(S.coach.weakName) + '」を強化しました')) + '</div>' +
     '</div>' +
     (chunks.length ? '<div class="card"><div class="text-sm" style="font-weight:600;margin-bottom:8px">🎯 今日の表現（復習に追加済み）</div>' + chunks.map(function(c){ return '<div class="challenge-expr"><div class="expr-en">' + esc(c.en) + '</div><div class="expr-ja">' + esc(c.ja||'') + '</div></div>'; }).join('') + '</div>' : '') +
     '<div class="card" style="background:#f0fdf4;border-color:#bbf7d0"><div class="text-sm">おつかれさまでした。夜に復習した内容は睡眠中に定着します。明日の朝はルーティンで軽く口を動かしましょう 🌅</div></div>' +

@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26f";
+const VERSION = "v2026.07.26g";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2453,7 +2453,20 @@ function getTodayPractice() {
   var mistakes = getMistakes().filter(function(m){ return (m.date || '').slice(0,10) === today; });
   var pron = getPronWeakWords().filter(function(w){ return (w.lastDate || '').slice(0,10) === today; });
   var sessions = getHistory().filter(function(h){ return (h.date || '').slice(0,10) === today; });
-  return { today:today, marker:marker, mistakes:mistakes, pron:pron, sessions:sessions, has: !!(marker || mistakes.length || pron.length || sessions.length) };
+  // Resolve the morning theme robustly: prefer the marker, else derive from today's
+  // actual sessions (Free Talk topic is the most content-bearing). This keeps the
+  // evening on-theme even if the marker is missing (e.g. morning run on an older build).
+  var themeLabel = marker ? (marker.topicLabel || marker.themeLabel || '') : '';
+  if (!themeLabel && sessions.length) {
+    var ft = sessions.filter(function(h){ return h.mode === 'freetalk' && h.topic; });
+    var src = ft.length ? ft[ft.length-1] : null;
+    if (!src) {
+      var withTopic = sessions.filter(function(h){ return h.topic && h.topic !== 'Description' && h.topic !== 'Shadowing' && h.mode !== 'coach'; });
+      src = withTopic.length ? withTopic[withTopic.length-1] : null;
+    }
+    if (src && src.topic) themeLabel = src.topic;
+  }
+  return { today:today, marker:marker, mistakes:mistakes, pron:pron, sessions:sessions, themeLabel:themeLabel, has: !!(marker || mistakes.length || pron.length || sessions.length) };
 }
 
 function initCoach() {
@@ -2477,7 +2490,7 @@ function initCoach() {
   S.coach = {
     active:true, view:'intro', weakKey:weakKey, weakName:weakName, block:block,
     daily: tp.has,
-    themeLabel: tp.marker ? (tp.marker.topicLabel || tp.marker.themeLabel || '') : '',
+    themeLabel: tp.themeLabel || '',
     themeName:  tp.marker ? (tp.marker.themeLabel || '') : '',
     todayPronWords: tp.pron.map(function(w){ return w.word; }),
     data:{}, startTime:Date.now()

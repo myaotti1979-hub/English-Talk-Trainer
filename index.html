@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26d";
+const VERSION = "v2026.07.26f";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2499,7 +2499,16 @@ function renderCoachIntro() {
   S.coach.view = 'intro';
   var q = getReviewQueue().length;
   var themed = S.coach.daily && S.coach.themeLabel;
-  var blockLabel = S.coach.block==='pron' ? '🎧 発音の集中練習（録音採点' + (S.coach.todayPronWords.length ? '・今朝の苦手単語' : '') + '）' : S.coach.block==='fluency' ? '⚡ 4/3/2 フリューエンシー（90→60→40秒）' + (themed ? '・朝のテーマで' : '') : '✨ 言い換えラダー（B1→B2に引き上げ）' + (themed ? '・朝のテーマで' : '');
+  // Daily → 総ざらい parts; else → single block label
+  var dailyParts = [];
+  if (S.coach.daily) {
+    dailyParts.push('✨ 言い換え（朝のテーマ）');
+    if (S.azureKey) dailyParts.push('🎧 発音（今朝の苦手単語）');
+    dailyParts.push('⚡ 4/3/2 で締め');
+  }
+  var blockLabel = S.coach.daily
+    ? dailyParts.join(' → ')
+    : (S.coach.block==='pron' ? '🎧 発音の集中練習（録音採点' + (S.coach.todayPronWords.length ? '・今朝の苦手単語' : '') + '）' : S.coach.block==='fluency' ? '⚡ 4/3/2 フリューエンシー（90→60→40秒）' + (themed ? '・朝のテーマで' : '') : '✨ 言い換えラダー（B1→B2に引き上げ）' + (themed ? '・朝のテーマで' : ''));
   var lead = S.coach.daily
     ? ('今朝の練習' + (S.coach.themeLabel ? '「' + esc(S.coach.themeLabel) + '」' : '') + 'の内容を、夜にもう一度なぞって定着させます。')
     : (getWeakestSkill() ? '今日は朝の練習が見つからないので、弱点データから組みました。' : 'まだデータが少ないので、まずは流暢さを鍛えます。');
@@ -2511,7 +2520,7 @@ function renderCoachIntro() {
     '</div>' +
     '<div class="card">' +
       '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>① 復習</strong> <span class="text-xs text-muted">' + (q>0 ? q+'問（今日〜直近3日の間違い）' : '（今日は対象なし・スキップ）') + '</span></div>' +
-      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>② 強化：' + esc(S.coach.weakName) + '</strong><div class="text-xs text-muted">' + blockLabel + '</div></div>' +
+      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>② ' + (S.coach.daily ? '朝の総ざらい' : ('強化：' + esc(S.coach.weakName))) + '</strong><div class="text-xs text-muted">' + blockLabel + '</div></div>' +
       '<div style="padding:10px 0"><strong>③ 仕上げ</strong> <span class="text-xs text-muted">今日の要点＋目標表現を復習へ</span></div>' +
     '</div>' +
     (S.coach.block==='pron' && !S.azureKey ? '<p class="text-xs text-red" style="text-align:center">⚠️ 発音採点にはAzure Speechキーが必要です</p>' : '') +
@@ -2556,17 +2565,47 @@ function renderCoachReview() {
   $("crEasy").onclick = function(){ if(realIdx>=0) markReviewed(realIdx); S.coach.data.rqIdx++; renderCoachReview(); };
 }
 
-// ── Phase 2: Weakness block ──
+// ── Phase 2 ──
+// Daily (morning practice exists) → "総ざらい": touch each morning part in sequence.
+// Fallback (no morning practice) → a single weakness block.
 function startCoachBlock() {
   S.coach.view = 'block';
-  if (S.coach.block === 'pron' && S.azureKey) startCoachPron();
-  else if (S.coach.block === 'fluency') startCoach432();
-  else startCoachUpgrade();
+  if (S.coach.daily) {
+    var plan = [];
+    plan.push('upgrade');                 // 会話・描写の復習（朝のテーマで言い換え）
+    if (S.azureKey) plan.push('pron');    // Shadowing復習（今朝の苦手単語）
+    plan.push('432');                     // 流暢さの締め（4/3/2）
+    S.coach.plan = plan;
+    S.coach.partIdx = 0;
+    startCoachPart();
+  } else {
+    S.coach.plan = null;
+    if (S.coach.block === 'pron' && S.azureKey) startCoachPron();
+    else if (S.coach.block === 'fluency') startCoach432();
+    else startCoachUpgrade();
+  }
+}
+// Chain driver for the 総ざらい sequence
+function startCoachPart() {
+  var plan = S.coach.plan || [];
+  var i = S.coach.partIdx || 0;
+  if (i >= plan.length) { startCoachWrap(); return; }
+  var part = plan[i];
+  if (part === 'upgrade') startCoachUpgrade();
+  else if (part === 'pron') startCoachPron();
+  else if (part === '432') startCoach432();
+  else advanceCoachPart();
+}
+function advanceCoachPart() { S.coach.partIdx = (S.coach.partIdx || 0) + 1; startCoachPart(); }
+// A block finished: advance the chain, or go to wrap in single-block mode
+function coachPartDone() {
+  if (S.coach.plan) advanceCoachPart();
+  else startCoachWrap();
 }
 
 // ── 4/3/2 Fluency ──
 async function startCoach432() {
-  if (!srSupported()) { startCoachUpgrade(); return; }  // needs speech recognition
+  if (!srSupported()) { if (S.coach.plan) { coachPartDone(); return; } startCoachUpgrade(); return; }  // needs speech recognition
   app.innerHTML = _coachLoading('🎯 話題を準備中...');
   var lvl = S.ftLevel || 'B1';
   // Follow the morning theme when available; otherwise pick a random topic
@@ -2582,7 +2621,9 @@ async function startCoach432() {
     S.coach.data.cueEn = d.cue_en || '';
   } catch(e) { S.coach.data.cue = (topicArea || '最近あった出来事') + 'について話してください'; S.coach.data.cueEn = ''; }
   S.coach.data.round = 0;
-  S.coach.data.times = [90, 60, 40];
+  // Azure STT (REST) caps a single utterance at ~60s, so keep rounds under that
+  // unless Web Speech (no cap) is explicitly selected.
+  S.coach.data.times = (S.srMode === 'webspeech') ? [90, 60, 40] : [55, 40, 30];
   S.coach.data.wpm = [];
   renderCoach432();
 }
@@ -2659,19 +2700,19 @@ function renderCoach432Summary() {
     '<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;gap:8px">' +
       [0,1,2].map(function(k){ return '<div><div style="font-weight:700;font-size:18px">' + (w[k]!=null?w[k]:'-') + '</div><div class="text-xs text-muted">' + S.coach.data.times[k] + '秒</div></div>'; }).join('') +
     '</div><div class="text-sm mt-12" style="text-align:center;color:' + (improved?'var(--green)':'var(--muted)') + '">' + (improved ? '🎉 繰り返すほど速く滑らかに！流暢さが伸びています。' : '同じ話題を短時間で言い切る練習は流暢さに直結します。毎日続けましょう。') + '</div></div>' +
-    '<button class="btn btn-primary w-full mt-16" id="c4Done">仕上げへ →</button>';
-  $("c4Done").onclick = function(){ startCoachWrap(); };
+    '<button class="btn btn-primary w-full mt-16" id="c4Done">' + (S.coach.plan ? '次へ →' : '仕上げへ →') + '</button>';
+  $("c4Done").onclick = function(){ coachPartDone(); };
 }
 
 // ── 言い換えラダー (upgrade) ──
 function startCoachUpgrade() {
   S.coach.data.upIdx = 0;
-  S.coach.data.upCount = 2;
+  S.coach.data.upCount = S.coach.plan ? 1 : 2;  // shorter when part of the 総ざらい chain
   renderCoachUpgrade();
 }
 async function renderCoachUpgrade() {
   var i = S.coach.data.upIdx || 0;
-  if (i >= (S.coach.data.upCount || 2)) { startCoachWrap(); return; }
+  if (i >= (S.coach.data.upCount || 2)) { coachPartDone(); return; }
   app.innerHTML = _coachLoading('✨ お題を準備中...');
   var lvl = S.ftLevel || 'B1';
   var focusMap = { grammar:'grammatical accuracy (tenses, articles, agreement)', vocab:'richer vocabulary and natural collocations', natural:'natural, native-like phrasing' };
@@ -2743,10 +2784,11 @@ async function startCoachPron() {
       : getPronWeakWords().sort(function(a,b){ return a.lastScore-b.lastScore; }).slice(0,5).map(function(w){ return w.word; });
     var extra = weakWords.length ? 'Try to naturally include some of these words the learner struggles with: ' + weakWords.join(', ') + '.' : '';
     var themeExtra = S.coach.themeLabel ? ' Keep the sentences related to the theme "' + S.coach.themeLabel + '".' : '';
-    var raw = await geminiChat([{ role:'user', content:'Generate 3 natural spoken English sentences for shadowing at ' + lvl.id + ' level.\n' + lvl.shadowRules + '\n' + extra + themeExtra + '\nReturn JSON: {"sentences":[{"en":"...","ja":"..."}]}' }], "JSON only.", true);
-    S.coach.data.pron = safeJSON(raw).sentences || [];
+    var nSent = S.coach.plan ? 2 : 3;  // shorter when part of the 総ざらい chain
+    var raw = await geminiChat([{ role:'user', content:'Generate ' + nSent + ' natural spoken English sentences for shadowing at ' + lvl.id + ' level.\n' + lvl.shadowRules + '\n' + extra + themeExtra + '\nReturn JSON: {"sentences":[{"en":"...","ja":"..."}]}' }], "JSON only.", true);
+    S.coach.data.pron = (safeJSON(raw).sentences || []).slice(0, nSent);
   } catch(e) { S.coach.data.pron = []; }
-  if (!S.coach.data.pron.length) { startCoach432(); return; }  // fallback
+  if (!S.coach.data.pron.length) { if (S.coach.plan) { coachPartDone(); return; } startCoach432(); return; }  // fallback
   S.coach.data.pIdx = 0; S.coach.data.pScores = [];
   S.ftVoice = pickVoice('shadow');
   renderCoachPron();
@@ -2804,7 +2846,7 @@ function renderCoachPronSummary() {
   var s = S.coach.data.pScores || [];
   var avg = s.length ? Math.round(s.reduce(function(a,b){ return a+b; },0)/s.length) : 0;
   S.coach.data.blockScore = avg;
-  startCoachWrap();
+  coachPartDone();
 }
 
 // ── Phase 3: Wrap ──

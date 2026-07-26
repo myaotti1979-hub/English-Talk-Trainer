@@ -37,4 +37,4 @@ Gemini API × Azure Speech × PWA
 - **Azure Speech Key**（推奨）— [Azure Portal](https://portal.azure.com/)
 
 ## Version
-v2026.07.26b
+v2026.07.26c

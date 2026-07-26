@@ -30,12 +30,13 @@ li{margin:4px 0}
 <div class="c">
 <a href="./" style="font-weight:600;font-size:14px;text-decoration:none">← アプリに戻る</a>
 <h1>📘 English Talk Trainer</h1>
-<p>AI英会話トレーニング v2026.07.26b</p>
+<p>AI英会話トレーニング v2026.07.26c</p>
 
 <div class="toc">
 <strong>目次</strong>
 <a href="#setup">1. 初期設定</a>
 <a href="#routine">2. 🚀 自動ルーティン</a>
+<a href="#coach">2.5 🌙 夜のコーチング</a>
 <a href="#freetalk">3. 🗣️ Free Talk</a>
 <a href="#flash">4. ⚡ Flash Training</a>
 <a href="#describe">5. 🎨 Description Training</a>
@@ -69,6 +70,25 @@ li{margin:4px 0}
 </ol>
 </div>
 <p>12テーマ: 日常/ビジネス/旅行/意見・社会/食べ物/経済・金融/テクノロジー/健康/文化/趣味/家族/自分のこと</p>
+<div class="tip">🌅 <strong>おすすめの使い方：朝はこのルーティン</strong>で軽く口を動かして活性化、<strong>夜は「🌙 夜のコーチング」</strong>で弱点を補強して復習で締める、という朝晩15分ずつの2部制が効果的です。</div>
+
+<h2 id="coach">2.5 🌙 夜のコーチング</h2>
+<p>あなたの学習データ（弱点レーダー・復習キュー・発音の弱点単語）から<strong>今夜のメニューを自動で処方</strong>する、弱点駆動モードです。約15分。ホーム画面のカードから開始でき、夕方以降は「今の時間のおすすめ」として強調されます。</p>
+<div class="card">
+<strong>フロー（3フェーズ）：</strong>
+<ol>
+<li><strong>① 復習</strong> — 溜まった間隔反復アイテムを先に片付け（最大5問・ウォームアップ）</li>
+<li><strong>② 弱点強化</strong> — 6軸（発音/流暢さ/文法/語彙/自然さ/瞬発力）の<strong>最弱軸を自動判定</strong>し、内容を切替
+  <ul>
+  <li>流暢さ・瞬発力 → <strong>⚡ 4/3/2 フリューエンシー</strong>（同じ話題を90→60→40秒で3回話し、WPMの伸びを可視化）</li>
+  <li>文法・語彙・自然さ → <strong>✨ 言い換えラダー</strong>（あなたの回答をB1版→B2版に引き上げ＋目標表現を提示）</li>
+  <li>発音 → <strong>🎧 発音の集中練習</strong>（録音→Azure採点→単語色分け・Azureキー必要）</li>
+  </ul>
+</li>
+<li><strong>③ 仕上げ</strong> — 今日の要点＋出てきた目標表現を<strong>復習キューに自動追加</strong>（就寝前に入れると睡眠中に定着）</li>
+</ol>
+</div>
+<div class="tip">💡 4/3/2 と言い換えラダーは音声認識（Web Speech または Azure）で動きます。データがまだ少ないときは、まず流暢さ（4/3/2）から鍛える構成になります。</div>
 
 <h2 id="freetalk">3. 🗣️ Free Talk</h2>
 <p>17カテゴリ・221トピック（うち🎭ロールプレイ68種）。</p>
@@ -186,7 +206,7 @@ li{margin:4px 0}
 </div>
 
 <div style="margin-top:40px;text-align:center;color:#5a6a7a;font-size:13px">
-<p>English Talk Trainer v2026.07.26b</p>
+<p>English Talk Trainer v2026.07.26c</p>
 </div>
 </div>
 </body>

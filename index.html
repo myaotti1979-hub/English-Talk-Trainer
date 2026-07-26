@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26a";
+const VERSION = "v2026.07.26b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -1192,8 +1192,8 @@ function renderAnalysis() {
     return '<svg viewBox="0 0 260 260" style="width:100%;max-width:300px;margin:0 auto;display:block">'+grid+axes+poly1+poly2+dots+'</svg>';
   }
 
-  // Weakness analysis data
-  var ftHist = month1.filter(h => h.mode==='freetalk' && h.grammar > 0);
+  // Weakness analysis data (Free Talk + Description contribute grammar/vocab/naturalness)
+  var ftHist = month1.filter(h => (h.mode==='freetalk' || h.mode==='describe') && h.grammar > 0);
   var shHist = month1.filter(h => h.mode==='shadow' && h.accuracy > 0);
   var skills = [
     { name:'発音', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.accuracy||0),0)/shHist.length) : 0 },
@@ -1965,7 +1965,7 @@ JSON形式で返してください:
 {"questions": [
   {"ja": "具体的なシチュエーション（自然な日本語）", "en": "模範回答（${lvl.id}レベルの英語）", "hint": "使える表現2-3個"}
 ]}` }], "JSON only.", true);
-    S.descQuestions = JSON.parse(raw.replace(/```json|```/g,'').trim()).questions || [];
+    S.descQuestions = (safeJSON(raw).questions) || [];
     if (S.descQuestions.length === 0) throw new Error("生成失敗");
     S.descCurrent = 0;
     renderDescribePractice();
@@ -2019,33 +2019,68 @@ function renderDescribePractice() {
     if (!answer) return;
     this.disabled = true; this.textContent = "⏳ 評価中...";
     try {
-      var evRaw = await geminiChat([{role:"user",content:`Evaluate this English description for a ${S.descLevel} level learner.
+      var evRaw = await geminiChat([{role:"user",content:`You are an English speaking examiner. Evaluate a ${S.descLevel}-level Japanese learner's response to a described situation.
 
 ${CEFR_LEVELS[S.descLevel]?.feedbackCriteria || ''}
 
-Scenario: ${q.ja}
-Model answer: ${q.en}
-User's answer: ${answer}
+Scenario (Japanese): ${q.ja}
+One acceptable model answer (for reference ONLY — the learner does NOT need to match it): ${q.en}
+Learner's answer: ${answer}
 
-This is NOT translation. Evaluate:
-- Content: Is it relevant and complete for the scenario?
-- Vocabulary: Does it use appropriate vocabulary for ${S.descLevel} level? (not too simple, not too advanced)
-- Grammar: Accurate for ${S.descLevel} level?
-- Fluency: Natural sentence flow?
+This is NOT a translation task. The learner may take a completely different but valid approach. Do NOT penalize valid alternatives that accomplish the communicative goal.
 
-JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvements, suggest ${S.descLevel}-appropriate expressions","improved":"Polished version at ${S.descLevel} level"}`}], "JSON only.", true);
-      var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
+Score FOUR dimensions from 0 to 100 using these anchors:
+- 90-100: fully achieves the goal / natural and accurate at ${S.descLevel} level
+- 70-89: achieves the goal with minor issues
+- 50-69: partially achieves the goal / noticeable errors or gaps
+- 0-49: does not achieve the goal / major errors or off-topic
+
+Dimensions:
+- content: Did they accomplish the communicative task in the scenario? Relevant and complete?
+- vocabulary: Appropriate range for ${S.descLevel}? (not too simple, not over-reaching)
+- grammar: Accurate for ${S.descLevel} level?
+- fluency: Natural sentence flow and connection?
+
+Also list up to 3 concrete corrections (only real errors; empty array if none).
+
+Return JSON ONLY:
+{"content":{"score":75,"note":"日本語で一言"},"vocabulary":{"score":75,"note":"日本語で一言"},"grammar":{"score":75,"note":"日本語で一言"},"fluency":{"score":75,"note":"日本語で一言"},"corrections":[{"original":"誤った表現","corrected":"正しい表現","explanation":"日本語で理由"}],"improved":"A polished ${S.descLevel}-level version of the learner's answer","comment":"日本語で全体講評（良い点＋次に意識すること）"}`}], "English speaking examiner. JSON only.", true);
+      var ev = safeJSON(evRaw);
+      // Sub-scores (clamp 0-100)
+      var _cl = function(v){ v = Math.round(v||0); return Math.max(0, Math.min(100, v)); };
+      var sContent = _cl(ev.content?.score), sVocab = _cl(ev.vocabulary?.score), sGrammar = _cl(ev.grammar?.score), sFluency = _cl(ev.fluency?.score);
+      // Weighted overall computed in JS for consistency (content-heavy, task-oriented)
+      var sc = Math.round(sContent*0.35 + sGrammar*0.25 + sVocab*0.20 + sFluency*0.20);
+      var corrections = Array.isArray(ev.corrections) ? ev.corrections.filter(function(c){ return c && c.corrected; }).slice(0,3) : [];
       var dqResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
-      S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'', responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length });
-      var sc = ev.score||0, scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
+      S.descResults.push({
+        ja:q.ja, en:q.en, answer:answer, score:sc,
+        content:sContent, vocabulary:sVocab, grammar:sGrammar, fluency:sFluency,
+        notes:{ content:ev.content?.note||'', vocabulary:ev.vocabulary?.note||'', grammar:ev.grammar?.note||'', fluency:ev.fluency?.note||'' },
+        corrections:corrections, improved:ev.improved||'', feedback:ev.comment||'',
+        responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length
+      });
+      var scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
+      var subCell = function(label, val, note){
+        var c = val>=80?'var(--green)':val>=60?'var(--yellow)':'var(--red)';
+        return '<div style="text-align:center"><div style="font-weight:700;color:'+c+'">'+val+'</div><div class="text-xs text-muted">'+label+'</div>'+(note?'<div class="text-xs text-muted" style="margin-top:2px">'+esc(note)+'</div>':'')+'</div>';
+      };
       $("dsInputArea").classList.add("hidden");
       $("dsResult").classList.remove("hidden");
       $("dsResult").innerHTML = `<div class="card" style="padding:20px">
         <div style="font-size:32px;font-weight:800;color:${scCol};text-align:center">${sc}</div>
-        <div class="text-xs text-muted mt-12">🗣️ あなた:</div><div class="text-sm mt-4">${esc(answer)}</div>
-        <div class="text-xs mt-12" style="color:var(--green)">✅ 模範:</div><div class="text-sm mt-4" style="color:var(--green)">${esc(q.en)}</div>
-        ${ev.improved?'<div class="text-xs mt-12" style="color:var(--accent)">✨ 改善案:</div><div class="text-sm mt-4" style="color:var(--accent)">'+esc(ev.improved)+'</div>':''}
-        <div class="text-xs text-muted mt-12">${esc(ev.feedback||'')}</div>
+        <div class="text-xs text-muted" style="text-align:center;margin-top:-4px">総合スコア</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:14px">
+          ${subCell('内容', sContent, ev.content?.note)}
+          ${subCell('語彙', sVocab, ev.vocabulary?.note)}
+          ${subCell('文法', sGrammar, ev.grammar?.note)}
+          ${subCell('流暢さ', sFluency, ev.fluency?.note)}
+        </div>
+        <div class="text-xs text-muted mt-16">🗣️ あなた:</div><div class="text-sm mt-4">${esc(answer)}</div>
+        <div class="text-xs mt-12" style="color:var(--green)">✅ 模範（一例）:</div><div class="text-sm mt-4" style="color:var(--green)">${esc(q.en)}</div>
+        ${ev.improved?'<div class="text-xs mt-12" style="color:var(--accent)">✨ あなたの回答を磨くと:</div><div class="text-sm mt-4" style="color:var(--accent)">'+esc(ev.improved)+'</div>':''}
+        ${corrections.length?'<div class="text-xs mt-12" style="color:var(--red)">🔄 修正ポイント:</div>'+corrections.map(function(c){return '<div style="padding:6px 0"><div class="text-sm"><span class="text-red">✗</span> '+esc(c.original||'')+'</div><div class="text-sm"><span class="text-green">✓</span> '+esc(c.corrected)+'</div>'+(c.explanation?'<div class="text-xs text-muted">'+esc(c.explanation)+'</div>':'')+'</div>';}).join(''):''}
+        <div class="text-xs text-muted mt-12">${esc(ev.comment||'')}</div>
         <button class="btn btn-primary w-full mt-16" id="dsNext">次へ →</button>
       </div>`;
       $("dsNext").onclick = () => { S.descCurrent++; renderDescribePractice(); };
@@ -2070,8 +2105,22 @@ function renderDescribeSummary() {
   var descTotalWords = dTimedResults.reduce((a,r)=>a+(r.wordCount||0),0);
   var descTotalTime = dTimedResults.reduce((a,r)=>a+r.responseTime,0);
   var descWpm = descTotalTime > 0 ? Math.round(descTotalWords / (descTotalTime / 60000)) : 0;
-  saveSession({ mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5, avgResponseTime:descAvgResp, wordsPerMin:descWpm });
+  // Average sub-scores across scored questions (feeds the weakness radar)
+  var _subAvg = function(key){ var f = scored.filter(function(r){ return r[key] > 0; }); return f.length > 0 ? Math.round(f.reduce(function(a,r){return a+r[key];},0)/f.length) : 0; };
+  var descGrammar = _subAvg('grammar'), descVocab = _subAvg('vocabulary'), descFluency = _subAvg('fluency'), descContent = _subAvg('content');
+  saveSession({
+    mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5,
+    avgResponseTime:descAvgResp, wordsPerMin:descWpm,
+    grammar:descGrammar, vocabulary:descVocab, naturalness:descFluency, content:descContent
+  });
   addToCumulativeCost(calcSessionTotal());
+
+  // Feed corrections into the spaced-repetition review queue (like Free Talk / Flash)
+  scored.forEach(function(r){
+    (r.corrections || []).forEach(function(c){
+      if (c && c.corrected) addMistake({ original: c.original || '', corrected: c.corrected, explanation: c.explanation || '', source: (r.ja||'').slice(0,60), mode: "describe" });
+    });
+  });
 
   // Save as conversation log for review
   var descMessages = [];
@@ -2177,7 +2226,7 @@ For each word provide:
 
 Return JSON:
 {"drills": [{"word": "example", "tip": "日本語での発音アドバイス", "sentences": ["Example sentence 1.", "Example sentence 2."]}]}` }], "JSON only.", true);
-    var data = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    var data = safeJSON(raw);
     var drills = data.drills || [];
     if (drills.length === 0) throw new Error("生成失敗");
     S._pronDrills = drills;
@@ -2186,6 +2235,28 @@ Return JSON:
   } catch(e) {
     app.innerHTML = `<div class="card"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-8" onclick="renderPronPractice()">戻る</button></div>`;
   }
+}
+
+// Shared word-level pronunciation coloring (used by drill; mirrors Shadowing)
+function pronWordsHTML(words, small) {
+  if (!words || !words.length) return '';
+  var fs = small ? '13px' : '15px';
+  return '<div style="margin-top:10px;line-height:2.2;font-size:' + fs + ';display:flex;flex-wrap:wrap;gap:2px 6px">' +
+    words.map(function(w) {
+      var wpa = w.PronunciationAssessment || w;
+      var wacc = wpa.AccuracyScore != null ? wpa.AccuracyScore : 0;
+      var errType = wpa.ErrorType || 'None';
+      var color = errType === 'Omission' ? '#9ca3af' : errType === 'Insertion' ? '#f59e0b' : wacc >= 80 ? '#059669' : wacc >= 50 ? '#f59e0b' : '#dc2626';
+      var dec = errType === 'Omission' ? 'line-through' : 'none';
+      var label = errType === 'Omission' ? '(未発話)' : '';
+      return '<span style="color:' + color + ';text-decoration:' + dec + ';font-weight:600" title="' + Math.round(wacc) + '点">' + esc(w.Word || '') + label + '</span>';
+    }).join('') + '</div>';
+}
+
+function _pdCleanup() {
+  if (S._pdRecorder) { try { S._pdRecorder.stop(); } catch(e) {} S._pdRecorder = null; }
+  S._pdRecording = false;
+  releaseMicStream();
 }
 
 function renderPronDrillStep() {
@@ -2212,23 +2283,101 @@ function renderPronDrillStep() {
     </div>
     <div class="card">
       <div class="text-sm" style="font-weight:600;margin-bottom:8px">📝 例文で練習</div>
+      ${S.azureKey ? '<div class="text-xs text-muted mb-8">🎤 録音すると Azure 発音評価でスコアが出ます。80点を超えると弱点リストから卒業！</div>' : '<div class="text-xs text-muted mb-8">💡 Azure Speech キーを設定すると、録音して発音スコアを測れます。</div>'}
       ${(d.sentences||[]).map((s,si) => `
-        <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
           <div class="text-sm">${esc(s)}</div>
-          <button class="btn-ghost pd-speak-sent" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px;margin-top:4px">🔊 再生</button>
+          <div class="flex gap-8 mt-4" style="flex-wrap:wrap">
+            <button class="btn-ghost pd-speak-sent" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px">🔊 再生</button>
+            ${S.azureKey ? `<button class="btn-ghost pd-rec" data-si="${si}" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--red);font-size:13px">🎤 録音して発音チェック</button>` : ''}
+          </div>
+          <div class="pd-result" id="pdResult${si}"></div>
         </div>
       `).join('')}
     </div>
     <button class="btn btn-primary w-full mt-16" id="pdNext">次の単語 →</button>
   `;
-  $("pdBack").onclick = () => { if(confirm("中断しますか？")) renderPronPractice(); };
+  $("pdBack").onclick = () => { if(confirm("中断しますか？")) { _pdCleanup(); stopAudio(); renderPronPractice(); } };
   $("pdSpeak").onclick = function() {
     if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(d.word);u.lang='en-US';u.rate=0.7;speechSynthesis.speak(u);}
   };
   document.querySelectorAll(".pd-speak-sent").forEach(btn => {
     btn.onclick = function() { if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(this.dataset.text);u.lang='en-US';u.rate=0.85;speechSynthesis.speak(u);} };
   });
-  $("pdNext").onclick = () => { S._pronDrillIdx++; renderPronDrillStep(); };
+
+  // Record + Azure Pronunciation Assessment per example sentence
+  document.querySelectorAll(".pd-rec").forEach(function(btn) {
+    btn.onclick = async function() {
+      var self = this;
+      var si = parseInt(self.dataset.si);
+      var refText = self.dataset.text;
+      var resultEl = $("pdResult" + si);
+
+      if (S._pdRecording) {
+        // ── STOP & evaluate ──
+        self.disabled = true; self.textContent = "⏳ 評価中...";
+        var rec = S._pdRecorder; S._pdRecorder = null; S._pdRecording = false;
+        var wav = rec ? await rec.stop() : null;
+        try {
+          if (!wav || wav.size <= 44) throw new Error("録音が空でした。もう一度お試しください。");
+          var result = await azurePronAssess(wav, refText);
+          var nb = result && result.NBest ? result.NBest[0] : null;
+          var pa = (nb && nb.PronunciationAssessment) || {};
+          var pronScore = pa.PronScore != null ? pa.PronScore : (nb ? nb.PronScore : undefined);
+          var wordsArr = (nb && nb.Words) || pa.Words || [];
+          if (pronScore == null) {
+            resultEl.innerHTML = '<div class="text-xs text-red mt-8">発音評価スコアを取得できませんでした。もう一度お試しください。</div>';
+          } else {
+            var score = Math.round(pronScore);
+            var col = score>=80?'var(--green)':score>=60?'var(--yellow)':'var(--red)';
+            // Locate the target word inside the sentence and grade it
+            var norm = function(x){ return (x||'').toLowerCase().replace(/[^a-z']/g,''); };
+            var target = norm(d.word);
+            var tw = wordsArr.find(function(w){ return norm(w.Word) === target; });
+            var twAcc = tw ? Math.round(((tw.PronunciationAssessment||tw).AccuracyScore) || 0) : null;
+            var graduated = false;
+            if (twAcc != null) {
+              savePronWeakWord(d.word.toLowerCase(), twAcc, refText);
+              if (twAcc >= 80) {
+                var list = getPronWeakWords().filter(function(w){ return w.word !== d.word.toLowerCase(); });
+                safeLSSet("ett_pron_weak", list);
+                graduated = true;
+              }
+            }
+            resultEl.innerHTML =
+              '<div class="mt-8" style="text-align:center">' +
+                '<span style="font-size:24px;font-weight:800;color:' + col + '">' + score + '</span> <span class="text-xs text-muted">文全体</span>' +
+                (twAcc != null ? ' ／ <span style="font-weight:700;color:' + (twAcc>=80?'var(--green)':twAcc>=50?'var(--yellow)':'var(--red)') + '">' + twAcc + '</span> <span class="text-xs text-muted">「' + esc(d.word) + '」</span>' : '') +
+              '</div>' +
+              pronWordsHTML(wordsArr, true) +
+              (graduated ? '<div class="tip mt-8" style="text-align:center">🎉 「' + esc(d.word) + '」が80点超え！弱点リストから卒業です。</div>' : '');
+          }
+        } catch(e) {
+          resultEl.innerHTML = '<div class="text-xs text-red mt-8">' + esc(e.message) + '</div>';
+        }
+        self.disabled = false; self.textContent = "🎤 もう一度録音"; self.style.color = "var(--red)";
+        document.querySelectorAll(".pd-rec").forEach(function(b){ if (b !== self) b.disabled = false; });
+      } else {
+        // ── START recording ──
+        stopAudio();
+        self.textContent = "⏳ 準備中..."; self.disabled = true;
+        await new Promise(function(r){ setTimeout(r, 300); });
+        try {
+          S._pdRecorder = await recordWav(0, null, 'pronSeconds');
+          S._pdRecording = true;
+          self.disabled = false; self.textContent = "⏹ 停止して評価"; self.style.color = "var(--red)";
+          // Lock other record buttons while one is active
+          document.querySelectorAll(".pd-rec").forEach(function(b){ if (b !== self) b.disabled = true; });
+        } catch(e) {
+          S._pdRecording = false;
+          self.disabled = false; self.textContent = "🎤 録音して発音チェック";
+          alert("マイクエラー: " + e.message);
+        }
+      }
+    };
+  });
+
+  $("pdNext").onclick = () => { _pdCleanup(); stopAudio(); S._pronDrillIdx++; renderPronDrillStep(); };
 }
 
 // ═══════════════════════════════════
@@ -4378,6 +4527,7 @@ function renderReviewQuiz() {
     const realIdx = all.findIndex(x => x.corrected === m.corrected && x.date === m.date);
     const isChallenge = m.mode === 'challenge';
     const isFlash = m.mode === 'flash';
+    const isDescribe = m.mode === 'describe';
 
     // Build card content based on type
     var topLabel, questionText, correctText, contextText;
@@ -4391,6 +4541,11 @@ function renderReviewQuiz() {
       topLabel = '⚡ Flash 不正解';
       correctText = m.corrected;
       contextText = m.source ? '日本語: ' + m.source : '';
+      questionText = m.original || '';
+    } else if (isDescribe) {
+      topLabel = '🎨 Description 修正';
+      correctText = m.corrected;
+      contextText = m.explanation || '';
       questionText = m.original || '';
     } else {
       topLabel = '🗣️ Free Talk 修正';

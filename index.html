@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26g";
+const VERSION = "v2026.07.26h";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2638,6 +2638,7 @@ async function startCoach432() {
   // unless Web Speech (no cap) is explicitly selected.
   S.coach.data.times = (S.srMode === 'webspeech') ? [90, 60, 40] : [55, 40, 30];
   S.coach.data.wpm = [];
+  S.coach.data.transcripts = [];
   renderCoach432();
 }
 function renderCoach432() {
@@ -2675,6 +2676,7 @@ function renderCoach432() {
         var wc = (text||'').trim().split(/\s+/).filter(Boolean).length;
         var wpm = Math.round(wc/(spoken/60));
         S.coach.data.wpm[r] = wpm;
+        S.coach.data.transcripts[r] = text || '';
         if ($("c4Mic")) { $("c4Mic").className = 'mic-btn idle'; $("c4Mic").textContent = '🎤'; }
         $("c4Result").classList.remove('hidden');
         $("c4Result").innerHTML =
@@ -2706,15 +2708,84 @@ function renderCoach432Summary() {
   var w = S.coach.data.wpm || [];
   var last = w.length ? (w[w.length-1]||0) : 0;
   var improved = w.length >= 2 && last >= (w[0]||0);
-  S.coach.data.blockScore = last;
+  var doneLabel = (S.coach.plan ? '次へ →' : '仕上げへ →');
   app.innerHTML =
     '<div class="navbar"><div class="title">⚡ 4/3/2 完了</div></div>' +
     '<div class="summary-header"><div class="score" style="color:var(--accent)">' + last + '</div><div class="label">最終ラウンド WPM</div></div>' +
     '<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;gap:8px">' +
       [0,1,2].map(function(k){ return '<div><div style="font-weight:700;font-size:18px">' + (w[k]!=null?w[k]:'-') + '</div><div class="text-xs text-muted">' + S.coach.data.times[k] + '秒</div></div>'; }).join('') +
-    '</div><div class="text-sm mt-12" style="text-align:center;color:' + (improved?'var(--green)':'var(--muted)') + '">' + (improved ? '🎉 繰り返すほど速く滑らかに！流暢さが伸びています。' : '同じ話題を短時間で言い切る練習は流暢さに直結します。毎日続けましょう。') + '</div></div>' +
-    '<button class="btn btn-primary w-full mt-16" id="c4Done">' + (S.coach.plan ? '次へ →' : '仕上げへ →') + '</button>';
+    '</div><div class="text-xs mt-8" style="text-align:center;color:' + (improved?'var(--green)':'var(--muted)') + '">' + (improved ? '🎉 繰り返すほど速く滑らかに！' : '速度は毎日続けると伸びます。') + '</div></div>' +
+    '<div class="card" id="c4EvalCard"><div class="text-sm" style="font-weight:600;margin-bottom:8px">🧠 内容・要約力の評価</div>' +
+      '<div id="c4Eval"><div class="typing" style="justify-content:center"><span></span><span></span><span></span></div><div class="text-xs text-muted" style="text-align:center">同じ話題を段階的に端的にまとめ直せているか分析中...</div></div>' +
+    '</div>' +
+    '<div id="c4After"></div>';
+  // Evaluate content + summarization progression (async); fall back to just the button
+  evaluateCoach432(doneLabel);
+}
+
+function _c4NextButton(label) {
+  var el = $("c4After");
+  if (!el) return;
+  el.innerHTML = '<button class="btn btn-primary w-full mt-16" id="c4Done">' + label + '</button>';
   $("c4Done").onclick = function(){ coachPartDone(); };
+}
+
+async function evaluateCoach432(doneLabel) {
+  var tr = S.coach.data.transcripts || [];
+  var times = S.coach.data.times || [55,40,30];
+  var spoken = tr.filter(function(t){ return t && t.trim().split(/\s+/).filter(Boolean).length >= 2; });
+  // Not enough speech to evaluate content
+  if (spoken.length === 0) {
+    if ($("c4Eval")) $("c4Eval").innerHTML = '<div class="text-xs text-muted" style="text-align:center">音声が十分に認識できなかったため、内容評価はスキップしました。</div>';
+    _c4NextButton(doneLabel);
+    return;
+  }
+  var lvl = S.ftLevel || 'B1';
+  var cue = S.coach.data.cue || '';
+  var roundsText = tr.map(function(t,i){ return 'Round ' + (i+1) + ' (' + times[i] + 's): "' + (t || '(no speech)') + '"'; }).join('\n');
+  try {
+    var raw = await geminiChat([{ role:'user', content:
+'A ' + lvl + ' Japanese learner did a 4/3/2 fluency drill: they spoke about the SAME topic 3 times with DECREASING time (' + times.join('s → ') + 's), so each round should keep the key content but become more concise and better organized.\n\n' +
+'Topic (Japanese cue): ' + cue + '\n\n' + roundsText + '\n\n' +
+'Evaluate on a 0-100 scale:\n' +
+'- content: Did they say relevant, meaningful things about the topic? Judge the richest round.\n' +
+'- grammar: Grammatical accuracy across the rounds.\n' +
+'- conciseness: THE KEY CRITERION. As the time shrank, did they successfully condense the SAME core message — keeping the essential points while cutting filler and improving structure? HIGH = the last round reads like a tight, well-organized summary of the first. LOW = they merely got cut off, dropped key information, rambled, or just repeated the long version without tightening it.\n' +
+'List up to 2 corrections (real grammar errors only; empty if none).\n' +
+'Also provide "model_short": an ideal ~' + times[times.length-1] + '-second concise version of THIS topic at ' + lvl + ' level (2-3 sentences).\n\n' +
+'Return JSON ONLY:\n' +
+'{"content":{"score":75,"note":"日本語で一言"},"grammar":{"score":75,"note":"日本語で一言"},"conciseness":{"score":75,"note":"日本語で、段階を追って端的にまとめ直せているかの講評"},"corrections":[{"original":"","corrected":"","explanation":"日本語"}],"model_short":"...","comment":"日本語で総評（良い点＋次の一歩）"}'
+    }], "Fluency drill examiner. JSON only.", true);
+    var ev = safeJSON(raw);
+    var cl = function(v){ v = Math.round(v||0); return Math.max(0, Math.min(100, v)); };
+    var sC = cl(ev.content && ev.content.score), sG = cl(ev.grammar && ev.grammar.score), sS = cl(ev.conciseness && ev.conciseness.score);
+    var overall = Math.round(sC*0.35 + sG*0.25 + sS*0.40); // summarization weighted highest
+    S.coach.data.blockScore = overall;
+    S.coach.data.c432eval = { content:sC, grammar:sG, conciseness:sS, overall:overall };
+    // Corrections → review queue
+    var corrections = Array.isArray(ev.corrections) ? ev.corrections.filter(function(c){ return c && c.corrected; }).slice(0,2) : [];
+    corrections.forEach(function(c){ addMistake({ original:c.original||'', corrected:c.corrected, explanation:c.explanation||'', source:(cue||'').slice(0,60), mode:'freetalk' }); });
+    var cell = function(label, val, note){
+      var col = val>=80?'var(--green)':val>=60?'var(--yellow)':'var(--red)';
+      return '<div style="text-align:center"><div style="font-weight:700;color:' + col + '">' + val + '</div><div class="text-xs text-muted">' + label + '</div>' + (note ? '<div class="text-xs text-muted" style="margin-top:2px">' + esc(note) + '</div>' : '') + '</div>';
+    };
+    if ($("c4Eval")) {
+      $("c4Eval").innerHTML =
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">' +
+          cell('内容', sC, ev.content && ev.content.note) +
+          cell('文法', sG, ev.grammar && ev.grammar.note) +
+          cell('要約力', sS, '') +
+        '</div>' +
+        '<div class="tip mt-12" style="text-align:left"><strong>📝 要約力（段階的に端的にまとめ直せたか）:</strong><br>' + esc((ev.conciseness && ev.conciseness.note) || '') + '</div>' +
+        (corrections.length ? '<div class="text-xs mt-12" style="color:var(--red)">🔄 修正（復習に追加）:</div>' + corrections.map(function(c){ return '<div style="padding:4px 0"><div class="text-sm"><span class="text-red">✗</span> ' + esc(c.original||'') + '</div><div class="text-sm"><span class="text-green">✓</span> ' + esc(c.corrected) + '</div></div>'; }).join('') : '') +
+        (ev.model_short ? '<div class="text-xs mt-12" style="color:var(--accent)">✨ 理想の' + times[times.length-1] + '秒版:</div><div class="text-sm mt-4" style="color:var(--accent)">' + esc(ev.model_short) + '</div><button class="btn-ghost btn-sm" id="c4Speak" data-text="' + esc(ev.model_short).replace(/"/g,'&quot;') + '" style="color:var(--accent)">🔊 聞く</button>' : '') +
+        (ev.comment ? '<div class="text-xs text-muted mt-12">' + esc(ev.comment) + '</div>' : '');
+      if ($("c4Speak")) $("c4Speak").onclick = function(){ speakBrowser(this.dataset.text); };
+    }
+  } catch(e) {
+    if ($("c4Eval")) $("c4Eval").innerHTML = '<div class="text-xs text-red">内容評価に失敗しました: ' + esc(e.message) + '</div>';
+  }
+  _c4NextButton(doneLabel);
 }
 
 // ── 言い換えラダー (upgrade) ──

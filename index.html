@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26h";
+const VERSION = "v2026.07.26j";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2743,6 +2743,18 @@ async function evaluateCoach432(doneLabel) {
   var lvl = S.ftLevel || 'B1';
   var cue = S.coach.data.cue || '';
   var roundsText = tr.map(function(t,i){ return 'Round ' + (i+1) + ' (' + times[i] + 's): "' + (t || '(no speech)') + '"'; }).join('\n');
+  // Pace-aware target: the model answer is sized in WORDS to the learner's OWN speaking
+  // rate, not to native-speaker seconds. (A time label is misleading when the learner
+  // speaks slower than TTS.) Target = what they could say in the final slot at their pace.
+  var wpms = (S.coach.data.wpm || []).filter(function(x){ return typeof x === 'number' && x > 0; });
+  var maxWpm = wpms.length ? Math.max.apply(null, wpms) : 0;
+  var lastWpm = (S.coach.data.wpm || [])[times.length-1] || 0;
+  var tFinal = times[times.length-1];
+  var lastTr = (tr[tr.length-1] || '').trim();
+  var wcFinal = lastTr ? lastTr.split(/\s+/).filter(Boolean).length : 0;
+  var paceForTarget = maxWpm > 0 ? maxWpm : 70;      // learner's best demonstrated pace
+  var targetWords = Math.max(25, Math.round(paceForTarget * tFinal / 60));
+  var fullWords = Math.round(140 * tFinal / 60);     // a fluent speaker filling the full slot (~140 wpm)
   try {
     var raw = await geminiChat([{ role:'user', content:
 'A ' + lvl + ' Japanese learner did a 4/3/2 fluency drill: they spoke about the SAME topic 3 times with DECREASING time (' + times.join('s → ') + 's), so each round should keep the key content but become more concise and better organized.\n\n' +
@@ -2752,9 +2764,12 @@ async function evaluateCoach432(doneLabel) {
 '- grammar: Grammatical accuracy across the rounds.\n' +
 '- conciseness: THE KEY CRITERION. As the time shrank, did they successfully condense the SAME core message — keeping the essential points while cutting filler and improving structure? HIGH = the last round reads like a tight, well-organized summary of the first. LOW = they merely got cut off, dropped key information, rambled, or just repeated the long version without tightening it.\n' +
 'List up to 2 corrections (real grammar errors only; empty if none).\n' +
-'Also provide "model_short": an ideal ~' + times[times.length-1] + '-second concise version of THIS topic at ' + lvl + ' level (2-3 sentences).\n\n' +
+'Also provide TWO model answers on the same topic at ' + lvl + ' level:\n' +
+'- "model_short": a concise, well-organized version, about ' + targetWords + ' words (roughly what the learner could actually say in the final ' + tFinal + '-second round AT THEIR OWN pace of ~' + (maxWpm||70) + ' wpm — do NOT size it to a fast native pace). Keep the key points; tighter than what they said.\n' +
+'- "model_full": a RICHER version that a fluent speaker would say to fill the whole ' + tFinal + ' seconds at a natural pace (about ' + fullWords + ' words). Build on the SAME topic but ADD substance: a concrete example, a reason, a detail, and a natural closing — show how to expand the idea, not just pad it.\n' +
+'- "model_full_note": one short Japanese line naming what was added to expand it (例: 具体例・理由・締めの一言).\n\n' +
 'Return JSON ONLY:\n' +
-'{"content":{"score":75,"note":"日本語で一言"},"grammar":{"score":75,"note":"日本語で一言"},"conciseness":{"score":75,"note":"日本語で、段階を追って端的にまとめ直せているかの講評"},"corrections":[{"original":"","corrected":"","explanation":"日本語"}],"model_short":"...","comment":"日本語で総評（良い点＋次の一歩）"}'
+'{"content":{"score":75,"note":"日本語で一言"},"grammar":{"score":75,"note":"日本語で一言"},"conciseness":{"score":75,"note":"日本語で、段階を追って端的にまとめ直せているかの講評"},"corrections":[{"original":"","corrected":"","explanation":"日本語"}],"model_short":"...","model_full":"...","model_full_note":"日本語で一言","comment":"日本語で総評（良い点＋次の一歩）"}'
     }], "Fluency drill examiner. JSON only.", true);
     var ev = safeJSON(raw);
     var cl = function(v){ v = Math.round(v||0); return Math.max(0, Math.min(100, v)); };
@@ -2778,9 +2793,17 @@ async function evaluateCoach432(doneLabel) {
         '</div>' +
         '<div class="tip mt-12" style="text-align:left"><strong>📝 要約力（段階的に端的にまとめ直せたか）:</strong><br>' + esc((ev.conciseness && ev.conciseness.note) || '') + '</div>' +
         (corrections.length ? '<div class="text-xs mt-12" style="color:var(--red)">🔄 修正（復習に追加）:</div>' + corrections.map(function(c){ return '<div style="padding:4px 0"><div class="text-sm"><span class="text-red">✗</span> ' + esc(c.original||'') + '</div><div class="text-sm"><span class="text-green">✓</span> ' + esc(c.corrected) + '</div></div>'; }).join('') : '') +
-        (ev.model_short ? '<div class="text-xs mt-12" style="color:var(--accent)">✨ 理想の' + times[times.length-1] + '秒版:</div><div class="text-sm mt-4" style="color:var(--accent)">' + esc(ev.model_short) + '</div><button class="btn-ghost btn-sm" id="c4Speak" data-text="' + esc(ev.model_short).replace(/"/g,'&quot;') + '" style="color:var(--accent)">🔊 聞く</button>' : '') +
+        '<div class="text-xs text-muted mt-12">📊 最終ラウンド: <strong>' + wcFinal + '語</strong> / ' + tFinal + '秒（≈' + (lastWpm||0) + ' WPM）　目標の量: <strong>約' + targetWords + '語</strong></div>' +
+        (wcFinal > 0 && wcFinal < targetWords * 0.7 ? '<div class="tip mt-8" style="text-align:left">⏱️ 同じ' + tFinal + '秒で、あなたのペースならもう少し内容を詰められます（今は間やためらいが多いかも）。下の例くらいの量を目安に。</div>' : '') +
+        (ev.model_short ? '<div class="text-xs mt-12" style="color:var(--accent)">✨ 引き締め版（同じ内容を端的に・約' + targetWords + '語）:</div><div class="text-sm mt-4" style="color:var(--accent)">' + esc(ev.model_short) + '</div><button class="btn-ghost btn-sm c4-speak" data-text="' + esc(ev.model_short).replace(/"/g,'&quot;') + '" style="color:var(--accent)">🔊 聞く（ゆっくり）</button>' : '') +
+        (ev.model_full ? '<div style="margin-top:14px;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px">' +
+          '<div class="text-xs" style="color:var(--green);font-weight:600">🌱 膨らませ版（AIなら' + tFinal + '秒フルにこう話す・約' + fullWords + '語）:</div>' +
+          '<div class="text-sm mt-4" style="color:#065f46">' + esc(ev.model_full) + '</div>' +
+          (ev.model_full_note ? '<div class="text-xs text-muted mt-4">➕ ' + esc(ev.model_full_note) + '</div>' : '') +
+          '<button class="btn-ghost btn-sm c4-speak" data-text="' + esc(ev.model_full).replace(/"/g,'&quot;') + '" style="color:var(--green)">🔊 聞く</button>' +
+        '</div>' : '') +
         (ev.comment ? '<div class="text-xs text-muted mt-12">' + esc(ev.comment) + '</div>' : '');
-      if ($("c4Speak")) $("c4Speak").onclick = function(){ speakBrowser(this.dataset.text); };
+      document.querySelectorAll('.c4-speak').forEach(function(b){ b.onclick = function(){ if(window.speechSynthesis){ speechSynthesis.cancel(); var u=new SpeechSynthesisUtterance(this.dataset.text); u.lang='en-US'; u.rate=0.9; speechSynthesis.speak(u); } }; });
     }
   } catch(e) {
     if ($("c4Eval")) $("c4Eval").innerHTML = '<div class="text-xs text-red">内容評価に失敗しました: ' + esc(e.message) + '</div>';

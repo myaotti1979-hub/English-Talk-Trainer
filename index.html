@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.07.26j";
+const VERSION = "v2026.08.25a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -476,6 +476,8 @@ const S = {
   shadowLastRecordingUrl: null,
   // Describe mode
   descQuestions: [], descCurrent: 0, descResults: [], descLevel: "B1",  // #6: replay own recording
+  // Listening mode
+  lsQuestions: [], lsCurrent: 0, lsResults: [], lsLevel: "B1", lsType: "mix", lsPlayCount: 0,
   // Routine mode
   routine: { active: false, theme: 'daily', step: 0, scores: [] },
   // Recording
@@ -578,27 +580,16 @@ function addMistake(entry) {
   while (m.length > 200) m.shift();
   safeLSSet("ett_mistakes", m);
 }
-// Review is kept fresh: anything not touched within REVIEW_MAX_DAYS is discarded,
-// so the queue stays in sync with recent (morning) practice instead of an endless backlog.
-const REVIEW_MAX_DAYS = 3;
-function pruneMistakes() {
+function getReviewQueue() {
   const m = getMistakes();
   const now = Date.now();
-  const kept = m.filter(e => (now - new Date(e.date).getTime()) / 86400000 <= REVIEW_MAX_DAYS);
-  if (kept.length !== m.length) safeLSSet("ett_mistakes", kept);
-  return kept;
-}
-function getReviewQueue() {
-  const m = pruneMistakes();
-  const now = Date.now();
-  // Short, capped spacing (0→1→3 days). Nothing waits longer than 3 days.
-  const intervals = [0, 1, 3];
   return m.filter(e => {
     const age = (now - new Date(e.date).getTime()) / 86400000;
-    const nextReview = intervals[Math.min(e.reviewed || 0, intervals.length - 1)];
+    // Spaced repetition: 0 (immediate), 1, 3, 7, 14, 30 days
+    const intervals = [0, 1, 3, 7, 14, 30];
+    const nextReview = intervals[Math.min(e.reviewed, intervals.length - 1)] || 30;
     return age >= nextReview;
-  }).sort((a, b) => new Date(b.date) - new Date(a.date)) // freshest (today's morning) first
-    .slice(0, 10);
+  }).slice(0, 10);
 }
 function markReviewed(idx) {
   const m = getMistakes();
@@ -1129,9 +1120,9 @@ function render() {
   else if (S.screen === "convlog") renderConvLog();
   else if (S.screen === "analysis") renderAnalysis();
   else if (S.screen === "pronpractice") renderPronPractice();
+  else if (S.screen === "listening") renderListeningSetup();
   else if (S.screen === "describe") renderDescribeSetup();
   else if (S.screen === "reviewquiz") renderReviewQuiz();
-  else if (S.screen === "coach") renderCoachCurrent();
 }
 
 // ── History Screen ──
@@ -1150,7 +1141,7 @@ function renderHistory() {
       reversed.slice(0,50).map(h => {
         const d = new Date(h.date);
         const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-        const icon = h.mode==='freetalk'?'🗣️':h.mode==='flash'?'⚡':h.mode==='describe'?'🎨':h.mode==='shadow'?'🎧':'📰';
+        const icon = h.mode==='freetalk'?'🗣️':h.mode==='flash'?'⚡':h.mode==='describe'?'🎨':h.mode==='shadow'?'🎧':h.mode==='listening'?'👂':'📰';
         const scoreColor = (h.score||0)>=80?'var(--green)':(h.score||0)>=60?'var(--yellow)':'var(--muted)';
         return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
           '<div class="flex justify-between items-center">' +
@@ -1204,8 +1195,8 @@ function renderAnalysis() {
     return '<svg viewBox="0 0 260 260" style="width:100%;max-width:300px;margin:0 auto;display:block">'+grid+axes+poly1+poly2+dots+'</svg>';
   }
 
-  // Weakness analysis data (Free Talk + Description contribute grammar/vocab/naturalness)
-  var ftHist = month1.filter(h => (h.mode==='freetalk' || h.mode==='describe') && h.grammar > 0);
+  // Weakness analysis data
+  var ftHist = month1.filter(h => h.mode==='freetalk' && h.grammar > 0);
   var shHist = month1.filter(h => h.mode==='shadow' && h.accuracy > 0);
   var skills = [
     { name:'発音', val: shHist.length>0 ? Math.round(shHist.reduce((a,h)=>a+(h.accuracy||0),0)/shHist.length) : 0 },
@@ -1582,7 +1573,7 @@ function renderHome() {
         '</div>' +
         '<div class="text-xs text-muted mt-8">' +
         Object.entries(weekByMode).map(function(e) {
-          var icon = e[0]==='freetalk'?'🗣️':e[0]==='flash'?'⚡':e[0]==='describe'?'🎨':e[0]==='shadow'?'🎧':'📰';
+          var icon = e[0]==='freetalk'?'🗣️':e[0]==='flash'?'⚡':e[0]==='describe'?'🎨':e[0]==='shadow'?'🎧':e[0]==='listening'?'👂':'📰';
           return icon + ' ' + e[1] + '回';
         }).join(' / ') +
         '</div></div>';
@@ -1613,8 +1604,8 @@ function renderHome() {
     </div>` : ''}
 
     <div class="card mb-16" id="routineCard" style="background:linear-gradient(135deg,${new Date().getHours()<12?'#fef3c7,#fde68a':'#e0e7ff,#c7d2fe'});border:none;cursor:pointer">
-      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅':'🌙'} 自動ルーティン（約15分）</div>
-      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Description 5問 → Shadowing 5文を自動連続</div>
+      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅':'🌙'} 自動ルーティン（10分）</div>
+      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Shadowing 5文を自動連続</div>
       <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップしてテーマを選択</div>
     </div>
     <div class="card mb-16 hidden" id="routineSetup">
@@ -1623,15 +1614,6 @@ function renderHome() {
         ${Object.entries(ROUTINE_THEMES).map(function([k,v]) { return '<div class="topic-pill'+(k==='daily'?' selected':'')+'" data-rtheme="'+k+'">'+v.label+'</div>'; }).join('')}
       </div>
       <button class="btn btn-primary w-full mt-16" id="routineStartBtn">🚀 ルーティン開始</button>
-    </div>
-
-    <div class="card mb-16" id="coachCard" style="background:linear-gradient(135deg,#c7d2fe,#a5b4fc);border:none;cursor:pointer">
-      <div class="flex justify-between items-center">
-        <div class="text-sm" style="font-weight:700">🌙 夜の弱点コーチング（約15分）</div>
-        ${new Date().getHours() >= 16 || new Date().getHours() < 4 ? '<span class="tag tag-accent">今の時間のおすすめ</span>' : ''}
-      </div>
-      <div class="text-xs mt-4" style="color:#1a2a3a">その日の朝に練習した内容を、夜に復習して定着</div>
-      <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップして今夜のメニューを開始</div>
     </div>
 
     <div class="mode-card mode-freetalk mb-16" id="startFreeTalk">
@@ -1659,6 +1641,13 @@ function renderHome() {
       <div class="icon">🎨</div>
       <h3>Description</h3>
       <p>シナリオで自分の言葉で説明する力を鍛える</p>
+      <div class="arrow">→</div>
+    </div>
+
+    <div class="mode-card mb-16" id="startListening" style="background:#ffe4e6;border:1.5px solid #fb7185;color:#881337">
+      <div class="icon">👂</div>
+      <h3>Listening Quiz</h3>
+      <p>聞いてタップ。電車でも片手で練習</p>
       <div class="arrow">→</div>
     </div>
 
@@ -1693,6 +1682,7 @@ function renderHome() {
   $("startShadow").onclick = () => initShadow();
   $("startDescribe").onclick = () => initDescribe();
   if ($("startNews")) $("startNews").onclick = () => initNews();
+  if ($("startListening")) $("startListening").onclick = () => initListening();
 
   // Routine launcher
   if ($("routineCard")) {
@@ -1714,7 +1704,6 @@ function renderHome() {
       startRoutine(_rTheme);
     };
   }
-  if ($("coachCard")) $("coachCard").onclick = initCoach;
   if ($("pronBtn")) $("pronBtn").onclick = () => { S.screen = "pronpractice"; render(); };
   $("settingsBtn").onclick = () => { S.screen = "apikey"; render(); };
   if ($("analysisBtn")) $("analysisBtn").onclick = () => { S.screen = "analysis"; render(); };
@@ -1773,8 +1762,6 @@ function startRoutine(theme) {
   // Save topic info for Flash/Shadowing continuity
   S.routine.topicLabel = pick.label || '';
   S.routine.topicPrompt = pick.prompt || '';
-  // Persist today's practice so the evening coaching can reinforce THIS morning's content
-  safeLSSet("ett_today", { date: localDateKey(), themeKey: theme, themeLabel: rt.label, topicLabel: pick.label || '', topicPrompt: pick.prompt || '' });
   S.screen = "freetalk";
   startFreeTalkSession();
 }
@@ -1989,7 +1976,7 @@ JSON形式で返してください:
 {"questions": [
   {"ja": "具体的なシチュエーション（自然な日本語）", "en": "模範回答（${lvl.id}レベルの英語）", "hint": "使える表現2-3個"}
 ]}` }], "JSON only.", true);
-    S.descQuestions = (safeJSON(raw).questions) || [];
+    S.descQuestions = JSON.parse(raw.replace(/```json|```/g,'').trim()).questions || [];
     if (S.descQuestions.length === 0) throw new Error("生成失敗");
     S.descCurrent = 0;
     renderDescribePractice();
@@ -2043,68 +2030,33 @@ function renderDescribePractice() {
     if (!answer) return;
     this.disabled = true; this.textContent = "⏳ 評価中...";
     try {
-      var evRaw = await geminiChat([{role:"user",content:`You are an English speaking examiner. Evaluate a ${S.descLevel}-level Japanese learner's response to a described situation.
+      var evRaw = await geminiChat([{role:"user",content:`Evaluate this English description for a ${S.descLevel} level learner.
 
 ${CEFR_LEVELS[S.descLevel]?.feedbackCriteria || ''}
 
-Scenario (Japanese): ${q.ja}
-One acceptable model answer (for reference ONLY — the learner does NOT need to match it): ${q.en}
-Learner's answer: ${answer}
+Scenario: ${q.ja}
+Model answer: ${q.en}
+User's answer: ${answer}
 
-This is NOT a translation task. The learner may take a completely different but valid approach. Do NOT penalize valid alternatives that accomplish the communicative goal.
+This is NOT translation. Evaluate:
+- Content: Is it relevant and complete for the scenario?
+- Vocabulary: Does it use appropriate vocabulary for ${S.descLevel} level? (not too simple, not too advanced)
+- Grammar: Accurate for ${S.descLevel} level?
+- Fluency: Natural sentence flow?
 
-Score FOUR dimensions from 0 to 100 using these anchors:
-- 90-100: fully achieves the goal / natural and accurate at ${S.descLevel} level
-- 70-89: achieves the goal with minor issues
-- 50-69: partially achieves the goal / noticeable errors or gaps
-- 0-49: does not achieve the goal / major errors or off-topic
-
-Dimensions:
-- content: Did they accomplish the communicative task in the scenario? Relevant and complete?
-- vocabulary: Appropriate range for ${S.descLevel}? (not too simple, not over-reaching)
-- grammar: Accurate for ${S.descLevel} level?
-- fluency: Natural sentence flow and connection?
-
-Also list up to 3 concrete corrections (only real errors; empty array if none).
-
-Return JSON ONLY:
-{"content":{"score":75,"note":"日本語で一言"},"vocabulary":{"score":75,"note":"日本語で一言"},"grammar":{"score":75,"note":"日本語で一言"},"fluency":{"score":75,"note":"日本語で一言"},"corrections":[{"original":"誤った表現","corrected":"正しい表現","explanation":"日本語で理由"}],"improved":"A polished ${S.descLevel}-level version of the learner's answer","comment":"日本語で全体講評（良い点＋次に意識すること）"}`}], "English speaking examiner. JSON only.", true);
-      var ev = safeJSON(evRaw);
-      // Sub-scores (clamp 0-100)
-      var _cl = function(v){ v = Math.round(v||0); return Math.max(0, Math.min(100, v)); };
-      var sContent = _cl(ev.content?.score), sVocab = _cl(ev.vocabulary?.score), sGrammar = _cl(ev.grammar?.score), sFluency = _cl(ev.fluency?.score);
-      // Weighted overall computed in JS for consistency (content-heavy, task-oriented)
-      var sc = Math.round(sContent*0.35 + sGrammar*0.25 + sVocab*0.20 + sFluency*0.20);
-      var corrections = Array.isArray(ev.corrections) ? ev.corrections.filter(function(c){ return c && c.corrected; }).slice(0,3) : [];
+JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvements, suggest ${S.descLevel}-appropriate expressions","improved":"Polished version at ${S.descLevel} level"}`}], "JSON only.", true);
+      var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
       var dqResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
-      S.descResults.push({
-        ja:q.ja, en:q.en, answer:answer, score:sc,
-        content:sContent, vocabulary:sVocab, grammar:sGrammar, fluency:sFluency,
-        notes:{ content:ev.content?.note||'', vocabulary:ev.vocabulary?.note||'', grammar:ev.grammar?.note||'', fluency:ev.fluency?.note||'' },
-        corrections:corrections, improved:ev.improved||'', feedback:ev.comment||'',
-        responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length
-      });
-      var scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
-      var subCell = function(label, val, note){
-        var c = val>=80?'var(--green)':val>=60?'var(--yellow)':'var(--red)';
-        return '<div style="text-align:center"><div style="font-weight:700;color:'+c+'">'+val+'</div><div class="text-xs text-muted">'+label+'</div>'+(note?'<div class="text-xs text-muted" style="margin-top:2px">'+esc(note)+'</div>':'')+'</div>';
-      };
+      S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'', responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length });
+      var sc = ev.score||0, scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
       $("dsInputArea").classList.add("hidden");
       $("dsResult").classList.remove("hidden");
       $("dsResult").innerHTML = `<div class="card" style="padding:20px">
         <div style="font-size:32px;font-weight:800;color:${scCol};text-align:center">${sc}</div>
-        <div class="text-xs text-muted" style="text-align:center;margin-top:-4px">総合スコア</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-top:14px">
-          ${subCell('内容', sContent, ev.content?.note)}
-          ${subCell('語彙', sVocab, ev.vocabulary?.note)}
-          ${subCell('文法', sGrammar, ev.grammar?.note)}
-          ${subCell('流暢さ', sFluency, ev.fluency?.note)}
-        </div>
-        <div class="text-xs text-muted mt-16">🗣️ あなた:</div><div class="text-sm mt-4">${esc(answer)}</div>
-        <div class="text-xs mt-12" style="color:var(--green)">✅ 模範（一例）:</div><div class="text-sm mt-4" style="color:var(--green)">${esc(q.en)}</div>
-        ${ev.improved?'<div class="text-xs mt-12" style="color:var(--accent)">✨ あなたの回答を磨くと:</div><div class="text-sm mt-4" style="color:var(--accent)">'+esc(ev.improved)+'</div>':''}
-        ${corrections.length?'<div class="text-xs mt-12" style="color:var(--red)">🔄 修正ポイント:</div>'+corrections.map(function(c){return '<div style="padding:6px 0"><div class="text-sm"><span class="text-red">✗</span> '+esc(c.original||'')+'</div><div class="text-sm"><span class="text-green">✓</span> '+esc(c.corrected)+'</div>'+(c.explanation?'<div class="text-xs text-muted">'+esc(c.explanation)+'</div>':'')+'</div>';}).join(''):''}
-        <div class="text-xs text-muted mt-12">${esc(ev.comment||'')}</div>
+        <div class="text-xs text-muted mt-12">🗣️ あなた:</div><div class="text-sm mt-4">${esc(answer)}</div>
+        <div class="text-xs mt-12" style="color:var(--green)">✅ 模範:</div><div class="text-sm mt-4" style="color:var(--green)">${esc(q.en)}</div>
+        ${ev.improved?'<div class="text-xs mt-12" style="color:var(--accent)">✨ 改善案:</div><div class="text-sm mt-4" style="color:var(--accent)">'+esc(ev.improved)+'</div>':''}
+        <div class="text-xs text-muted mt-12">${esc(ev.feedback||'')}</div>
         <button class="btn btn-primary w-full mt-16" id="dsNext">次へ →</button>
       </div>`;
       $("dsNext").onclick = () => { S.descCurrent++; renderDescribePractice(); };
@@ -2129,22 +2081,8 @@ function renderDescribeSummary() {
   var descTotalWords = dTimedResults.reduce((a,r)=>a+(r.wordCount||0),0);
   var descTotalTime = dTimedResults.reduce((a,r)=>a+r.responseTime,0);
   var descWpm = descTotalTime > 0 ? Math.round(descTotalWords / (descTotalTime / 60000)) : 0;
-  // Average sub-scores across scored questions (feeds the weakness radar)
-  var _subAvg = function(key){ var f = scored.filter(function(r){ return r[key] > 0; }); return f.length > 0 ? Math.round(f.reduce(function(a,r){return a+r[key];},0)/f.length) : 0; };
-  var descGrammar = _subAvg('grammar'), descVocab = _subAvg('vocabulary'), descFluency = _subAvg('fluency'), descContent = _subAvg('content');
-  saveSession({
-    mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5,
-    avgResponseTime:descAvgResp, wordsPerMin:descWpm,
-    grammar:descGrammar, vocabulary:descVocab, naturalness:descFluency, content:descContent
-  });
+  saveSession({ mode:"describe", topic:"Description", level:S.descLevel, score:avg, minutes:5, avgResponseTime:descAvgResp, wordsPerMin:descWpm });
   addToCumulativeCost(calcSessionTotal());
-
-  // Feed corrections into the spaced-repetition review queue (like Free Talk / Flash)
-  scored.forEach(function(r){
-    (r.corrections || []).forEach(function(c){
-      if (c && c.corrected) addMistake({ original: c.original || '', corrected: c.corrected, explanation: c.explanation || '', source: (r.ja||'').slice(0,60), mode: "describe" });
-    });
-  });
 
   // Save as conversation log for review
   var descMessages = [];
@@ -2173,6 +2111,240 @@ function renderDescribeSummary() {
     else { S.screen = "home"; render(); }
   };
   $("dssAgain").onclick = () => initDescribe();
+}
+
+// ═══════════════════════════════════
+// LISTENING QUIZ
+// ═══════════════════════════════════
+
+const LS_TYPES = [
+  { id: "mix",     label: "🎲 ミックス",   desc: "全5種類をランダム出題" },
+  { id: "blank",   label: "🔤 穴埋め",     desc: "一部を聞き取って選択" },
+  { id: "intent",  label: "🎭 意図・感情", desc: "トーンから話者の気持ちを読む" },
+  { id: "linking", label: "🔗 連結音",     desc: "実際の発音を聞き分ける" },
+  { id: "reply",   label: "💬 次の一言",   desc: "自然な返答を選ぶ" },
+  { id: "detail",  label: "🔢 数字・固有名詞", desc: "具体的な情報を拾う" },
+];
+
+function initListening() {
+  S.screen = "listening";
+  S.lsQuestions = []; S.lsCurrent = 0; S.lsResults = [];
+  renderListeningSetup();
+}
+
+function renderListeningSetup() {
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="lsBack">←</button><div class="title">👂 Listening Quiz</div></div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${Object.values(CEFR_LEVELS).map(l => `<div class="level-chip ${S.lsLevel===l.id?'active':''}" data-lslvl="${l.id}">${l.label}</div>`).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">🎯 出題タイプ</div>
+      ${LS_TYPES.map(t => `<div class="topic-pill ${S.lsType===t.id?'active':''}" data-lstype="${t.id}" style="display:block;text-align:left;margin-bottom:6px;padding:12px">
+        <div style="font-weight:600">${t.label}</div>
+        <div class="text-xs text-muted">${t.desc}</div>
+      </div>`).join('')}
+    </div>
+    <div class="tip">🎧 イヤホン推奨。音声を聞いてタップするだけ。発声不要なので電車でも練習できます。</div>
+    <button class="btn btn-primary w-full mt-16 mb-16" id="lsStartBtn">👂 スタート（10問・約5分）</button>
+  `;
+  $("lsBack").onclick = () => { S.screen = "home"; render(); };
+  document.querySelectorAll("[data-lslvl]").forEach(el => {
+    el.onclick = function() { S.lsLevel = this.dataset.lslvl; renderListeningSetup(); };
+  });
+  document.querySelectorAll("[data-lstype]").forEach(el => {
+    el.onclick = function() { S.lsType = this.dataset.lstype; renderListeningSetup(); };
+  });
+  $("lsStartBtn").onclick = generateListeningQuestions;
+}
+
+async function generateListeningQuestions() {
+  app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">👂 リスニング問題を作成中...</div></div>';
+  var lvl = CEFR_LEVELS[S.lsLevel] || CEFR_LEVELS.B1;
+  var typeInstruction = '';
+
+  var typeDefs = {
+    blank: `Type "blank": Play a sentence, then ask which word was in a specific position.
+  - "audio": full sentence to be spoken
+  - "question": "___に入る語は？" with the sentence shown with a blank
+  - "options": 3 similar-sounding or plausible words
+  - "answer": index (0-2) of correct option`,
+    intent: `Type "intent": Play a sentence with clear emotional tone, ask the speaker's intention.
+  - "audio": sentence that carries tone (sarcasm, hesitation, enthusiasm, doubt, politeness)
+  - "question": "話者の気持ちは？"
+  - "options": 3 Japanese descriptions of intent/emotion
+  - "answer": index of correct option`,
+    linking: `Type "linking": Play natural connected speech, ask what was actually said.
+  - "audio": sentence with linking/reduction (gonna, wanna, didja, lemme, kinda, coulda)
+  - "question": "実際に発音されたのは？"
+  - "options": 3 versions (formal written form vs actual reduced form vs wrong form)
+  - "answer": index of correct option`,
+    reply: `Type "reply": Play a question or statement, ask for the natural response.
+  - "audio": a question or statement from speaker A
+  - "question": "自然な返答は？"
+  - "options": 3 possible replies in English
+  - "answer": index of correct option`,
+    detail: `Type "detail": Play a sentence with specific info, ask about a number/name/place.
+  - "audio": sentence containing numbers, times, gate numbers, names, or places
+  - "question": "○○は？" asking about the specific detail
+  - "options": 3 similar numbers/names (e.g. B12, B20, D12)
+  - "answer": index of correct option`,
+  };
+
+  if (S.lsType === 'mix') {
+    typeInstruction = 'Generate a MIX: 2 of each type below (10 total). Vary the order randomly.\n\n' + Object.values(typeDefs).join('\n\n');
+  } else {
+    typeInstruction = 'Generate 10 questions of this type:\n\n' + (typeDefs[S.lsType] || typeDefs.blank);
+  }
+
+  try {
+    var raw = await geminiChat([{ role: "user", content: `Create 10 listening comprehension questions for a ${lvl.id} level English learner.
+
+${lvl.sysRules}
+
+${typeInstruction}
+
+CRITICAL RULES:
+- "audio" must be natural spoken English (5-15 words), suitable for text-to-speech
+- Each question must be answerable ONLY by listening carefully
+- Options must be plausible — not obviously wrong
+- Questions in Japanese, options in English (except "intent" type where options are Japanese)
+- Vary topics: daily life, work, travel, shopping, social situations
+
+Return JSON:
+{"questions": [{"type": "blank|intent|linking|reply|detail", "audio": "sentence to speak", "question": "日本語の設問", "options": ["A","B","C"], "answer": 0, "explain": "日本語の簡潔な解説"}]}` }], "JSON only.", true);
+    var data = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    S.lsQuestions = (data.questions || []).slice(0, 10);
+    if (S.lsQuestions.length === 0) throw new Error("問題を生成できませんでした");
+    S.lsCurrent = 0;
+    S.lsResults = [];
+    renderListeningQuestion();
+  } catch(e) {
+    app.innerHTML = `<div class="card" style="text-align:center;padding:32px"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-16" onclick="initListening()">リトライ</button></div>`;
+  }
+}
+
+function renderListeningQuestion() {
+  var q = S.lsQuestions[S.lsCurrent];
+  if (!q) { renderListeningSummary(); return; }
+  S.lsPlayCount = 0;
+  var progress = Math.round(S.lsCurrent / S.lsQuestions.length * 100);
+  var typeInfo = LS_TYPES.find(t => t.id === q.type) || { label: '👂 リスニング' };
+
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="lsqBack">←</button><div class="title">👂 ${S.lsCurrent+1}/${S.lsQuestions.length}</div></div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+
+    <div class="card" style="text-align:center;padding:28px">
+      <div class="text-xs" style="color:var(--accent);font-weight:600;margin-bottom:16px">${typeInfo.label}</div>
+      <button class="btn btn-primary" id="lsPlayBtn" style="font-size:20px;padding:20px 32px;border-radius:50px">🔊 音声を聞く</button>
+      <div class="text-xs text-muted mt-8" id="lsPlayInfo">タップして再生（何度でも聞けます）</div>
+    </div>
+
+    <div class="card" id="lsQuestionCard" style="display:none">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">${esc(q.question||'')}</div>
+      ${(q.options||[]).map((o,i) => `<button class="btn btn-secondary w-full mb-8 ls-opt" data-idx="${i}" style="text-align:left;padding:14px 16px;font-size:15px">${String.fromCharCode(65+i)}. ${esc(o)}</button>`).join('')}
+    </div>
+
+    <div id="lsResult" class="hidden"></div>
+  `;
+  $("lsqBack").onclick = () => { if(confirm("中断しますか？")) { stopAudio(); S.screen="home"; render(); } };
+
+  $("lsPlayBtn").onclick = async function() {
+    this.disabled = true;
+    var origText = this.textContent;
+    this.textContent = "🔊 再生中...";
+    try { await speakText(q.audio, S.ftVoice); } catch(e) { console.warn(e); }
+    this.disabled = false;
+    this.textContent = "🔁 もう一度聞く";
+    S.lsPlayCount++;
+    if ($("lsPlayInfo")) $("lsPlayInfo").textContent = S.lsPlayCount + "回再生";
+    if ($("lsQuestionCard")) $("lsQuestionCard").style.display = "block";
+  };
+
+  document.querySelectorAll(".ls-opt").forEach(btn => {
+    btn.onclick = function() {
+      var chosen = parseInt(this.dataset.idx);
+      var correct = q.answer === chosen;
+      S.lsResults.push({ type: q.type, correct: correct, playCount: S.lsPlayCount });
+      document.querySelectorAll(".ls-opt").forEach((b, i) => {
+        b.disabled = true;
+        if (i === q.answer) b.style.background = "#d1fae5", b.style.borderColor = "#059669", b.style.color = "#065f46";
+        else if (i === chosen) b.style.background = "#fee2e2", b.style.borderColor = "#dc2626", b.style.color = "#991b1b";
+      });
+      $("lsResult").classList.remove("hidden");
+      $("lsResult").innerHTML = `
+        <div class="card" style="padding:20px">
+          <div style="font-size:20px;font-weight:700;color:${correct?'var(--green)':'var(--red)'};text-align:center">${correct?'✅ 正解':'❌ 不正解'}</div>
+          <div class="text-xs text-muted mt-12">📝 スクリプト:</div>
+          <div class="text-sm mt-4" style="font-weight:600">${esc(q.audio||'')}</div>
+          ${q.explain ? '<div class="text-xs text-muted mt-12">💡 '+esc(q.explain)+'</div>' : ''}
+          <button class="btn btn-ghost w-full mt-8" id="lsReplay" style="color:var(--accent)">🔊 もう一度聞く</button>
+          <button class="btn btn-primary w-full mt-8" id="lsNext">次へ →</button>
+        </div>
+      `;
+      $("lsReplay").onclick = async function() { try { await speakText(q.audio, S.ftVoice); } catch(e) {} };
+      $("lsNext").onclick = () => { S.lsCurrent++; renderListeningQuestion(); };
+    };
+  });
+}
+
+function renderListeningSummary() {
+  var results = S.lsResults;
+  var correct = results.filter(r => r.correct).length;
+  var score = results.length > 0 ? Math.round(correct / results.length * 100) : 0;
+  var scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+
+  // Per-type breakdown
+  var byType = {};
+  results.forEach(r => {
+    if (!byType[r.type]) byType[r.type] = { correct: 0, total: 0 };
+    byType[r.type].total++;
+    if (r.correct) byType[r.type].correct++;
+  });
+  var weakest = null, weakestRate = 1;
+  Object.entries(byType).forEach(([t, v]) => {
+    var rate = v.correct / v.total;
+    if (rate < weakestRate) { weakestRate = rate; weakest = t; }
+  });
+
+  updateStreak();
+  saveSession({ mode: "listening", topic: "Listening Quiz", level: S.lsLevel, score: score, minutes: 5 });
+  addToCumulativeCost(calcSessionTotal());
+
+  var tips = {
+    blank: "穴埋めが苦手です。弱く発音される機能語(a, the, to, of)に注意して聞きましょう",
+    intent: "意図の読み取りが苦手です。語尾の上がり下がりや間の取り方に注目しましょう",
+    linking: "連結音が苦手です。going to→gonna のような音の変化に慣れましょう",
+    reply: "返答選択が苦手です。Do you mind〜への答え方など会話の型を覚えましょう",
+    detail: "数字・固有名詞が苦手です。13と30、B12とB20など似た音の区別を練習しましょう",
+  };
+
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="lssBack">←</button><div class="title">👂 結果</div></div>
+    <div class="summary-header"><div class="score" style="color:${scoreColor}">${correct}/${results.length}</div><div class="label">正解数（${score}点）</div></div>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📊 タイプ別</div>
+      ${Object.entries(byType).map(([t,v]) => {
+        var info = LS_TYPES.find(x => x.id === t) || { label: t };
+        var rate = v.correct / v.total;
+        var col = rate >= 0.8 ? 'var(--green)' : rate >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+        return `<div class="flex justify-between items-center" style="padding:8px 0;border-bottom:1px solid var(--border)">
+          <div class="text-sm">${info.label}</div>
+          <div style="font-weight:700;color:${col}">${v.correct}/${v.total}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    ${weakest && weakestRate < 0.7 ? `<div class="tip">💡 ${tips[weakest] || ''}</div>` : ''}
+    ${calcCostHTML()}
+    <button class="btn btn-primary w-full mt-16" id="lssHome">ホームに戻る</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="lssAgain">もう一度（新しい問題）</button>
+  `;
+  $("lssBack").onclick = $("lssHome").onclick = () => { S.screen = "home"; render(); };
+  $("lssAgain").onclick = () => initListening();
 }
 
 // ═══════════════════════════════════
@@ -2250,7 +2422,7 @@ For each word provide:
 
 Return JSON:
 {"drills": [{"word": "example", "tip": "日本語での発音アドバイス", "sentences": ["Example sentence 1.", "Example sentence 2."]}]}` }], "JSON only.", true);
-    var data = safeJSON(raw);
+    var data = JSON.parse(raw.replace(/```json|```/g,'').trim());
     var drills = data.drills || [];
     if (drills.length === 0) throw new Error("生成失敗");
     S._pronDrills = drills;
@@ -2259,28 +2431,6 @@ Return JSON:
   } catch(e) {
     app.innerHTML = `<div class="card"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-8" onclick="renderPronPractice()">戻る</button></div>`;
   }
-}
-
-// Shared word-level pronunciation coloring (used by drill; mirrors Shadowing)
-function pronWordsHTML(words, small) {
-  if (!words || !words.length) return '';
-  var fs = small ? '13px' : '15px';
-  return '<div style="margin-top:10px;line-height:2.2;font-size:' + fs + ';display:flex;flex-wrap:wrap;gap:2px 6px">' +
-    words.map(function(w) {
-      var wpa = w.PronunciationAssessment || w;
-      var wacc = wpa.AccuracyScore != null ? wpa.AccuracyScore : 0;
-      var errType = wpa.ErrorType || 'None';
-      var color = errType === 'Omission' ? '#9ca3af' : errType === 'Insertion' ? '#f59e0b' : wacc >= 80 ? '#059669' : wacc >= 50 ? '#f59e0b' : '#dc2626';
-      var dec = errType === 'Omission' ? 'line-through' : 'none';
-      var label = errType === 'Omission' ? '(未発話)' : '';
-      return '<span style="color:' + color + ';text-decoration:' + dec + ';font-weight:600" title="' + Math.round(wacc) + '点">' + esc(w.Word || '') + label + '</span>';
-    }).join('') + '</div>';
-}
-
-function _pdCleanup() {
-  if (S._pdRecorder) { try { S._pdRecorder.stop(); } catch(e) {} S._pdRecorder = null; }
-  S._pdRecording = false;
-  releaseMicStream();
 }
 
 function renderPronDrillStep() {
@@ -2307,677 +2457,23 @@ function renderPronDrillStep() {
     </div>
     <div class="card">
       <div class="text-sm" style="font-weight:600;margin-bottom:8px">📝 例文で練習</div>
-      ${S.azureKey ? '<div class="text-xs text-muted mb-8">🎤 録音すると Azure 発音評価でスコアが出ます。80点を超えると弱点リストから卒業！</div>' : '<div class="text-xs text-muted mb-8">💡 Azure Speech キーを設定すると、録音して発音スコアを測れます。</div>'}
       ${(d.sentences||[]).map((s,si) => `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="padding:8px 0;border-bottom:1px solid var(--border)">
           <div class="text-sm">${esc(s)}</div>
-          <div class="flex gap-8 mt-4" style="flex-wrap:wrap">
-            <button class="btn-ghost pd-speak-sent" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px">🔊 再生</button>
-            ${S.azureKey ? `<button class="btn-ghost pd-rec" data-si="${si}" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--red);font-size:13px">🎤 録音して発音チェック</button>` : ''}
-          </div>
-          <div class="pd-result" id="pdResult${si}"></div>
+          <button class="btn-ghost pd-speak-sent" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px;margin-top:4px">🔊 再生</button>
         </div>
       `).join('')}
     </div>
     <button class="btn btn-primary w-full mt-16" id="pdNext">次の単語 →</button>
   `;
-  $("pdBack").onclick = () => { if(confirm("中断しますか？")) { _pdCleanup(); stopAudio(); renderPronPractice(); } };
+  $("pdBack").onclick = () => { if(confirm("中断しますか？")) renderPronPractice(); };
   $("pdSpeak").onclick = function() {
     if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(d.word);u.lang='en-US';u.rate=0.7;speechSynthesis.speak(u);}
   };
   document.querySelectorAll(".pd-speak-sent").forEach(btn => {
     btn.onclick = function() { if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(this.dataset.text);u.lang='en-US';u.rate=0.85;speechSynthesis.speak(u);} };
   });
-
-  // Record + Azure Pronunciation Assessment per example sentence
-  document.querySelectorAll(".pd-rec").forEach(function(btn) {
-    btn.onclick = async function() {
-      var self = this;
-      var si = parseInt(self.dataset.si);
-      var refText = self.dataset.text;
-      var resultEl = $("pdResult" + si);
-
-      if (S._pdRecording) {
-        // ── STOP & evaluate ──
-        self.disabled = true; self.textContent = "⏳ 評価中...";
-        var rec = S._pdRecorder; S._pdRecorder = null; S._pdRecording = false;
-        var wav = rec ? await rec.stop() : null;
-        try {
-          if (!wav || wav.size <= 44) throw new Error("録音が空でした。もう一度お試しください。");
-          var result = await azurePronAssess(wav, refText);
-          var nb = result && result.NBest ? result.NBest[0] : null;
-          var pa = (nb && nb.PronunciationAssessment) || {};
-          var pronScore = pa.PronScore != null ? pa.PronScore : (nb ? nb.PronScore : undefined);
-          var wordsArr = (nb && nb.Words) || pa.Words || [];
-          if (pronScore == null) {
-            resultEl.innerHTML = '<div class="text-xs text-red mt-8">発音評価スコアを取得できませんでした。もう一度お試しください。</div>';
-          } else {
-            var score = Math.round(pronScore);
-            var col = score>=80?'var(--green)':score>=60?'var(--yellow)':'var(--red)';
-            // Locate the target word inside the sentence and grade it
-            var norm = function(x){ return (x||'').toLowerCase().replace(/[^a-z']/g,''); };
-            var target = norm(d.word);
-            var tw = wordsArr.find(function(w){ return norm(w.Word) === target; });
-            var twAcc = tw ? Math.round(((tw.PronunciationAssessment||tw).AccuracyScore) || 0) : null;
-            var graduated = false;
-            if (twAcc != null) {
-              savePronWeakWord(d.word.toLowerCase(), twAcc, refText);
-              if (twAcc >= 80) {
-                var list = getPronWeakWords().filter(function(w){ return w.word !== d.word.toLowerCase(); });
-                safeLSSet("ett_pron_weak", list);
-                graduated = true;
-              }
-            }
-            resultEl.innerHTML =
-              '<div class="mt-8" style="text-align:center">' +
-                '<span style="font-size:24px;font-weight:800;color:' + col + '">' + score + '</span> <span class="text-xs text-muted">文全体</span>' +
-                (twAcc != null ? ' ／ <span style="font-weight:700;color:' + (twAcc>=80?'var(--green)':twAcc>=50?'var(--yellow)':'var(--red)') + '">' + twAcc + '</span> <span class="text-xs text-muted">「' + esc(d.word) + '」</span>' : '') +
-              '</div>' +
-              pronWordsHTML(wordsArr, true) +
-              (graduated ? '<div class="tip mt-8" style="text-align:center">🎉 「' + esc(d.word) + '」が80点超え！弱点リストから卒業です。</div>' : '');
-          }
-        } catch(e) {
-          resultEl.innerHTML = '<div class="text-xs text-red mt-8">' + esc(e.message) + '</div>';
-        }
-        self.disabled = false; self.textContent = "🎤 もう一度録音"; self.style.color = "var(--red)";
-        document.querySelectorAll(".pd-rec").forEach(function(b){ if (b !== self) b.disabled = false; });
-      } else {
-        // ── START recording ──
-        stopAudio();
-        self.textContent = "⏳ 準備中..."; self.disabled = true;
-        await new Promise(function(r){ setTimeout(r, 300); });
-        try {
-          S._pdRecorder = await recordWav(0, null, 'pronSeconds');
-          S._pdRecording = true;
-          self.disabled = false; self.textContent = "⏹ 停止して評価"; self.style.color = "var(--red)";
-          // Lock other record buttons while one is active
-          document.querySelectorAll(".pd-rec").forEach(function(b){ if (b !== self) b.disabled = true; });
-        } catch(e) {
-          S._pdRecording = false;
-          self.disabled = false; self.textContent = "🎤 録音して発音チェック";
-          alert("マイクエラー: " + e.message);
-        }
-      }
-    };
-  });
-
-  $("pdNext").onclick = () => { _pdCleanup(); stopAudio(); S._pronDrillIdx++; renderPronDrillStep(); };
-}
-
-// ═══════════════════════════════════
-// 🌙 EVENING COACHING MODE (weakness-driven)
-// ═══════════════════════════════════
-function _coachLoading(t) {
-  return '<div style="text-align:center;padding:60px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">' + t + '</div></div>';
-}
-
-// Compute the 6 skill scores from the last 30 days (mirrors 学習分析)
-function getSkillScores() {
-  var hist = getHistory();
-  var now = Date.now(), DAY = 86400000;
-  var month1 = hist.filter(function(h){ return now - new Date(h.date).getTime() < 30*DAY; });
-  var ftHist = month1.filter(function(h){ return (h.mode==='freetalk'||h.mode==='describe') && h.grammar > 0; });
-  var shHist = month1.filter(function(h){ return h.mode==='shadow' && h.accuracy > 0; });
-  function av(arr, key){ var f = arr.filter(function(h){ return h[key] > 0; }); return f.length ? Math.round(f.reduce(function(a,h){ return a+h[key]; },0)/f.length) : 0; }
-  var speed = (function(){
-    var a = month1.filter(function(h){ return (h.mode==='freetalk'||h.mode==='flash') && h.avgResponseTime > 0; });
-    if (!a.length) return 0;
-    var avgResp = a.reduce(function(x,h){ return x+h.avgResponseTime; },0)/a.length;
-    var w = a.filter(function(h){ return h.wordsPerMin > 0; });
-    var wpm = w.length ? w.reduce(function(x,h){ return x+h.wordsPerMin; },0)/w.length : 0;
-    var speedScore = Math.max(0, Math.min(100, Math.round(100 - (avgResp - 5000)/250)));
-    var wpmScore = wpm > 0 ? Math.min(100, Math.round(wpm*0.8)) : speedScore;
-    return Math.round(speedScore*0.4 + wpmScore*0.6);
-  })();
-  return [
-    { key:'pron',    name:'発音',   val: av(shHist,'accuracy') },
-    { key:'fluency', name:'流暢さ', val: av(shHist,'fluency') },
-    { key:'grammar', name:'文法',   val: av(ftHist,'grammar') },
-    { key:'vocab',   name:'語彙',   val: av(ftHist,'vocabulary') },
-    { key:'natural', name:'自然さ', val: av(ftHist,'naturalness') },
-    { key:'speed',   name:'瞬発力', val: speed },
-  ];
-}
-function getWeakestSkill() {
-  var s = getSkillScores().filter(function(x){ return x.val > 0; });
-  if (!s.length) return null;
-  return s.reduce(function(a,b){ return a.val <= b.val ? a : b; });
-}
-
-// What did the learner practice TODAY? (used to make evening coaching follow the morning)
-function getTodayPractice() {
-  var today = localDateKey();
-  var marker = null;
-  try { marker = JSON.parse(localStorage.getItem("ett_today") || "null"); } catch(e) {}
-  if (marker && marker.date !== today) marker = null;
-  var mistakes = getMistakes().filter(function(m){ return (m.date || '').slice(0,10) === today; });
-  var pron = getPronWeakWords().filter(function(w){ return (w.lastDate || '').slice(0,10) === today; });
-  var sessions = getHistory().filter(function(h){ return (h.date || '').slice(0,10) === today; });
-  // Resolve the morning theme robustly: prefer the marker, else derive from today's
-  // actual sessions (Free Talk topic is the most content-bearing). This keeps the
-  // evening on-theme even if the marker is missing (e.g. morning run on an older build).
-  var themeLabel = marker ? (marker.topicLabel || marker.themeLabel || '') : '';
-  if (!themeLabel && sessions.length) {
-    var ft = sessions.filter(function(h){ return h.mode === 'freetalk' && h.topic; });
-    var src = ft.length ? ft[ft.length-1] : null;
-    if (!src) {
-      var withTopic = sessions.filter(function(h){ return h.topic && h.topic !== 'Description' && h.topic !== 'Shadowing' && h.mode !== 'coach'; });
-      src = withTopic.length ? withTopic[withTopic.length-1] : null;
-    }
-    if (src && src.topic) themeLabel = src.topic;
-  }
-  return { today:today, marker:marker, mistakes:mistakes, pron:pron, sessions:sessions, themeLabel:themeLabel, has: !!(marker || mistakes.length || pron.length || sessions.length) };
-}
-
-function initCoach() {
-  var tp = getTodayPractice();
-  var weak = getWeakestSkill();
-  var weakKey = weak ? weak.key : 'fluency';
-  var weakName = weak ? weak.name : '流暢さ';
-
-  // Block selection. In "daily" mode we bias toward the morning's material.
-  var block;
-  if (tp.pron.length >= 1 && S.azureKey) {
-    block = 'pron';                                   // reinforce this morning's mispronounced words
-  } else if (weakKey === 'fluency' || weakKey === 'speed') {
-    block = 'fluency';
-  } else if (weakKey === 'pron') {
-    block = S.azureKey ? 'pron' : 'fluency';
-  } else {
-    block = 'upgrade';                                // grammar / vocab / natural
-  }
-
-  S.coach = {
-    active:true, view:'intro', weakKey:weakKey, weakName:weakName, block:block,
-    daily: tp.has,
-    themeLabel: tp.themeLabel || '',
-    themeName:  tp.marker ? (tp.marker.themeLabel || '') : '',
-    todayPronWords: tp.pron.map(function(w){ return w.word; }),
-    data:{}, startTime:Date.now()
-  };
-  S.cost = { sttSeconds:0, pronSeconds:0, ttsChars:0, geminiInTokens:0, geminiOutTokens:0, searchCalls:0 };
-  S.screen = 'coach';
-  renderCoachIntro();
-}
-
-function renderCoachCurrent() {
-  var v = (S.coach && S.coach.view) || 'intro';
-  if (v === 'review') renderCoachReview();
-  else if (v === 'block') startCoachBlock();
-  else if (v === 'wrap') renderCoachWrap();
-  else renderCoachIntro();
-}
-
-function renderCoachIntro() {
-  S.coach.view = 'intro';
-  var q = getReviewQueue().length;
-  var themed = S.coach.daily && S.coach.themeLabel;
-  // Daily → 総ざらい parts; else → single block label
-  var dailyParts = [];
-  if (S.coach.daily) {
-    dailyParts.push('✨ 言い換え（朝のテーマ）');
-    if (S.azureKey) dailyParts.push('🎧 発音（今朝の苦手単語）');
-    dailyParts.push('⚡ 4/3/2 で締め');
-  }
-  var blockLabel = S.coach.daily
-    ? dailyParts.join(' → ')
-    : (S.coach.block==='pron' ? '🎧 発音の集中練習（録音採点' + (S.coach.todayPronWords.length ? '・今朝の苦手単語' : '') + '）' : S.coach.block==='fluency' ? '⚡ 4/3/2 フリューエンシー（90→60→40秒）' + (themed ? '・朝のテーマで' : '') : '✨ 言い換えラダー（B1→B2に引き上げ）' + (themed ? '・朝のテーマで' : ''));
-  var lead = S.coach.daily
-    ? ('今朝の練習' + (S.coach.themeLabel ? '「' + esc(S.coach.themeLabel) + '」' : '') + 'の内容を、夜にもう一度なぞって定着させます。')
-    : (getWeakestSkill() ? '今日は朝の練習が見つからないので、弱点データから組みました。' : 'まだデータが少ないので、まずは流暢さを鍛えます。');
-  app.innerHTML =
-    '<div class="navbar"><button class="back" id="coBack">←</button><div class="title">🌙 夜のコーチング</div></div>' +
-    '<div class="card" style="background:linear-gradient(135deg,#e0e7ff,#c7d2fe);border:none">' +
-      '<div class="text-sm" style="font-weight:700">' + (S.coach.daily ? '今朝の復習コーチング（約15分）' : '今夜のメニュー（約15分）') + '</div>' +
-      '<div class="text-xs mt-8" style="color:#1a2a3a">' + lead + '</div>' +
-    '</div>' +
-    '<div class="card">' +
-      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>① 復習</strong> <span class="text-xs text-muted">' + (q>0 ? q+'問（今日〜直近3日の間違い）' : '（今日は対象なし・スキップ）') + '</span></div>' +
-      '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><strong>② ' + (S.coach.daily ? '朝の総ざらい' : ('強化：' + esc(S.coach.weakName))) + '</strong><div class="text-xs text-muted">' + blockLabel + '</div></div>' +
-      '<div style="padding:10px 0"><strong>③ 仕上げ</strong> <span class="text-xs text-muted">今日の要点＋目標表現を復習へ</span></div>' +
-    '</div>' +
-    (S.coach.block==='pron' && !S.azureKey ? '<p class="text-xs text-red" style="text-align:center">⚠️ 発音採点にはAzure Speechキーが必要です</p>' : '') +
-    '<button class="btn btn-primary w-full mt-16" id="coStart">🌙 スタート</button>' +
-    '<button class="btn btn-ghost w-full mt-8 mb-16" id="coHome">ホームに戻る</button>';
-  $("coBack").onclick = $("coHome").onclick = function(){ S.coach.active=false; S.screen='home'; render(); };
-  $("coStart").onclick = function(){ if (getReviewQueue().length > 0) startCoachReview(); else startCoachBlock(); };
-}
-
-// ── Phase 1: Review ──
-function startCoachReview() {
-  S.coach.view = 'review';
-  S.coach.data.rq = getReviewQueue().slice(0, 5);
-  S.coach.data.rqAll = getMistakes();
-  S.coach.data.rqIdx = 0;
-  renderCoachReview();
-}
-function renderCoachReview() {
-  var q = S.coach.data.rq, i = S.coach.data.rqIdx || 0, all = S.coach.data.rqAll || [];
-  if (!q || i >= q.length) { startCoachBlock(); return; }
-  var m = q[i];
-  var realIdx = all.findIndex(function(x){ return x.corrected===m.corrected && x.date===m.date; });
-  var isChallenge = m.mode==='challenge';
-  var parts = isChallenge ? m.corrected.split(' — ') : null;
-  var correctText = isChallenge ? (parts[0]||m.corrected) : m.corrected;
-  var context = isChallenge ? (parts[1]||'') : (m.explanation||'');
-  var label = isChallenge ? '💡 覚えたい表現' : m.mode==='flash' ? '⚡ Flash 修正' : m.mode==='describe' ? '🎨 Description 修正' : '🗣️ Free Talk 修正';
-  app.innerHTML =
-    '<div class="navbar"><button class="back" id="crBack">←</button><div class="title">① 復習 ' + (i+1) + '/' + q.length + '</div></div>' +
-    '<div class="progress-bar"><div class="progress-fill" style="width:' + (i/q.length*100).toFixed(0) + '%"></div></div>' +
-    '<div class="card" style="padding:24px;text-align:center">' +
-      '<div class="text-xs text-muted mb-12">' + label + '</div>' +
-      '<div style="font-size:20px;font-weight:700;color:var(--accent);line-height:1.6;margin-bottom:16px">' + esc(correctText) + '</div>' +
-      '<button class="btn btn-ghost btn-sm cr-speak" data-text="' + esc(correctText).replace(/"/g,'&quot;') + '" style="color:var(--accent);margin-bottom:12px">🔊 発音を聞く</button>' +
-      (context ? '<div class="text-xs text-muted">' + esc(context) + '</div>' : '') +
-    '</div>' +
-    '<div class="text-xs text-muted mb-8" style="text-align:center">この表現を覚えましたか？</div>' +
-    '<div class="flex gap-8"><button class="btn btn-secondary w-full" id="crHard">😓 まだ</button><button class="btn btn-primary w-full" id="crEasy">✅ 覚えた</button></div>';
-  $("crBack").onclick = function(){ if(confirm("コーチングを中断しますか？")){ S.coach.active=false; S.screen='home'; render(); } };
-  document.querySelectorAll('.cr-speak').forEach(function(b){ b.onclick = function(){ speakBrowser(this.dataset.text); }; });
-  $("crHard").onclick = function(){ if(realIdx>=0) resetMistakeTimer(realIdx); S.coach.data.rqIdx++; renderCoachReview(); };
-  $("crEasy").onclick = function(){ if(realIdx>=0) markReviewed(realIdx); S.coach.data.rqIdx++; renderCoachReview(); };
-}
-
-// ── Phase 2 ──
-// Daily (morning practice exists) → "総ざらい": touch each morning part in sequence.
-// Fallback (no morning practice) → a single weakness block.
-function startCoachBlock() {
-  S.coach.view = 'block';
-  if (S.coach.daily) {
-    var plan = [];
-    plan.push('upgrade');                 // 会話・描写の復習（朝のテーマで言い換え）
-    if (S.azureKey) plan.push('pron');    // Shadowing復習（今朝の苦手単語）
-    plan.push('432');                     // 流暢さの締め（4/3/2）
-    S.coach.plan = plan;
-    S.coach.partIdx = 0;
-    startCoachPart();
-  } else {
-    S.coach.plan = null;
-    if (S.coach.block === 'pron' && S.azureKey) startCoachPron();
-    else if (S.coach.block === 'fluency') startCoach432();
-    else startCoachUpgrade();
-  }
-}
-// Chain driver for the 総ざらい sequence
-function startCoachPart() {
-  var plan = S.coach.plan || [];
-  var i = S.coach.partIdx || 0;
-  if (i >= plan.length) { startCoachWrap(); return; }
-  var part = plan[i];
-  if (part === 'upgrade') startCoachUpgrade();
-  else if (part === 'pron') startCoachPron();
-  else if (part === '432') startCoach432();
-  else advanceCoachPart();
-}
-function advanceCoachPart() { S.coach.partIdx = (S.coach.partIdx || 0) + 1; startCoachPart(); }
-// A block finished: advance the chain, or go to wrap in single-block mode
-function coachPartDone() {
-  if (S.coach.plan) advanceCoachPart();
-  else startCoachWrap();
-}
-
-// ── 4/3/2 Fluency ──
-async function startCoach432() {
-  if (!srSupported()) { if (S.coach.plan) { coachPartDone(); return; } startCoachUpgrade(); return; }  // needs speech recognition
-  app.innerHTML = _coachLoading('🎯 話題を準備中...');
-  var lvl = S.ftLevel || 'B1';
-  // Follow the morning theme when available; otherwise pick a random topic
-  var topicArea = S.coach.themeLabel;
-  if (!topicArea) {
-    var topics = FT_ALL_TOPICS.filter(function(t){ return !t.id.startsWith('si_') && t.prompt!=='__CUSTOM__' && !t.prompt.startsWith('__NEWS') && t.id!=='free_random' && t.id!=='free_any'; });
-    topicArea = (topics[Math.floor(Math.random()*topics.length)] || {}).label || 'daily life';
-  }
-  try {
-    var raw = await geminiChat([{ role:'user', content:'Create ONE concrete speaking cue for a ' + lvl + ' Japanese English learner to talk about for 90 seconds. Topic area: ' + topicArea + '. Make it personal and easy to start. Return JSON: {"cue_ja":"日本語でお題（具体的に1文）","cue_en":"English version"}' }], "JSON only.", true);
-    var d = safeJSON(raw);
-    S.coach.data.cue = d.cue_ja || (topicArea + 'について話してください');
-    S.coach.data.cueEn = d.cue_en || '';
-  } catch(e) { S.coach.data.cue = (topicArea || '最近あった出来事') + 'について話してください'; S.coach.data.cueEn = ''; }
-  S.coach.data.round = 0;
-  // Azure STT (REST) caps a single utterance at ~60s, so keep rounds under that
-  // unless Web Speech (no cap) is explicitly selected.
-  S.coach.data.times = (S.srMode === 'webspeech') ? [90, 60, 40] : [55, 40, 30];
-  S.coach.data.wpm = [];
-  S.coach.data.transcripts = [];
-  renderCoach432();
-}
-function renderCoach432() {
-  var r = S.coach.data.round || 0;
-  if (r >= 3) { renderCoach432Summary(); return; }
-  var secs = S.coach.data.times[r];
-  app.innerHTML =
-    '<div class="navbar"><button class="back" id="c4Back">←</button><div class="title">⚡ 4/3/2 (' + (r+1) + '/3)</div></div>' +
-    '<div class="card" style="padding:24px">' +
-      '<div class="text-xs text-accent" style="font-weight:600">同じ話題を ' + secs + '秒 で話しきる</div>' +
-      '<div class="text-sm mt-8" style="font-weight:600;line-height:1.7">' + esc(S.coach.data.cue) + '</div>' +
-      (S.coach.data.cueEn ? '<div class="text-xs text-muted mt-8">' + esc(S.coach.data.cueEn) + '</div>' : '') +
-      (r>0 ? '<div class="text-xs text-muted mt-12">前回: ' + (S.coach.data.wpm[r-1]||0) + ' WPM ／ 同じ内容をより速く・スムーズに！</div>' : '') +
-    '</div>' +
-    '<div class="card" style="text-align:center;padding:24px">' +
-      '<div id="c4Timer" style="font-size:40px;font-weight:800;color:var(--accent)">' + secs + '</div>' +
-      '<div class="text-xs text-muted mb-16">秒</div>' +
-      '<button class="mic-btn idle" id="c4Mic" style="margin:0 auto;display:flex">🎤</button>' +
-      '<div class="text-xs text-muted mt-8">タップで開始／もう一度タップで終了</div>' +
-    '</div>' +
-    '<div id="c4Result" class="hidden"></div>';
-  $("c4Back").onclick = function(){ if(confirm("コーチングを中断しますか？")){ srCancel(); S.coach.active=false; S.screen='home'; render(); } };
-  var timer = null, startedAt = 0;
-  $("c4Mic").onclick = function() {
-    var btn = this;
-    if (srIsActive()) {
-      btn.className = 'mic-btn processing'; btn.textContent = '⏳';
-      if (timer) clearInterval(timer);
-      srStop();
-    } else {
-      var started = srStart(function(text){
-        if (timer) clearInterval(timer);
-        var spoken = startedAt ? (Date.now()-startedAt)/1000 : secs;
-        if (spoken <= 0) spoken = secs;
-        var wc = (text||'').trim().split(/\s+/).filter(Boolean).length;
-        var wpm = Math.round(wc/(spoken/60));
-        S.coach.data.wpm[r] = wpm;
-        S.coach.data.transcripts[r] = text || '';
-        if ($("c4Mic")) { $("c4Mic").className = 'mic-btn idle'; $("c4Mic").textContent = '🎤'; }
-        $("c4Result").classList.remove('hidden');
-        $("c4Result").innerHTML =
-          '<div class="card" style="text-align:center">' +
-            '<div style="font-size:28px;font-weight:800;color:var(--accent)">' + wpm + ' WPM</div>' +
-            '<div class="text-xs text-muted">' + wc + '語 / ' + Math.round(spoken) + '秒</div>' +
-            '<div class="text-sm mt-8" style="text-align:left">' + esc(text||'(認識なし)') + '</div>' +
-            '<button class="btn btn-primary w-full mt-16" id="c4Next">' + (r<2 ? '次のラウンド (' + S.coach.data.times[r+1] + '秒) →' : '結果を見る →') + '</button>' +
-          '</div>';
-        $("c4Next").onclick = function(){ S.coach.data.round++; renderCoach432(); };
-      });
-      if (started) {
-        btn.className = 'mic-btn recording'; btn.textContent = '⏹';
-        startedAt = Date.now();
-        var remain = secs;
-        timer = setInterval(function(){
-          remain--;
-          if ($("c4Timer")) $("c4Timer").textContent = Math.max(0, remain);
-          if (remain <= 0) {
-            clearInterval(timer);
-            if (srIsActive()) { if ($("c4Mic")) { $("c4Mic").className = 'mic-btn processing'; $("c4Mic").textContent = '⏳'; } srStop(); }
-          }
-        }, 1000);
-      }
-    }
-  };
-}
-function renderCoach432Summary() {
-  var w = S.coach.data.wpm || [];
-  var last = w.length ? (w[w.length-1]||0) : 0;
-  var improved = w.length >= 2 && last >= (w[0]||0);
-  var doneLabel = (S.coach.plan ? '次へ →' : '仕上げへ →');
-  app.innerHTML =
-    '<div class="navbar"><div class="title">⚡ 4/3/2 完了</div></div>' +
-    '<div class="summary-header"><div class="score" style="color:var(--accent)">' + last + '</div><div class="label">最終ラウンド WPM</div></div>' +
-    '<div class="card"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;gap:8px">' +
-      [0,1,2].map(function(k){ return '<div><div style="font-weight:700;font-size:18px">' + (w[k]!=null?w[k]:'-') + '</div><div class="text-xs text-muted">' + S.coach.data.times[k] + '秒</div></div>'; }).join('') +
-    '</div><div class="text-xs mt-8" style="text-align:center;color:' + (improved?'var(--green)':'var(--muted)') + '">' + (improved ? '🎉 繰り返すほど速く滑らかに！' : '速度は毎日続けると伸びます。') + '</div></div>' +
-    '<div class="card" id="c4EvalCard"><div class="text-sm" style="font-weight:600;margin-bottom:8px">🧠 内容・要約力の評価</div>' +
-      '<div id="c4Eval"><div class="typing" style="justify-content:center"><span></span><span></span><span></span></div><div class="text-xs text-muted" style="text-align:center">同じ話題を段階的に端的にまとめ直せているか分析中...</div></div>' +
-    '</div>' +
-    '<div id="c4After"></div>';
-  // Evaluate content + summarization progression (async); fall back to just the button
-  evaluateCoach432(doneLabel);
-}
-
-function _c4NextButton(label) {
-  var el = $("c4After");
-  if (!el) return;
-  el.innerHTML = '<button class="btn btn-primary w-full mt-16" id="c4Done">' + label + '</button>';
-  $("c4Done").onclick = function(){ coachPartDone(); };
-}
-
-async function evaluateCoach432(doneLabel) {
-  var tr = S.coach.data.transcripts || [];
-  var times = S.coach.data.times || [55,40,30];
-  var spoken = tr.filter(function(t){ return t && t.trim().split(/\s+/).filter(Boolean).length >= 2; });
-  // Not enough speech to evaluate content
-  if (spoken.length === 0) {
-    if ($("c4Eval")) $("c4Eval").innerHTML = '<div class="text-xs text-muted" style="text-align:center">音声が十分に認識できなかったため、内容評価はスキップしました。</div>';
-    _c4NextButton(doneLabel);
-    return;
-  }
-  var lvl = S.ftLevel || 'B1';
-  var cue = S.coach.data.cue || '';
-  var roundsText = tr.map(function(t,i){ return 'Round ' + (i+1) + ' (' + times[i] + 's): "' + (t || '(no speech)') + '"'; }).join('\n');
-  // Pace-aware target: the model answer is sized in WORDS to the learner's OWN speaking
-  // rate, not to native-speaker seconds. (A time label is misleading when the learner
-  // speaks slower than TTS.) Target = what they could say in the final slot at their pace.
-  var wpms = (S.coach.data.wpm || []).filter(function(x){ return typeof x === 'number' && x > 0; });
-  var maxWpm = wpms.length ? Math.max.apply(null, wpms) : 0;
-  var lastWpm = (S.coach.data.wpm || [])[times.length-1] || 0;
-  var tFinal = times[times.length-1];
-  var lastTr = (tr[tr.length-1] || '').trim();
-  var wcFinal = lastTr ? lastTr.split(/\s+/).filter(Boolean).length : 0;
-  var paceForTarget = maxWpm > 0 ? maxWpm : 70;      // learner's best demonstrated pace
-  var targetWords = Math.max(25, Math.round(paceForTarget * tFinal / 60));
-  var fullWords = Math.round(140 * tFinal / 60);     // a fluent speaker filling the full slot (~140 wpm)
-  try {
-    var raw = await geminiChat([{ role:'user', content:
-'A ' + lvl + ' Japanese learner did a 4/3/2 fluency drill: they spoke about the SAME topic 3 times with DECREASING time (' + times.join('s → ') + 's), so each round should keep the key content but become more concise and better organized.\n\n' +
-'Topic (Japanese cue): ' + cue + '\n\n' + roundsText + '\n\n' +
-'Evaluate on a 0-100 scale:\n' +
-'- content: Did they say relevant, meaningful things about the topic? Judge the richest round.\n' +
-'- grammar: Grammatical accuracy across the rounds.\n' +
-'- conciseness: THE KEY CRITERION. As the time shrank, did they successfully condense the SAME core message — keeping the essential points while cutting filler and improving structure? HIGH = the last round reads like a tight, well-organized summary of the first. LOW = they merely got cut off, dropped key information, rambled, or just repeated the long version without tightening it.\n' +
-'List up to 2 corrections (real grammar errors only; empty if none).\n' +
-'Also provide TWO model answers on the same topic at ' + lvl + ' level:\n' +
-'- "model_short": a concise, well-organized version, about ' + targetWords + ' words (roughly what the learner could actually say in the final ' + tFinal + '-second round AT THEIR OWN pace of ~' + (maxWpm||70) + ' wpm — do NOT size it to a fast native pace). Keep the key points; tighter than what they said.\n' +
-'- "model_full": a RICHER version that a fluent speaker would say to fill the whole ' + tFinal + ' seconds at a natural pace (about ' + fullWords + ' words). Build on the SAME topic but ADD substance: a concrete example, a reason, a detail, and a natural closing — show how to expand the idea, not just pad it.\n' +
-'- "model_full_note": one short Japanese line naming what was added to expand it (例: 具体例・理由・締めの一言).\n\n' +
-'Return JSON ONLY:\n' +
-'{"content":{"score":75,"note":"日本語で一言"},"grammar":{"score":75,"note":"日本語で一言"},"conciseness":{"score":75,"note":"日本語で、段階を追って端的にまとめ直せているかの講評"},"corrections":[{"original":"","corrected":"","explanation":"日本語"}],"model_short":"...","model_full":"...","model_full_note":"日本語で一言","comment":"日本語で総評（良い点＋次の一歩）"}'
-    }], "Fluency drill examiner. JSON only.", true);
-    var ev = safeJSON(raw);
-    var cl = function(v){ v = Math.round(v||0); return Math.max(0, Math.min(100, v)); };
-    var sC = cl(ev.content && ev.content.score), sG = cl(ev.grammar && ev.grammar.score), sS = cl(ev.conciseness && ev.conciseness.score);
-    var overall = Math.round(sC*0.35 + sG*0.25 + sS*0.40); // summarization weighted highest
-    S.coach.data.blockScore = overall;
-    S.coach.data.c432eval = { content:sC, grammar:sG, conciseness:sS, overall:overall };
-    // Corrections → review queue
-    var corrections = Array.isArray(ev.corrections) ? ev.corrections.filter(function(c){ return c && c.corrected; }).slice(0,2) : [];
-    corrections.forEach(function(c){ addMistake({ original:c.original||'', corrected:c.corrected, explanation:c.explanation||'', source:(cue||'').slice(0,60), mode:'freetalk' }); });
-    var cell = function(label, val, note){
-      var col = val>=80?'var(--green)':val>=60?'var(--yellow)':'var(--red)';
-      return '<div style="text-align:center"><div style="font-weight:700;color:' + col + '">' + val + '</div><div class="text-xs text-muted">' + label + '</div>' + (note ? '<div class="text-xs text-muted" style="margin-top:2px">' + esc(note) + '</div>' : '') + '</div>';
-    };
-    if ($("c4Eval")) {
-      $("c4Eval").innerHTML =
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">' +
-          cell('内容', sC, ev.content && ev.content.note) +
-          cell('文法', sG, ev.grammar && ev.grammar.note) +
-          cell('要約力', sS, '') +
-        '</div>' +
-        '<div class="tip mt-12" style="text-align:left"><strong>📝 要約力（段階的に端的にまとめ直せたか）:</strong><br>' + esc((ev.conciseness && ev.conciseness.note) || '') + '</div>' +
-        (corrections.length ? '<div class="text-xs mt-12" style="color:var(--red)">🔄 修正（復習に追加）:</div>' + corrections.map(function(c){ return '<div style="padding:4px 0"><div class="text-sm"><span class="text-red">✗</span> ' + esc(c.original||'') + '</div><div class="text-sm"><span class="text-green">✓</span> ' + esc(c.corrected) + '</div></div>'; }).join('') : '') +
-        '<div class="text-xs text-muted mt-12">📊 最終ラウンド: <strong>' + wcFinal + '語</strong> / ' + tFinal + '秒（≈' + (lastWpm||0) + ' WPM）　目標の量: <strong>約' + targetWords + '語</strong></div>' +
-        (wcFinal > 0 && wcFinal < targetWords * 0.7 ? '<div class="tip mt-8" style="text-align:left">⏱️ 同じ' + tFinal + '秒で、あなたのペースならもう少し内容を詰められます（今は間やためらいが多いかも）。下の例くらいの量を目安に。</div>' : '') +
-        (ev.model_short ? '<div class="text-xs mt-12" style="color:var(--accent)">✨ 引き締め版（同じ内容を端的に・約' + targetWords + '語）:</div><div class="text-sm mt-4" style="color:var(--accent)">' + esc(ev.model_short) + '</div><button class="btn-ghost btn-sm c4-speak" data-text="' + esc(ev.model_short).replace(/"/g,'&quot;') + '" style="color:var(--accent)">🔊 聞く（ゆっくり）</button>' : '') +
-        (ev.model_full ? '<div style="margin-top:14px;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px">' +
-          '<div class="text-xs" style="color:var(--green);font-weight:600">🌱 膨らませ版（AIなら' + tFinal + '秒フルにこう話す・約' + fullWords + '語）:</div>' +
-          '<div class="text-sm mt-4" style="color:#065f46">' + esc(ev.model_full) + '</div>' +
-          (ev.model_full_note ? '<div class="text-xs text-muted mt-4">➕ ' + esc(ev.model_full_note) + '</div>' : '') +
-          '<button class="btn-ghost btn-sm c4-speak" data-text="' + esc(ev.model_full).replace(/"/g,'&quot;') + '" style="color:var(--green)">🔊 聞く</button>' +
-        '</div>' : '') +
-        (ev.comment ? '<div class="text-xs text-muted mt-12">' + esc(ev.comment) + '</div>' : '');
-      document.querySelectorAll('.c4-speak').forEach(function(b){ b.onclick = function(){ if(window.speechSynthesis){ speechSynthesis.cancel(); var u=new SpeechSynthesisUtterance(this.dataset.text); u.lang='en-US'; u.rate=0.9; speechSynthesis.speak(u); } }; });
-    }
-  } catch(e) {
-    if ($("c4Eval")) $("c4Eval").innerHTML = '<div class="text-xs text-red">内容評価に失敗しました: ' + esc(e.message) + '</div>';
-  }
-  _c4NextButton(doneLabel);
-}
-
-// ── 言い換えラダー (upgrade) ──
-function startCoachUpgrade() {
-  S.coach.data.upIdx = 0;
-  S.coach.data.upCount = S.coach.plan ? 1 : 2;  // shorter when part of the 総ざらい chain
-  renderCoachUpgrade();
-}
-async function renderCoachUpgrade() {
-  var i = S.coach.data.upIdx || 0;
-  if (i >= (S.coach.data.upCount || 2)) { coachPartDone(); return; }
-  app.innerHTML = _coachLoading('✨ お題を準備中...');
-  var lvl = S.ftLevel || 'B1';
-  var focusMap = { grammar:'grammatical accuracy (tenses, articles, agreement)', vocab:'richer vocabulary and natural collocations', natural:'natural, native-like phrasing' };
-  var focus = focusMap[S.coach.weakKey] || 'natural phrasing';
-  var themeCtx = S.coach.themeLabel ? ' Relate the situation to the theme "' + S.coach.themeLabel + '" (what they practiced this morning).' : '';
-  try {
-    var raw0 = await geminiChat([{ role:'user', content:'Give ONE short, concrete speaking prompt for a ' + lvl + ' Japanese learner — a real everyday situation to respond to in 1-2 English sentences.' + themeCtx + ' Return JSON: {"ja":"日本語のお題（1文・具体的に）","hint":"使えるヒント（日本語）"}' }], "JSON only.", true);
-    S.coach.data.upPrompt = safeJSON(raw0);
-  } catch(e) { S.coach.data.upPrompt = { ja:(S.coach.themeLabel ? '「'+S.coach.themeLabel+'」について英語で話してください' : '週末の予定を友人に英語で伝えてください'), hint:'' }; }
-  var q = S.coach.data.upPrompt || { ja:'', hint:'' };
-  app.innerHTML =
-    '<div class="navbar"><button class="back" id="cuBack">←</button><div class="title">✨ 言い換え ' + (i+1) + '/' + S.coach.data.upCount + '</div></div>' +
-    '<div class="card" style="padding:20px">' +
-      '<div class="text-xs text-accent" style="font-weight:600">📌 ' + esc(S.coach.weakName) + 'を強化</div>' +
-      '<div class="text-sm mt-8" style="font-weight:600;line-height:1.7">' + esc(q.ja||'') + '</div>' +
-      (q.hint ? '<div class="text-xs text-muted mt-8">💡 ' + esc(q.hint) + '</div>' : '') +
-    '</div>' +
-    '<div class="card" id="cuInput" style="padding:20px">' +
-      (srSupported() ? '<button class="mic-btn idle" id="cuMic" style="margin:0 auto 12px;display:flex">🎤</button>' : '') +
-      '<textarea id="cuText" class="input" rows="2" placeholder="英語で答える..." style="border-radius:12px;resize:none;width:100%;font-size:15px"></textarea>' +
-      '<button class="btn btn-primary w-full mt-8" id="cuSubmit">送信して評価 →</button>' +
-    '</div>' +
-    '<div id="cuResult" class="hidden"></div>';
-  $("cuBack").onclick = function(){ if(confirm("コーチングを中断しますか？")){ srCancel(); S.coach.active=false; S.screen='home'; render(); } };
-  if ($("cuMic")) $("cuMic").onclick = function() {
-    if (srIsActive()) { this.className='mic-btn processing'; this.textContent='⏳'; srStop(); }
-    else { var started = srStart(function(text){ if($("cuText")) $("cuText").value = ($("cuText").value + ' ' + text).trim(); if($("cuMic")){ $("cuMic").className='mic-btn idle'; $("cuMic").textContent='🎤'; } }); if(started){ this.className='mic-btn recording'; this.textContent='⏹'; } }
-  };
-  $("cuSubmit").onclick = async function() {
-    var ans = $("cuText") && $("cuText").value.trim();
-    if (!ans) return;
-    this.disabled = true; this.textContent = '⏳ 分析中...';
-    try {
-      var raw = await geminiChat([{ role:'user', content:'A ' + lvl + ' Japanese learner responded to this situation: "' + (q.ja||'') + '"\nTheir English answer: "' + ans + '"\nFocus especially on ' + focus + '.\nReturn JSON:\n{"b1":"a simple but correct B1-level version of their idea","b2":"a more natural, upgraded B2-level version (richer vocab/collocations/structure)","chunk":{"en":"one target chunk/collocation to remember (2-5 words)","ja":"日本語の意味"},"tip":"日本語で一言：B2版のどこが上がったか"}' }], "JSON only.", true);
-      var ev = safeJSON(raw);
-      S.coach.data.chunks = S.coach.data.chunks || [];
-      if (ev.chunk && ev.chunk.en) S.coach.data.chunks.push(ev.chunk);
-      $("cuInput").classList.add('hidden');
-      $("cuResult").classList.remove('hidden');
-      $("cuResult").innerHTML =
-        '<div class="card" style="padding:18px">' +
-          '<div class="text-xs text-muted">🗣️ あなた:</div><div class="text-sm mt-4">' + esc(ans) + '</div>' +
-          '<div class="text-xs mt-12" style="color:var(--muted)">B1 素直な形:</div><div class="text-sm mt-4">' + esc(ev.b1||'') + '</div>' +
-          '<div class="text-xs mt-12" style="color:var(--accent)">⬆️ B2 一段上へ:</div><div class="text-sm mt-4" style="color:var(--accent);font-weight:600">' + esc(ev.b2||'') + '</div>' +
-          (ev.b2 ? '<button class="btn-ghost btn-sm cu-speak" data-text="' + esc(ev.b2).replace(/"/g,'&quot;') + '" style="color:var(--accent);margin-top:6px">🔊 B2版を聞く</button>' : '') +
-          (ev.chunk && ev.chunk.en ? '<div class="challenge-expr" style="margin-top:12px"><div class="expr-en">🎯 ' + esc(ev.chunk.en) + '</div><div class="expr-ja">' + esc(ev.chunk.ja||'') + '</div></div>' : '') +
-          (ev.tip ? '<div class="text-xs text-muted mt-8">💡 ' + esc(ev.tip) + '</div>' : '') +
-          '<button class="btn btn-primary w-full mt-16" id="cuNext">次へ →</button>' +
-        '</div>';
-      var sp = document.querySelector('.cu-speak'); if (sp) sp.onclick = function(){ speakBrowser(this.dataset.text); };
-      $("cuNext").onclick = function(){ S.coach.data.upIdx++; renderCoachUpgrade(); };
-    } catch(e) {
-      $("cuInput").classList.add('hidden');
-      $("cuResult").classList.remove('hidden');
-      $("cuResult").innerHTML = '<div class="card"><div class="text-sm text-red">' + esc(e.message) + '</div><button class="btn btn-secondary mt-8" id="cuNext">次へ</button></div>';
-      $("cuNext").onclick = function(){ S.coach.data.upIdx++; renderCoachUpgrade(); };
-    }
-  };
-}
-
-// ── Pronunciation mini (Azure) ──
-async function startCoachPron() {
-  app.innerHTML = _coachLoading('🎧 発音文を準備中...');
-  var lvl = CEFR_LEVELS[S.ftLevel] || CEFR_LEVELS.B1;
-  try {
-    // Prefer THIS MORNING's mispronounced words; otherwise the overall weakest
-    var weakWords = (S.coach.todayPronWords && S.coach.todayPronWords.length)
-      ? S.coach.todayPronWords.slice(0, 5)
-      : getPronWeakWords().sort(function(a,b){ return a.lastScore-b.lastScore; }).slice(0,5).map(function(w){ return w.word; });
-    var extra = weakWords.length ? 'Try to naturally include some of these words the learner struggles with: ' + weakWords.join(', ') + '.' : '';
-    var themeExtra = S.coach.themeLabel ? ' Keep the sentences related to the theme "' + S.coach.themeLabel + '".' : '';
-    var nSent = S.coach.plan ? 2 : 3;  // shorter when part of the 総ざらい chain
-    var raw = await geminiChat([{ role:'user', content:'Generate ' + nSent + ' natural spoken English sentences for shadowing at ' + lvl.id + ' level.\n' + lvl.shadowRules + '\n' + extra + themeExtra + '\nReturn JSON: {"sentences":[{"en":"...","ja":"..."}]}' }], "JSON only.", true);
-    S.coach.data.pron = (safeJSON(raw).sentences || []).slice(0, nSent);
-  } catch(e) { S.coach.data.pron = []; }
-  if (!S.coach.data.pron.length) { if (S.coach.plan) { coachPartDone(); return; } startCoach432(); return; }  // fallback
-  S.coach.data.pIdx = 0; S.coach.data.pScores = [];
-  S.ftVoice = pickVoice('shadow');
-  renderCoachPron();
-}
-function renderCoachPron() {
-  var i = S.coach.data.pIdx || 0, list = S.coach.data.pron || [];
-  if (i >= list.length) { renderCoachPronSummary(); return; }
-  var sent = list[i];
-  app.innerHTML =
-    '<div class="navbar"><button class="back" id="cpBack">←</button><div class="title">🎧 発音 ' + (i+1) + '/' + list.length + '</div></div>' +
-    '<div class="progress-bar"><div class="progress-fill" style="width:' + (i/list.length*100).toFixed(0) + '%"></div></div>' +
-    '<div class="card shadow-card">' +
-      '<div class="shadow-status" id="cpStatus">🔊 お手本を聞きましょう</div>' +
-      '<div class="shadow-text" id="cpText">' + esc(sent.en) + '</div>' +
-      '<div class="text-xs text-muted mb-16">' + esc(sent.ja||'') + '</div>' +
-      '<button class="btn btn-primary" id="cpListen">🔊 お手本を聞く</button>' +
-      '<button class="btn btn-secondary mt-8 hidden" id="cpRec">🎤 自分で言う</button>' +
-      '<button class="btn btn-ghost mt-8 hidden" id="cpNext">次へ →</button>' +
-      '<div id="cpResult" class="hidden mt-16"></div>' +
-    '</div>';
-  $("cpBack").onclick = function(){ if(confirm("コーチングを中断しますか？")){ stopAudio(); releaseMicStream(); S.coach.active=false; S.screen='home'; render(); } };
-  $("cpListen").onclick = async function(){ this.disabled=true; this.textContent='⏳ 再生中...'; try{ await speakText(sent.en, S.ftVoice); }catch(e){} this.textContent='🔊 もう一度'; this.disabled=false; $("cpStatus").textContent='🎤 同じ文を繰り返してください'; $("cpRec").classList.remove('hidden'); };
-  $("cpRec").onclick = async function(){
-    stopAudio(); this.disabled=true; this.textContent='⏳ 準備中...';
-    await new Promise(function(r){ setTimeout(r,400); });
-    try {
-      var rec = await recordWav(0, null, 'pronSeconds');
-      this.disabled=false; this.textContent='⏹ 停止して評価'; this.className='btn btn-danger mt-8';
-      this.onclick = async function(){
-        this.disabled=true; this.textContent='⏳ 評価中...';
-        var wav = await rec.stop();
-        try {
-          if (!wav || wav.size <= 44) throw new Error('録音が空でした。もう一度お試しください。');
-          var result = await azurePronAssess(wav, sent.en);
-          var nb = result && result.NBest ? result.NBest[0] : null;
-          var pa = (nb && nb.PronunciationAssessment) || {};
-          var pron = pa.PronScore != null ? pa.PronScore : (nb ? nb.PronScore : undefined);
-          var words = (nb && nb.Words) || pa.Words || [];
-          if (pron == null) { S.coach.data.pScores.push(0); $("cpResult").classList.remove('hidden'); $("cpResult").innerHTML = '<div class="text-xs text-red">スコアを取得できませんでした</div>'; }
-          else {
-            var sc = Math.round(pron); S.coach.data.pScores.push(sc);
-            words.forEach(function(w){ var wpa = w.PronunciationAssessment || w; var acc = wpa.AccuracyScore != null ? wpa.AccuracyScore : 100; var et = wpa.ErrorType || 'None'; if (acc < 70 && et !== 'Insertion' && w.Word && w.Word.length > 1) savePronWeakWord(w.Word.toLowerCase(), Math.round(acc), sent.en); });
-            var col = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
-            $("cpResult").classList.remove('hidden');
-            $("cpResult").innerHTML = '<div style="font-size:32px;font-weight:800;color:' + col + '">' + sc + '</div>' + pronWordsHTML(words, false) + '<div class="text-xs text-muted mt-8">🟢正確 🟡要改善 🔴不正確 取消線=未発話</div>';
-          }
-        } catch(e) { S.coach.data.pScores.push(0); $("cpResult").classList.remove('hidden'); $("cpResult").innerHTML = '<div class="text-xs text-red">' + esc(e.message) + '</div>'; }
-        $("cpNext").classList.remove('hidden'); this.classList.add('hidden');
-      };
-    } catch(e) { alert('マイクエラー: ' + e.message); this.disabled=false; this.textContent='🎤 自分で言う'; }
-  };
-  $("cpNext").onclick = function(){ S.coach.data.pIdx++; renderCoachPron(); };
-}
-function renderCoachPronSummary() {
-  var s = S.coach.data.pScores || [];
-  var avg = s.length ? Math.round(s.reduce(function(a,b){ return a+b; },0)/s.length) : 0;
-  S.coach.data.blockScore = avg;
-  coachPartDone();
-}
-
-// ── Phase 3: Wrap ──
-function startCoachWrap() {
-  S.coach.view = 'wrap';
-  updateStreak();
-  addToCumulativeCost(calcSessionTotal());
-  var chunks = S.coach.data.chunks || [];
-  chunks.forEach(function(c){ if (c && c.en) addMistake({ original:'（コーチングの目標表現）', corrected:c.en + ' — ' + (c.ja||''), explanation:'次の会話で使ってみましょう！', mode:'challenge' }); });
-  renderCoachWrap();
-}
-function renderCoachWrap() {
-  var chunks = S.coach.data.chunks || [];
-  app.innerHTML =
-    '<div class="summary-header" style="padding-top:40px">' +
-      '<div style="font-size:48px">🌙</div>' +
-      '<div class="label">今夜のコーチング完了！</div>' +
-      '<div class="text-sm text-muted mt-8">' + (S.coach.daily ? ('今朝の練習' + (S.coach.themeLabel ? '「' + esc(S.coach.themeLabel) + '」' : '') + 'を復習しました') : ('弱点「' + esc(S.coach.weakName) + '」を強化しました')) + '</div>' +
-    '</div>' +
-    (chunks.length ? '<div class="card"><div class="text-sm" style="font-weight:600;margin-bottom:8px">🎯 今日の表現（復習に追加済み）</div>' + chunks.map(function(c){ return '<div class="challenge-expr"><div class="expr-en">' + esc(c.en) + '</div><div class="expr-ja">' + esc(c.ja||'') + '</div></div>'; }).join('') + '</div>' : '') +
-    '<div class="card" style="background:#f0fdf4;border-color:#bbf7d0"><div class="text-sm">おつかれさまでした。夜に復習した内容は睡眠中に定着します。明日の朝はルーティンで軽く口を動かしましょう 🌅</div></div>' +
-    calcCostHTML() +
-    '<button class="btn btn-primary w-full mt-16 mb-16" id="cwHome">ホームに戻る</button>';
-  $("cwHome").onclick = function(){ S.coach.active=false; S.screen='home'; render(); };
+  $("pdNext").onclick = () => { S._pronDrillIdx++; renderPronDrillStep(); };
 }
 
 // ═══════════════════════════════════
@@ -4622,7 +4118,8 @@ function renderFlashSummary() {
   var flashTotalTime = timedResults.reduce((a,r)=>a+r.responseTime,0);
   var flashWpm = flashTotalTime > 0 ? Math.round(flashTotalWords / (flashTotalTime / 60000)) : 0;
 
-  // (totalSessions / totalMinutes are recomputed inside saveSession)
+  S.totalSessions++;
+  S.totalMinutes += 5;
   saveSession({
     mode: "flash",
     topic: FLASH_CATEGORIES.find(c => c.id === S.flashCategory)?.label || S.flashCategory,
@@ -4761,6 +4258,7 @@ async function generateShadowSentences() {
     var shStyles = ["independent statement","question and answer","expressing opinion","telling a story","giving advice","making a comparison","describing an experience","explaining a process"];
     var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
     var shStyle = shStyles[Math.floor(Math.random()*shStyles.length)];
+    var shPicked = shTopics.sort(function(){return Math.random()-0.5;}).slice(0,3);
 
     // In routine mode: use the Free Talk topic for continuity
     var themeHint = `VARIETY: Use these topics: "${shPicked.join('", "')}". Sentence style: ${shStyle}. Each sentence MUST be about a DIFFERENT topic and feel natural/conversational.`;
@@ -4865,12 +4363,11 @@ async function renderShadowPractice() {
             if (pronScore !== undefined) {
               const score = Math.round(pronScore);
               const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
-              // Word-level data — must be defined BEFORE it is stored/used
-              var words = nb?.Words || pa?.Words || [];
               S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0), words: words });
 
               // Word-level accuracy visualization
               var wordsHtml = '';
+              var words = nb?.Words || pa?.Words || [];
               if (words.length > 0) {
                 wordsHtml = '<div style="margin-top:12px;line-height:2.2;font-size:15px;display:flex;flex-wrap:wrap;gap:2px 6px">' +
                   words.map(function(w) {
@@ -4895,7 +4392,7 @@ async function renderShadowPractice() {
                   var wacc = wpa.AccuracyScore ?? 100;
                   var errType = wpa.ErrorType || 'None';
                   if (wacc < 70 && errType !== 'Insertion' && w.Word && w.Word.length > 1) {
-                    savePronWeakWord(w.Word.toLowerCase(), Math.round(wacc), sent.en);
+                    savePronWeakWord(w.Word.toLowerCase(), Math.round(wacc), refText);
                   }
                 });
               }
@@ -4944,21 +4441,6 @@ async function renderShadowPractice() {
 
 function renderShadowSummary() {
   const results = S.shadowResults;
-  // Guard: no evaluated sentences (e.g. Azure key missing) — avoid crashing on results[worstIdx]
-  if (results.length === 0) {
-    app.innerHTML = `
-      <div class="navbar"><button class="back" id="shsBack0">←</button><div class="title">Shadowing 結果</div></div>
-      <div class="card" style="text-align:center;padding:40px">
-        <div class="text-sm text-muted">評価できた文がありませんでした。<br>Shadowingの発音採点には Azure Speech キーが必要です。<br>⚙️ 設定から登録してください。</div>
-      </div>
-      <button class="btn btn-primary w-full mt-16 mb-16" id="shsHome0">ホームに戻る</button>`;
-    const shsBack = () => {
-      if (S.routine.active) { S.routine.scores.push(0); advanceRoutine(); }
-      else { S.screen = "home"; render(); }
-    };
-    $("shsBack0").onclick = $("shsHome0").onclick = shsBack;
-    return;
-  }
   const avg = results.length > 0 ? Math.round(results.reduce((a,r) => a+r.score, 0) / results.length) : 0;
   updateStreak();
   var scoredResults = results.filter(r => r.score > 0);
@@ -5127,7 +4609,6 @@ function renderReviewQuiz() {
     const realIdx = all.findIndex(x => x.corrected === m.corrected && x.date === m.date);
     const isChallenge = m.mode === 'challenge';
     const isFlash = m.mode === 'flash';
-    const isDescribe = m.mode === 'describe';
 
     // Build card content based on type
     var topLabel, questionText, correctText, contextText;
@@ -5141,11 +4622,6 @@ function renderReviewQuiz() {
       topLabel = '⚡ Flash 不正解';
       correctText = m.corrected;
       contextText = m.source ? '日本語: ' + m.source : '';
-      questionText = m.original || '';
-    } else if (isDescribe) {
-      topLabel = '🎨 Description 修正';
-      correctText = m.corrected;
-      contextText = m.explanation || '';
       questionText = m.original || '';
     } else {
       topLabel = '🗣️ Free Talk 修正';

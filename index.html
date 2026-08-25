@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25g";
+const VERSION = "v2026.08.25j";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -660,7 +660,7 @@ async function fetchT(url, options, ms) {
 }
 
 // ── Gemini API ──
-async function geminiChat(messages, systemPrompt = "", json = false, useSearch = false, modelOverride = null) {
+async function geminiChat(messages, systemPrompt = "", json = false, useSearch = false, modelOverride = null, tempOverride = null) {
   const _mdl = modelOverride || GEMINI_MODEL;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${_mdl}:generateContent?key=${S.geminiKey}`;
   const contents = messages.map(m => ({
@@ -670,7 +670,7 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
   const body = {
     contents,
     generationConfig: {
-      temperature: json ? 0.3 : 0.8,
+      temperature: tempOverride !== null ? tempOverride : (json ? 0.3 : 0.8),
       maxOutputTokens: 8192,
       ...(json ? { responseMimeType: "application/json" } : {})
     }
@@ -1061,13 +1061,15 @@ function clearAllData() {
   localStorage.removeItem("ett_total_cost");
   localStorage.removeItem("ett_ls_stats");
   localStorage.removeItem("ett_pron_weak");
+  localStorage.removeItem("ett_ls_recent");
+  localStorage.removeItem("ett_flash_recent");
   S.totalSessions = 0;
   S.totalMinutes = 0;
   S.screen = "home"; render();
 }
 
 function exportAllData() {
-  var keys = ["ett_history","ett_total_sessions","ett_total_minutes","ett_streak","ett_mistakes","ett_vocab","ett_convlogs","ett_challenge_used","ett_total_cost","ett_pron_weak","ett_ls_stats","gemini_api_key","azure_speech_key","azure_speech_region","gemini_model","ett_sr_mode","ett_cached_version"];
+  var keys = ["ett_history","ett_total_sessions","ett_total_minutes","ett_streak","ett_mistakes","ett_vocab","ett_convlogs","ett_challenge_used","ett_total_cost","ett_pron_weak","ett_ls_stats","ett_ls_recent","ett_flash_recent","gemini_api_key","azure_speech_key","azure_speech_region","gemini_model","ett_sr_mode","ett_cached_version"];
   var data = { _version: VERSION, _date: new Date().toISOString() };
   keys.forEach(function(k) {
     var v = localStorage.getItem(k);
@@ -1664,7 +1666,11 @@ function renderHome() {
       <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップしてテーマを選択</div>
     </div>
     <div class="card mb-16 hidden" id="routineSetup">
-      <div class="text-sm" style="font-weight:600;margin-bottom:10px">🎯 テーマを選択</div>
+      <div class="text-sm" style="font-weight:600;margin-bottom:10px">📊 レベル（全セクション共通）</div>
+      <div class="level-select">
+        ${Object.values(CEFR_LEVELS).map(function(l){ return '<div class="level-chip'+(S.ftLevel===l.id?' active':'')+'" data-rlvl="'+l.id+'">'+l.label+'</div>'; }).join('')}
+      </div>
+      <div class="text-sm" style="font-weight:600;margin:16px 0 10px">🎯 テーマを選択</div>
       <div class="topic-grid">
         ${Object.entries(ROUTINE_THEMES).map(function([k,v]) { return '<div class="topic-pill'+(k==='daily'?' selected':'')+'" data-rtheme="'+k+'">'+v.label+'</div>'; }).join('')}
       </div>
@@ -1747,6 +1753,13 @@ function renderHome() {
     };
   }
   var _rTheme = 'daily';
+  document.querySelectorAll("[data-rlvl]").forEach(function(el) {
+    el.onclick = function() {
+      S.ftLevel = this.dataset.rlvl;
+      document.querySelectorAll("[data-rlvl]").forEach(function(e) { e.classList.remove("active"); });
+      this.classList.add("active");
+    };
+  });
   document.querySelectorAll("[data-rtheme]").forEach(function(el) {
     el.onclick = function() {
       _rTheme = this.dataset.rtheme;
@@ -1828,6 +1841,7 @@ function advanceRoutine() {
   if (S.routine.step === 1) {
     // Step 1: Flash 5 questions
     S.flashCategory = rt.flashCat;
+    S.flashLevel = S.ftLevel;   // keep all routine sections at the same CEFR level
     S.screen = "flash";
     S.flashQuestions = []; S.flashCurrent = 0; S.flashResults = [];
     S.routine.flashLimit = 5;  // Limit to 5 in routine
@@ -1840,6 +1854,7 @@ function advanceRoutine() {
     generateDescribeQuestions();
   } else if (S.routine.step === 3) {
     // Step 3: Shadowing 5 sentences
+    S.shadowLevel = S.ftLevel;  // keep all routine sections at the same CEFR level
     initShadow();
   } else {
     renderRoutineSummary();
@@ -2274,6 +2289,27 @@ async function generateListeningQuestions() {
     typeInstruction = 'Generate 10 questions of this type:\n\n' + (typeDefs[S.lsType] || typeDefs.blank);
   }
 
+  // Variety system — without this the model returns near-identical sets every time
+  var LS_SCENES = ["空港のカウンター","カフェでの注文","職場の休憩室","電話でのやりとり","病院の受付","スーパーのレジ","タクシーの車内","ホテルのフロント","駅のホーム","友人宅への訪問","オンライン会議","美容室","銀行の窓口","レストランの予約","ジムの受付","不動産の内見","子供の学校","近所づきあい","引っ越し業者との打合せ","カスタマーサポート","面接の場","同僚とのランチ","空港の保安検査","バーでの雑談","公園でのばったり","荷物の再配達","歯医者の予約変更","スポーツ観戦中","家電量販店","図書館"];
+  var LS_TONES = ["急いでいる","のんびりした","少し困っている","うれしそうな","事務的な","丁寧すぎる","くだけた","はっきりしない","驚いている","申し訳なさそうな"];
+  var scenes = LS_SCENES.slice().sort(function(){return Math.random()-0.5;}).slice(0,4);
+  var tone = LS_TONES[Math.floor(Math.random()*LS_TONES.length)];
+  var nonce = Math.random().toString(36).slice(2, 8);
+
+  // Avoid repeating recently generated sentences
+  var recentAudio = [];
+  try { recentAudio = JSON.parse(localStorage.getItem("ett_ls_recent") || "[]"); } catch(e) {}
+  var avoidBlock = recentAudio.length > 0
+    ? '\n\nDO NOT REUSE these sentences or close variants of them (recently used):\n- ' + recentAudio.slice(-24).join('\n- ')
+    : '';
+
+  var varietyBlock = '\n\nVARIETY (session ' + nonce + '):\n' +
+    '- Set these scenes: "' + scenes.join('", "') + '"\n' +
+    '- Overall speaker tone this session: ' + tone + '\n' +
+    '- Every one of the 10 items must use a DIFFERENT situation. No two items may share a scene.\n' +
+    '- Do NOT default to textbook staples (weather small talk, "How was your weekend", generic restaurant orders).' +
+    avoidBlock;
+
   try {
     var raw = await geminiChat([{ role: "user", content: `Create 10 listening comprehension questions for a ${lvl.id} level English learner.
 
@@ -2289,10 +2325,18 @@ CRITICAL RULES:
 - Vary topics: daily life, work, travel, shopping, social situations
 
 Return JSON:
-{"questions": [{"type": "blank|intent|linking|reply|detail", "audio": "sentence to speak", "question": "日本語の設問", "options": ["A","B","C"], "answer": 0, "explain": "日本語の簡潔な解説"}]}` }], "JSON only.", true);
+{"questions": [{"type": "blank|intent|linking|reply|detail", "audio": "sentence to speak", "question": "日本語の設問", "options": ["A","B","C"], "answer": 0, "explain": "日本語の簡潔な解説"}]}${varietyBlock}` }], "JSON only.", true, false, null, 1.0);
     var data = JSON.parse(raw.replace(/```json|```/g,'').trim());
     S.lsQuestions = (data.questions || []).slice(0, 10);
     if (S.lsQuestions.length === 0) throw new Error("問題を生成できませんでした");
+    // Remember these so the next session doesn't repeat them
+    try {
+      var prev = [];
+      try { prev = JSON.parse(localStorage.getItem("ett_ls_recent") || "[]"); } catch(e2) {}
+      S.lsQuestions.forEach(function(q){ if (q.audio) prev.push(q.audio); });
+      while (prev.length > 40) prev.shift();
+      safeLSSet("ett_ls_recent", prev);
+    } catch(e3) { console.warn("ls recent save failed", e3); }
     S.lsCurrent = 0;
     S.lsResults = [];
     renderListeningQuestion();
@@ -3895,11 +3939,25 @@ async function generateFlashQuestions() {
   var STYLES = ["日常のカジュアルな場面", "少しフォーマルな場面", "感情を伴う場面", "予想外の展開がある場面", "ユーモアがある場面", "困っている場面", "嬉しい場面", "緊張する場面", "初対面の場面", "久しぶりに会う場面"];
   var stylePick = STYLES[Math.floor(Math.random() * STYLES.length)];
 
-  var varietyHint = `\n\nIMPORTANT - VARIETY: Focus on these specific scenarios: "${picked.join('", "')}". Style: ${stylePick}. Do NOT use generic textbook examples. Make sentences about real, specific situations. Every sentence must be DIFFERENT in topic and structure. Surprise the learner.`;
+  var varietyHint = `\n\nIMPORTANT - VARIETY: Build the set around these scenarios: "${picked.join('", "')}". Tone: ${stylePick}.
+- Distribute the questions across these scenarios; do NOT write ten variations of one situation.
+- Each sentence must differ in BOTH topic and grammatical structure (vary statements, questions, requests, refusals, past/future).
+- Ban generic textbook filler: weather small talk, "How was your weekend", "I like studying English", plain self-introductions.
+- Use concrete details (names, numbers, places, objects) so each sentence feels like a real moment.`;
 
-  // In routine mode: override variety with the Free Talk topic for continuity
+  // In routine mode: anchor to the Free Talk theme, but KEEP the variety seeds
+  // (previously this replaced varietyHint entirely, so routines had no variety at all)
   if (S.routine.active && S.routine.topicLabel) {
-    varietyHint = `\n\nIMPORTANT - THEME CONTINUITY: The learner just had a Free Talk conversation about "${S.routine.topicLabel}". Generate sentences RELATED to this same topic/theme. Make the practice feel like a natural continuation of their conversation. All sentences should be about "${S.routine.topicLabel}" or closely related subjects.`;
+    varietyHint = `\n\nIMPORTANT - THEME CONTINUITY: The learner just had a Free Talk conversation about "${S.routine.topicLabel}". All sentences must relate to that theme.\nWithin that theme, take these different angles: "${picked.join('", "')}". Tone this session: ${stylePick}. Every sentence must cover a DIFFERENT sub-situation — do not produce ten variations of the same sentence.`;
+  }
+
+  // Session nonce + recently-used list (same fix as Listening: seeds alone are not enough at temp 0.3)
+  var flashNonce = Math.random().toString(36).slice(2, 8);
+  var flashRecent = [];
+  try { flashRecent = JSON.parse(localStorage.getItem("ett_flash_recent") || "[]"); } catch(e) {}
+  varietyHint += `\n\nSESSION ID: ${flashNonce} (produce a set distinct from any previous session)`;
+  if (flashRecent.length > 0) {
+    varietyHint += `\n\nDO NOT REUSE these Japanese prompts or close variants (recently used):\n- ` + flashRecent.slice(-30).join('\n- ');
   }
 
   var prompt;
@@ -3955,9 +4013,17 @@ Respond ONLY in JSON:
   }
 
   try {
-    const raw = await geminiChat([{ role: "user", content: prompt }], "Generate translation exercises. JSON only.", true);
+    const raw = await geminiChat([{ role: "user", content: prompt }], "Generate translation exercises. JSON only.", true, false, null, 1.0);
     const data = safeJSON(raw);
     S.flashQuestions = data.questions || [];
+    // Remember these so the next session doesn't repeat them
+    try {
+      var fprev = [];
+      try { fprev = JSON.parse(localStorage.getItem("ett_flash_recent") || "[]"); } catch(e2) {}
+      (data.questions || []).forEach(function(q){ if (q && q.ja) fprev.push(q.ja); });
+      while (fprev.length > 50) fprev.shift();
+      safeLSSet("ett_flash_recent", fprev);
+    } catch(e3) { console.warn("flash recent save failed", e3); }
     if (S.flashQuestions.length === 0) throw new Error("問題が生成されませんでした");
     // Limit to 5 in routine mode
     if (S.routine.active && S.routine.flashLimit) {

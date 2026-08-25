@@ -107,10 +107,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .flash-answer{font-size:17px;padding:18px;background:var(--bg);border-radius:12px;margin-top:16px;border:1.5px solid var(--border);line-height:1.7;text-align:left}
 .flash-answer .correct{color:var(--green);font-weight:600}
 .flash-answer .wrong{color:var(--red);text-decoration:line-through}
-.flash-result{display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap}
-.flash-score{text-align:center;padding:12px 16px}
-.flash-score .num{font-size:30px;font-weight:800}
-.flash-score .label{font-size:13px;color:var(--muted);margin-top:2px}
 
 /* ── Progress Bar ── */
 .progress-bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin:12px 0}
@@ -154,13 +150,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .topic-pill.selected{background:#ede9fe;border-color:var(--accent);color:var(--accent);font-weight:600}
 
 /* ── Word Score Colors ── */
-.ws-great{color:var(--green)}.ws-good{color:var(--yellow)}.ws-poor{color:var(--red)}
 
 /* ── Settings Row ── */
-.setting-row{display:flex;justify-content:space-between;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}
-.setting-row:last-child{border-bottom:none}
-.setting-label{font-size:16px;font-weight:500}
-.setting-value{font-size:15px;color:var(--muted)}
 
 /* ── Navbar ── */
 .navbar{display:flex;align-items:center;gap:12px;margin-bottom:16px}
@@ -191,8 +182,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .streak-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;font-weight:700;font-size:14px}
 
 /* ── Waveform ── */
-.waveform{display:flex;align-items:center;justify-content:center;gap:3px;height:40px;margin:8px 0}
-.waveform .bar{width:4px;background:var(--red);border-radius:2px;transition:height .05s;min-height:4px}
 
 /* ── Shadowing ── */
 .shadow-card{text-align:center;padding:28px 20px}
@@ -202,7 +191,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .mode-shadow h3{color:#78350f}
 
 /* ── Vocab Notebook ── */
-.vocab-entry{padding:12px 0;border-bottom:1px solid var(--border)}
 .vocab-en{font-size:16px;font-weight:600;color:var(--accent)}
 .vocab-ja{font-size:14px;color:var(--muted);margin-top:2px}
 .vocab-ctx{font-size:12px;color:var(--muted);font-style:italic;margin-top:4px}
@@ -231,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25e";
+const VERSION = "v2026.08.25g";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -468,7 +456,6 @@ const S = {
   ftSessionId: 0,  // incremented each session to invalidate stale callbacks
   ftEnding: false,  // prevent double execution of end session
   ftChallengeExprs: [], ftChallengeUsed: [],
-  ftPronScores: [], // pronunciation scores per turn
   // Flash Translation
   flashQuestions: [], flashCurrent: 0, flashResults: [],
   flashLevel: "A2", flashCategory: "daily",
@@ -727,6 +714,16 @@ let _curAudio = null;
 function stopAudio() {
   if (_curAudio) { _curAudio.pause(); _curAudio = null; }
   if (window.speechSynthesis) speechSynthesis.cancel();
+}
+
+// Quick one-off browser TTS (no promise, cancels current speech)
+function quickSpeak(text, rate) {
+  if (!window.speechSynthesis || !text) return;
+  speechSynthesis.cancel();
+  var u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = rate || 0.9;
+  speechSynthesis.speak(u);
 }
 
 function speakBrowser(text) {
@@ -1063,6 +1060,7 @@ function clearAllData() {
   localStorage.removeItem("ett_challenge_used");
   localStorage.removeItem("ett_total_cost");
   localStorage.removeItem("ett_ls_stats");
+  localStorage.removeItem("ett_pron_weak");
   S.totalSessions = 0;
   S.totalMinutes = 0;
   S.screen = "home"; render();
@@ -1298,9 +1296,7 @@ function renderAnalysis() {
       var lpoly='<polygon points="'+lang.map(function(a,i){return lpt(a,stats[i].rate).join(',');}).join(' ')+'" fill="rgba(244,63,94,.15)" stroke="#f43f5e" stroke-width="2.5"/>';
       var ldots=stats.map(function(s,i){ return s.n>0?'<circle cx="'+lpt(lang[i],s.rate)[0]+'" cy="'+lpt(lang[i],s.rate)[1]+'" r="4" fill="#f43f5e"/>':''; }).join('');
 
-      var ready = stats.filter(function(s){ return s.n >= 10; });
       var weak = null;
-      ready.forEach(function(s,i){ void i; });
       stats.forEach(function(s,i){ if (s.n >= 10 && (!weak || s.rate < weak.rate)) weak = { rate: s.rate, name: lsNames[i], id: lsTypeIds[i] }; });
       var lsTips = {
         blank: '弱く発音される機能語(a/the/to/of)に注意して聞きましょう',
@@ -2480,7 +2476,7 @@ function renderPronPractice() {
   `;
   $("ppBack").onclick = () => { S.screen = "home"; render(); };
   document.querySelectorAll(".pp-speak").forEach(btn => {
-    btn.onclick = function() { if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(this.dataset.word);u.lang='en-US';u.rate=0.8;speechSynthesis.speak(u);} };
+    btn.onclick = function() { quickSpeak(this.dataset.word, 0.8); };
   });
   document.querySelectorAll(".pp-del").forEach(btn => {
     btn.onclick = function() { var list=getPronWeakWords(); list.splice(parseInt(this.dataset.idx),1); safeLSSet("ett_pron_weak",list); renderPronPractice(); };
@@ -2551,10 +2547,10 @@ function renderPronDrillStep() {
   `;
   $("pdBack").onclick = () => { if(confirm("中断しますか？")) renderPronPractice(); };
   $("pdSpeak").onclick = function() {
-    if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(d.word);u.lang='en-US';u.rate=0.7;speechSynthesis.speak(u);}
+    quickSpeak(d.word, 0.7);
   };
   document.querySelectorAll(".pd-speak-sent").forEach(btn => {
-    btn.onclick = function() { if(window.speechSynthesis){speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(this.dataset.text);u.lang='en-US';u.rate=0.85;speechSynthesis.speak(u);} };
+    btn.onclick = function() { quickSpeak(this.dataset.text, 0.85); };
   });
   $("pdNext").onclick = () => { S._pronDrillIdx++; renderPronDrillStep(); };
 }
@@ -2836,7 +2832,6 @@ function initFreeTalk() {
   
   S.ftChallengeExprs = [];
   S.ftChallengeUsed = [];
-  S.ftPronScores = [];
   renderFreeTalkSetup();
 }
 
@@ -4446,11 +4441,11 @@ async function renderShadowPractice() {
             if (pronScore !== undefined) {
               const score = Math.round(pronScore);
               const scoreColor = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--yellow)' : 'var(--red)';
+              var words = nb?.Words || pa?.Words || [];
               S.shadowResults.push({ en: sent.en, score, accuracy: Math.round(accScore||0), fluency: Math.round(fluScore||0), completeness: Math.round(compScore||0), words: words });
 
               // Word-level accuracy visualization
               var wordsHtml = '';
-              var words = nb?.Words || pa?.Words || [];
               if (words.length > 0) {
                 wordsHtml = '<div style="margin-top:12px;line-height:2.2;font-size:15px;display:flex;flex-wrap:wrap;gap:2px 6px">' +
                   words.map(function(w) {
@@ -4468,17 +4463,19 @@ async function renderShadowPractice() {
                   }).join('') + '</div>';
               }
 
-              // Collect mispronounced words for pronunciation practice
-              if (words && words.length > 0) {
-                words.forEach(function(w) {
-                  var wpa = w.PronunciationAssessment || w;
-                  var wacc = wpa.AccuracyScore ?? 100;
-                  var errType = wpa.ErrorType || 'None';
-                  if (wacc < 70 && errType !== 'Insertion' && w.Word && w.Word.length > 1) {
-                    savePronWeakWord(w.Word.toLowerCase(), Math.round(wacc), refText);
-                  }
-                });
-              }
+              // Collect mispronounced words for pronunciation practice (never break scoring)
+              try {
+                if (words && words.length > 0) {
+                  words.forEach(function(w) {
+                    var wpa = w.PronunciationAssessment || w;
+                    var wacc = wpa.AccuracyScore ?? 100;
+                    var errType = wpa.ErrorType || 'None';
+                    if (wacc < 70 && errType !== 'Insertion' && w.Word && w.Word.length > 1) {
+                      savePronWeakWord(w.Word.toLowerCase(), Math.round(wacc), sent.en);
+                    }
+                  });
+                }
+              } catch (pwErr) { console.warn('weak word collect failed:', pwErr); }
 
               $("shResult").classList.remove("hidden");
               $("shResult").innerHTML = `
@@ -4829,12 +4826,7 @@ Return JSON only: {"example": "example sentence", "scene": "使用シーン（�
   document.querySelectorAll(".vn-speak-phrase").forEach(btn => {
     btn.onclick = function(e) {
       e.stopPropagation();
-      if (window.speechSynthesis) {
-        speechSynthesis.cancel();
-        var u = new SpeechSynthesisUtterance(this.dataset.text);
-        u.lang = 'en-US'; u.rate = 0.9;
-        speechSynthesis.speak(u);
-      }
+      quickSpeak(this.dataset.text, 0.9);
     };
   });
 
@@ -4843,13 +4835,7 @@ Return JSON only: {"example": "example sentence", "scene": "使用シーン（�
     btn.onclick = function() {
       var text = this.dataset.text;
       if (!text) return;
-      if (window.speechSynthesis) {
-        speechSynthesis.cancel();
-        var u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US';
-        u.rate = 0.9;
-        speechSynthesis.speak(u);
-      }
+      quickSpeak(text, 0.9);
     };
   });
 }

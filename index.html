@@ -231,7 +231,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25d";
+const VERSION = "v2026.08.25e";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -241,6 +241,8 @@ const GEMINI_MODELS = [
   { id: "gemini-3.7-flash", label: "3.7 Flash（最高性能・無料枠あり）", inPrice: 0.75, outPrice: 3.75 },
   { id: "gemini-2.5-pro", label: "2.5 Pro（高精度）", inPrice: 1.25, outPrice: 10.00 },
 ];
+// Description mode always uses the premium model (scenario quality matters most here)
+const DESC_MODEL = "gemini-3.7-flash";
 let GEMINI_MODEL = localStorage.getItem("gemini_model") || "gemini-3.1-flash-lite";
 // Auto-migrate deprecated models
 var _deprecatedMap = { "gemini-3.1-flash-lite-preview": "gemini-3.1-flash-lite", "gemini-3-flash-preview": "gemini-3.7-flash", "gemini-3.5-flash": "gemini-3.7-flash", "gemini-3.6-flash": "gemini-3.7-flash" };
@@ -488,7 +490,7 @@ const S = {
   ftTotalWords: 0,      // total words spoken by user
   ftTurnStartTime: 0,   // when "your turn" started  // azure default for reliability
   // Cost tracking
-  cost: { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 },
+  cost: { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, premiumInTokens: 0, premiumOutTokens: 0, searchCalls: 0 },
   // Stats
   totalSessions: parseInt(localStorage.getItem("ett_total_sessions") || "0"),
   totalMinutes: parseInt(localStorage.getItem("ett_total_minutes") || "0"),
@@ -671,8 +673,9 @@ async function fetchT(url, options, ms) {
 }
 
 // ── Gemini API ──
-async function geminiChat(messages, systemPrompt = "", json = false, useSearch = false) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`;
+async function geminiChat(messages, systemPrompt = "", json = false, useSearch = false, modelOverride = null) {
+  const _mdl = modelOverride || GEMINI_MODEL;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${_mdl}:generateContent?key=${S.geminiKey}`;
   const contents = messages.map(m => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }]
@@ -702,8 +705,8 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
       const data2 = await res2.json();
       const output2 = data2.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const inChars2 = messages.reduce((a, m) => a + m.content.length, 0) + (systemPrompt?.length || 0);
-      S.cost.geminiInTokens += Math.ceil(inChars2 / 4);
-      S.cost.geminiOutTokens += Math.ceil(output2.length / 4);
+      if (modelOverride) { S.cost.premiumInTokens = (S.cost.premiumInTokens||0) + Math.ceil(inChars2 / 4); S.cost.premiumOutTokens = (S.cost.premiumOutTokens||0) + Math.ceil(output2.length / 4); }
+      else { S.cost.geminiInTokens += Math.ceil(inChars2 / 4); S.cost.geminiOutTokens += Math.ceil(output2.length / 4); }
       if (useSearch) S.cost.searchCalls = (S.cost.searchCalls || 0) + 1;
       return output2;
     }
@@ -713,8 +716,8 @@ async function geminiChat(messages, systemPrompt = "", json = false, useSearch =
   const output = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   // Track token usage
   const inChars = messages.reduce((a, m) => a + m.content.length, 0) + (systemPrompt?.length || 0);
-  S.cost.geminiInTokens += Math.ceil(inChars / 4);
-  S.cost.geminiOutTokens += Math.ceil(output.length / 4);
+  if (modelOverride) { S.cost.premiumInTokens = (S.cost.premiumInTokens||0) + Math.ceil(inChars / 4); S.cost.premiumOutTokens = (S.cost.premiumOutTokens||0) + Math.ceil(output.length / 4); }
+  else { S.cost.geminiInTokens += Math.ceil(inChars / 4); S.cost.geminiOutTokens += Math.ceil(output.length / 4); }
   if (useSearch) S.cost.searchCalls = (S.cost.searchCalls || 0) + 1;
   return output;
 }
@@ -986,8 +989,10 @@ function calcSessionTotal() {
   var gemOutPrice = _cm.outPrice;
   var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
   var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
+  var _pm = GEMINI_MODELS.find(function(m){return m.id===DESC_MODEL;}) || GEMINI_MODELS[0];
+  var premCost = ((c.premiumInTokens||0)/1000000)*_pm.inPrice + ((c.premiumOutTokens||0)/1000000)*_pm.outPrice;
   var searchCost = (c.searchCalls || 0) * 0.035;
-  return sttCost + pronCost + ttsCost + gemInCost + gemOutCost + searchCost;
+  return sttCost + pronCost + ttsCost + gemInCost + gemOutCost + premCost + searchCost;
 }
 
 function calcCostHTML() {
@@ -1000,8 +1005,11 @@ function calcCostHTML() {
   var gemOutPrice = _cm.outPrice;
   var gemInCost = (c.geminiInTokens / 1000000) * gemInPrice;
   var gemOutCost = (c.geminiOutTokens / 1000000) * gemOutPrice;
+  var _pm = GEMINI_MODELS.find(function(m){return m.id===DESC_MODEL;}) || GEMINI_MODELS[0];
+  var premTk = (c.premiumInTokens||0) + (c.premiumOutTokens||0);
+  var premCost = ((c.premiumInTokens||0)/1000000)*_pm.inPrice + ((c.premiumOutTokens||0)/1000000)*_pm.outPrice;
   var searchCost = (c.searchCalls || 0) * 0.035;
-  var total = sttCost + pronCost + ttsCost + gemInCost + gemOutCost + searchCost;
+  var total = sttCost + pronCost + ttsCost + gemInCost + gemOutCost + premCost + searchCost;
   var totalJPY = Math.round(total * 150 * 10) / 10;
 
   return `<div class="card">
@@ -1012,6 +1020,7 @@ function calcCostHTML() {
       <span class="text-muted">音声読上</span><span class="text-muted">${c.ttsChars > 0 ? c.ttsChars.toLocaleString() + '文字' : '未使用'}</span><span>${c.ttsChars > 0 ? '$' + ttsCost.toFixed(4) : '$0'}</span>
       <span class="text-muted">Gemini入力</span><span class="text-muted">~${c.geminiInTokens.toLocaleString()}tk (${_cm.label.split('（')[0]})</span><span>$${gemInCost.toFixed(4)}</span>
       <span class="text-muted">Gemini出力</span><span class="text-muted">~${c.geminiOutTokens.toLocaleString()}tk</span><span>$${gemOutCost.toFixed(4)}</span>
+      ${premTk ? `<span class="text-muted">Gemini(Desc)</span><span class="text-muted">~${premTk.toLocaleString()}tk (3.7 Flash)</span><span>$${premCost.toFixed(4)}</span>` : ''}
       ${c.searchCalls ? `<span class="text-muted">Web検索</span><span class="text-muted">${c.searchCalls}回 (Google)</span><span>$${searchCost.toFixed(4)}</span>` : ''}
     </div>
     <div class="divider"></div>
@@ -1966,6 +1975,7 @@ function renderDescribeSetup() {
       <div class="text-sm" style="font-weight:600">🎭 トレーニング内容</div>
       <div class="text-xs text-muted mt-8">AIが具体的なシナリオを5つ出題。段階的に難しくなります。自分の言葉で英語で説明してください（2-4文）。</div>
       <div class="text-xs mt-8" style="color:var(--accent)">テーマ×場面×展開で毎回異なる3,000+通り</div>
+      <div class="text-xs text-muted mt-8">🤖 このモードは常に Gemini 3.7 Flash を使用します（シナリオ品質のため）</div>
     </div>
     <button class="btn btn-primary w-full mt-16" id="dsStartBtn">🎨 スタート</button>
   `;
@@ -2025,7 +2035,7 @@ ${lvl.id === 'A1' ? '超初級。1文でOK。注文、挨拶、簡単な質問�
 JSON形式で返してください:
 {"questions": [
   {"ja": "具体的なシチュエーション（自然な日本語）", "en": "模範回答（${lvl.id}レベルの英語）", "hint": "使える表現2-3個"}
-]}` }], "JSON only.", true);
+]}` }], "JSON only.", true, false, DESC_MODEL);
     S.descQuestions = JSON.parse(raw.replace(/```json|```/g,'').trim()).questions || [];
     if (S.descQuestions.length === 0) throw new Error("生成失敗");
     S.descCurrent = 0;
@@ -2094,7 +2104,7 @@ This is NOT translation. Evaluate:
 - Grammar: Accurate for ${S.descLevel} level?
 - Fluency: Natural sentence flow?
 
-JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvements, suggest ${S.descLevel}-appropriate expressions","improved":"Polished version at ${S.descLevel} level"}`}], "JSON only.", true);
+JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvements, suggest ${S.descLevel}-appropriate expressions","improved":"Polished version at ${S.descLevel} level"}`}], "JSON only.", true, false, DESC_MODEL);
       var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
       var dqResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
       S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'', responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length });

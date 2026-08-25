@@ -231,19 +231,19 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25b";
+const VERSION = "v2026.08.25d";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
 const GEMINI_MODELS = [
   { id: "gemini-3.1-flash-lite", label: "3.1 Flash-Lite（最速・最安）", inPrice: 0.25, outPrice: 1.50 },
   { id: "gemini-2.5-flash", label: "2.5 Flash（安定版）", inPrice: 0.30, outPrice: 2.50 },
-  { id: "gemini-3.5-flash", label: "3.5 Flash（最高性能・無料枠あり）", inPrice: 1.50, outPrice: 9.00 },
+  { id: "gemini-3.7-flash", label: "3.7 Flash（最高性能・無料枠あり）", inPrice: 0.75, outPrice: 3.75 },
   { id: "gemini-2.5-pro", label: "2.5 Pro（高精度）", inPrice: 1.25, outPrice: 10.00 },
 ];
 let GEMINI_MODEL = localStorage.getItem("gemini_model") || "gemini-3.1-flash-lite";
 // Auto-migrate deprecated models
-var _deprecatedMap = { "gemini-3.1-flash-lite-preview": "gemini-3.1-flash-lite", "gemini-3-flash-preview": "gemini-3.5-flash" };
+var _deprecatedMap = { "gemini-3.1-flash-lite-preview": "gemini-3.1-flash-lite", "gemini-3-flash-preview": "gemini-3.7-flash", "gemini-3.5-flash": "gemini-3.7-flash", "gemini-3.6-flash": "gemini-3.7-flash" };
 if (_deprecatedMap[GEMINI_MODEL]) {
   GEMINI_MODEL = _deprecatedMap[GEMINI_MODEL];
   localStorage.setItem("gemini_model", GEMINI_MODEL);
@@ -1053,13 +1053,14 @@ function clearAllData() {
   localStorage.removeItem("ett_convlogs");
   localStorage.removeItem("ett_challenge_used");
   localStorage.removeItem("ett_total_cost");
+  localStorage.removeItem("ett_ls_stats");
   S.totalSessions = 0;
   S.totalMinutes = 0;
   S.screen = "home"; render();
 }
 
 function exportAllData() {
-  var keys = ["ett_history","ett_total_sessions","ett_total_minutes","ett_streak","ett_mistakes","ett_vocab","ett_convlogs","ett_challenge_used","ett_total_cost","ett_pron_weak","gemini_api_key","azure_speech_key","azure_speech_region","gemini_model","ett_sr_mode","ett_cached_version"];
+  var keys = ["ett_history","ett_total_sessions","ett_total_minutes","ett_streak","ett_mistakes","ett_vocab","ett_convlogs","ett_challenge_used","ett_total_cost","ett_pron_weak","ett_ls_stats","gemini_api_key","azure_speech_key","azure_speech_region","gemini_model","ett_sr_mode","ett_cached_version"];
   var data = { _version: VERSION, _date: new Date().toISOString() };
   keys.forEach(function(k) {
     var v = localStorage.getItem(k);
@@ -1170,9 +1171,9 @@ function renderAnalysis() {
     var f = arr.filter(h => h.mode === mode && h.score > 0);
     return f.length > 0 ? Math.round(f.reduce((a,h) => a+(h.score||0),0)/f.length) : 0;
   }
-  var modes = ['freetalk','flash','describe','shadow'];
-  var labels = ['Talk','Flash','Desc','Shadow'];
-  var icons = ['🗣️','⚡','🎨','🎧'];
+  var modes = ['freetalk','flash','describe','shadow','listening'];
+  var labels = ['Talk','Flash','Desc','Shadow','Listen'];
+  var icons = ['🗣️','⚡','🎨','🎧','👂'];
   var w2 = modes.map(m => modeAvg(week2, m));
   var m1 = modes.map(m => modeAvg(month1, m));
 
@@ -1241,7 +1242,7 @@ function renderAnalysis() {
       '<div style="font-size:15px;font-weight:600;margin-bottom:4px">📊 スキルバランス（モード別）</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px"><span style="color:#059669">━━</span> 直近2週間　<span style="color:#818cf8">- - -</span> 直近1ヶ月</div>' +
       radarSVG(w2, m1, labels) +
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:12px;text-align:center;font-size:12px">' +
+      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:12px;text-align:center;font-size:12px">' +
       modes.map((m,i) => '<div>'+icons[i]+'<br><span style="color:#059669;font-weight:700">'+w2[i]+'</span> / <span style="color:#818cf8">'+m1[i]+'</span></div>').join('') +
       '</div></div>' : ''}
 
@@ -1266,6 +1267,55 @@ function renderAnalysis() {
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px"><span style="color:#4f46e5">■</span> セッション数　<span style="color:#059669">━</span> 学習時間(分)</div>
       <canvas id="weeklyChart" height="180" style="width:100%"></canvas>
     </div>
+
+    ${(function(){
+      var lsTypeIds = ['blank','intent','linking','reply','detail'];
+      var lsNames = ['穴埋め','意図','連結音','次の一言','数字'];
+      var stats = lsTypeIds.map(function(t){ return listeningTypeRate(t); });
+      var totalN = stats.reduce(function(a,s){ return a + s.n; }, 0);
+      if (totalN < 5) return '';
+
+      var lcx=140, lcy=140, lr=110, ln=5;
+      var lang=[]; for(var i=0;i<ln;i++) lang.push(Math.PI*2*i/ln - Math.PI/2);
+      function lpt(a,v){ var s=v/100*lr; return [lcx+Math.cos(a)*s, lcy+Math.sin(a)*s]; }
+      var lgrid=[20,40,60,80,100].map(function(v){
+        return '<polygon points="'+lang.map(function(a){return lpt(a,v).join(',');}).join(' ')+'" fill="none" stroke="#e2e8f0" stroke-width="1"/>';
+      }).join('');
+      var laxes=lang.map(function(a,i){
+        var ep=lpt(a,108), lp=lpt(a,128);
+        return '<line x1="'+lcx+'" y1="'+lcy+'" x2="'+ep[0]+'" y2="'+ep[1]+'" stroke="#e2e8f0"/>' +
+          '<text x="'+lp[0]+'" y="'+(lp[1]+4)+'" text-anchor="middle" fill="#64748b" font-size="11" font-weight="600">'+lsNames[i]+'</text>';
+      }).join('');
+      var lpoly='<polygon points="'+lang.map(function(a,i){return lpt(a,stats[i].rate).join(',');}).join(' ')+'" fill="rgba(244,63,94,.15)" stroke="#f43f5e" stroke-width="2.5"/>';
+      var ldots=stats.map(function(s,i){ return s.n>0?'<circle cx="'+lpt(lang[i],s.rate)[0]+'" cy="'+lpt(lang[i],s.rate)[1]+'" r="4" fill="#f43f5e"/>':''; }).join('');
+
+      var ready = stats.filter(function(s){ return s.n >= 10; });
+      var weak = null;
+      ready.forEach(function(s,i){ void i; });
+      stats.forEach(function(s,i){ if (s.n >= 10 && (!weak || s.rate < weak.rate)) weak = { rate: s.rate, name: lsNames[i], id: lsTypeIds[i] }; });
+      var lsTips = {
+        blank: '弱く発音される機能語(a/the/to/of)に注意して聞きましょう',
+        intent: '語尾の上がり下がりや間の取り方に注目しましょう',
+        linking: 'going to→gonna のような音の変化に慣れましょう',
+        reply: 'Do you mind〜への答え方など会話の型を覚えましょう',
+        detail: '13と30、B12とB20など似た音の区別を練習しましょう',
+      };
+
+      return '<div class="card">' +
+        '<div style="font-size:15px;font-weight:600;margin-bottom:4px">👂 リスニング分析</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">タイプ別・直近50問の正答率</div>' +
+        '<svg viewBox="0 0 280 280" style="width:100%;max-width:300px;margin:0 auto;display:block">'+lgrid+laxes+lpoly+ldots+'</svg>' +
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px;text-align:center;font-size:12px">' +
+        stats.map(function(s,i){
+          var col = s.n<10 ? 'var(--muted)' : s.rate>=80?'#059669':s.rate>=60?'#f59e0b':'#dc2626';
+          return '<div><span style="font-weight:700;color:'+col+'">'+(s.n>0?s.rate+'%':'-')+'</span> '+lsNames[i]+
+            '<div style="font-size:10px;color:var(--muted)">'+s.n+'/50問</div></div>';
+        }).join('') +
+        '</div>' +
+        (weak && weak.rate < 70 ? '<div class="tip" style="margin-top:12px">💡 <strong>'+weak.name+'</strong>が弱点です。'+(lsTips[weak.id]||'')+'</div>' : '') +
+        (stats.some(function(s){return s.n>0 && s.n<10;}) ? '<div class="text-xs text-muted" style="margin-top:8px">※ 10問未満のタイプは参考値です</div>' : '') +
+        '</div>';
+    })()}
 
     <div class="card">
       <div style="font-size:15px;font-weight:600;margin-bottom:4px">🎓 CEFRレベル推移（直近1ヶ月）</div>
@@ -1296,8 +1346,8 @@ function renderAnalysis() {
       ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
       ctx.fillText(g, 4, gy+3);
     }
-    var colors = {freetalk:'#3b82f6', flash:'#f59e0b', describe:'#8b5cf6', shadow:'#059669'};
-    var modeNames = {freetalk:'Talk', flash:'Flash', describe:'Desc', shadow:'Shadow'};
+    var colors = {freetalk:'#3b82f6', flash:'#f59e0b', describe:'#8b5cf6', shadow:'#059669', listening:'#f43f5e'};
+    var modeNames = {freetalk:'Talk', flash:'Flash', describe:'Desc', shadow:'Shadow', listening:'Listen'};
     var days30 = [];
     for (var di = 29; di >= 0; di--) {
       var dd = new Date(now - di*DAY);
@@ -2126,6 +2176,24 @@ const LS_TYPES = [
   { id: "detail",  label: "🔢 数字・固有名詞", desc: "具体的な情報を拾う" },
 ];
 
+// Rolling per-type listening stats (last 50 questions per type)
+function getListeningStats() {
+  try { return JSON.parse(localStorage.getItem("ett_ls_stats") || "{}"); } catch { return {}; }
+}
+function recordListeningAnswer(type, correct, level) {
+  var st = getListeningStats();
+  if (!st[type]) st[type] = [];
+  st[type].push({ c: correct ? 1 : 0, lv: level, d: new Date().toISOString().slice(0,10) });
+  while (st[type].length > 50) st[type].shift();
+  safeLSSet("ett_ls_stats", st);
+}
+function listeningTypeRate(type) {
+  var arr = (getListeningStats()[type]) || [];
+  if (arr.length === 0) return { rate: 0, n: 0 };
+  var hits = arr.reduce(function(a, x) { return a + x.c; }, 0);
+  return { rate: Math.round(hits / arr.length * 100), n: arr.length };
+}
+
 function initListening() {
   S.screen = "listening";
   S.lsQuestions = []; S.lsCurrent = 0; S.lsResults = [];
@@ -2270,6 +2338,7 @@ function renderListeningQuestion() {
       var chosen = parseInt(this.dataset.idx);
       var correct = q.answer === chosen;
       S.lsResults.push({ type: q.type, correct: correct, playCount: S.lsPlayCount });
+      recordListeningAnswer(q.type, correct, S.lsLevel);
       document.querySelectorAll(".ls-opt").forEach((b, i) => {
         b.disabled = true;
         if (i === q.answer) b.style.background = "#d1fae5", b.style.borderColor = "#059669", b.style.color = "#065f46";
@@ -2332,9 +2401,13 @@ function renderListeningSummary() {
         var info = LS_TYPES.find(x => x.id === t) || { label: t };
         var rate = v.correct / v.total;
         var col = rate >= 0.8 ? 'var(--green)' : rate >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+        var cum = listeningTypeRate(t);
         return `<div class="flex justify-between items-center" style="padding:8px 0;border-bottom:1px solid var(--border)">
           <div class="text-sm">${info.label}</div>
-          <div style="font-weight:700;color:${col}">${v.correct}/${v.total}</div>
+          <div style="text-align:right">
+            <span style="font-weight:700;color:${col}">${v.correct}/${v.total}</span>
+            <div class="text-xs text-muted">累計 ${cum.rate}% (${cum.n}/50問)</div>
+          </div>
         </div>`;
       }).join('')}
     </div>

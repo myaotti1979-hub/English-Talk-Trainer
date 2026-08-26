@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25j";
+const VERSION = "v2026.08.25m";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -569,6 +569,82 @@ function addMistake(entry) {
   while (m.length > 200) m.shift();
   safeLSSet("ett_mistakes", m);
 }
+
+// ── Error-type tagging ──────────────────────────────
+const ERROR_TAGS = {
+  'tense':       { label: '時制',     tip: '過去/現在完了/進行形の使い分けを確認しましょう' },
+  'article':     { label: '冠詞',     tip: 'a / an / the / 無冠詞の判断を意識しましょう' },
+  'preposition': { label: '前置詞',   tip: 'in/on/at/for/to の使い分けを塊で覚えましょう' },
+  'word-order':  { label: '語順',     tip: '疑問文・修飾語の位置を確認しましょう' },
+  'word-choice': { label: '語彙選択', tip: '似た意味の語のニュアンス差を調べましょう' },
+  'plural':      { label: '単複',     tip: '可算/不可算と複数形の -s を確認しましょう' },
+  'agreement':   { label: '主述一致', tip: '主語と動詞の一致（三単現など）を確認しましょう' },
+  'conjunction': { label: '接続',     tip: '接続詞・関係詞で文をつなぐ練習をしましょう' },
+  'pronoun':     { label: '代名詞',   tip: 'it/they/this の指す対象を明確にしましょう' },
+  'other':       { label: 'その他',   tip: '' },
+};
+
+function tagStats(days) {
+  var m = getMistakes();
+  var cutoff = Date.now() - (days || 30) * 86400000;
+  var counts = {}, tagged = 0, untagged = 0;
+  m.forEach(function(e) {
+    if (new Date(e.date).getTime() < cutoff) return;
+    if (e.mode === 'challenge') return;
+    if (e.tag && ERROR_TAGS[e.tag]) { counts[e.tag] = (counts[e.tag] || 0) + 1; tagged++; }
+    else untagged++;
+  });
+  var rows = Object.keys(counts).map(function(k) { return { tag: k, n: counts[k] }; })
+    .sort(function(a, b) { return b.n - a.n; });
+  return { rows: rows, tagged: tagged, untagged: untagged };
+}
+
+// Retroactively tag older mistakes that predate automatic tagging
+async function backfillTags(btn) {
+  var m = getMistakes();
+  var targets = [];
+  m.forEach(function(e, i) {
+    if (e.mode === 'challenge' || e.mode === 'pron' || e.mode === 'listening') return;
+    if (e.tag || !e.original || !e.corrected) return;
+    if (e.original.indexOf('（') === 0) return;
+    targets.push({ i: i, original: e.original, corrected: e.corrected });
+  });
+  if (targets.length === 0) { alert('タグ付けが必要な記録はありません'); return; }
+  if (!confirm(targets.length + '件の過去の記録をAIで分類します。よろしいですか？（有料）')) return;
+
+  btn.disabled = true;
+  var done = 0;
+  try {
+    for (var start = 0; start < targets.length; start += 25) {
+      var chunk = targets.slice(start, start + 25);
+      btn.textContent = '⏳ 分類中... ' + done + '/' + targets.length;
+      var list = chunk.map(function(t, j) {
+        return '[' + (j + 1) + '] wrong: "' + t.original + '" -> correct: "' + t.corrected + '"';
+      }).join('\n');
+      var raw = await geminiChat([{ role: 'user', content:
+        'Classify the main error type in each numbered English correction.\n' +
+        'Allowed tags: ' + Object.keys(ERROR_TAGS).join('|') + '\n' +
+        'Return EXACTLY ' + chunk.length + ' lines, each "[n] tag". No other text.\n\n' + list
+      }], 'Return only numbered tags.', false, false, null, 0.1);
+      var lines = raw.split('\n').filter(function(l) { return l.trim(); });
+      var fresh = getMistakes();
+      chunk.forEach(function(t, j) {
+        var mm = (lines[j] || '').match(/\[?\d+\]?\s*([a-z-]+)/);
+        var tag = mm ? mm[1] : null;
+        if (tag && ERROR_TAGS[tag] && fresh[t.i]) fresh[t.i].tag = tag;
+      });
+      safeLSSet('ett_mistakes', fresh);
+      done += chunk.length;
+    }
+    alert('✅ ' + done + '件を分類しました');
+    render();
+  } catch (e) {
+    alert('❌ 分類に失敗しました: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '🏷️ 過去の記録も分類する（有料）';
+  }
+}
+
 function getReviewQueue() {
   const m = getMistakes();
   const now = Date.now();
@@ -1303,7 +1379,7 @@ function renderAnalysis() {
       var lsTips = {
         blank: '弱く発音される機能語(a/the/to/of)に注意して聞きましょう',
         intent: '語尾の上がり下がりや間の取り方に注目しましょう',
-        linking: 'going to→gonna のような音の変化に慣れましょう',
+        linking: '消えやすい音（can と can not、gonna と gotta）の差を意識して聞きましょう',
         reply: 'Do you mind〜への答え方など会話の型を覚えましょう',
         detail: '13と30、B12とB20など似た音の区別を練習しましょう',
       };
@@ -1324,6 +1400,33 @@ function renderAnalysis() {
         '</div>';
     })()}
 
+    ${(function(){
+      var ts = tagStats(30);
+      if (ts.tagged === 0 && ts.untagged === 0) return '';
+      var maxN = ts.rows.length > 0 ? ts.rows[0].n : 1;
+      var bars = ts.rows.map(function(r){
+        var info = ERROR_TAGS[r.tag] || { label: r.tag };
+        var pct = Math.round(r.n / maxN * 100);
+        return '<div style="margin-bottom:8px">' +
+          '<div class="flex justify-between" style="font-size:13px;margin-bottom:3px">' +
+            '<span>' + info.label + '</span><span style="font-weight:700;color:var(--accent)">' + r.n + '件</span>' +
+          '</div>' +
+          '<div style="background:var(--border);border-radius:6px;height:8px;overflow:hidden">' +
+            '<div style="width:' + pct + '%;height:100%;background:#4f46e5"></div>' +
+          '</div></div>';
+      }).join('');
+      var top = ts.rows[0];
+      var tipHtml = (top && ERROR_TAGS[top.tag] && ERROR_TAGS[top.tag].tip)
+        ? '<div class="tip" style="margin-top:12px">💡 <strong>' + ERROR_TAGS[top.tag].label + '</strong>の間違いが最多です。' + ERROR_TAGS[top.tag].tip + '</div>' : '';
+      return '<div class="card">' +
+        '<div style="font-size:15px;font-weight:600;margin-bottom:4px">🏷️ 間違いの傾向（直近1ヶ月）</div>' +
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">分類済み ' + ts.tagged + '件' + (ts.untagged > 0 ? ' / 未分類 ' + ts.untagged + '件' : '') + '</div>' +
+        (bars || '<div class="text-sm text-muted" style="text-align:center;padding:16px">まだ分類済みの記録がありません</div>') +
+        tipHtml +
+        (ts.untagged > 0 ? '<button class="btn btn-ghost w-full mt-12" id="backfillBtn" style="color:var(--accent);font-size:13px">🏷️ 過去の記録も分類する（有料）</button>' : '') +
+        '</div>';
+    })()}
+
     <div class="card">
       <div style="font-size:15px;font-weight:600;margin-bottom:4px">🎓 CEFRレベル推移（直近1ヶ月）</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px">選択レベル×スコアから推定</div>
@@ -1337,6 +1440,7 @@ function renderAnalysis() {
       '</div></div>' : ''}
   `;
   $("anaBack").onclick = () => { S.screen = "home"; render(); };
+  if ($("backfillBtn")) $("backfillBtn").onclick = function() { backfillTags(this); };
 
   // Draw score trend chart
   var canvas = $("scoreChart");
@@ -1998,6 +2102,7 @@ function renderDescribeSetup() {
 }
 
 async function generateDescribeQuestions() {
+  if (!S.routine.active) S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, premiumInTokens: 0, premiumOutTokens: 0, searchCalls: 0 };
   app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">🎨 シナリオを作成中...</div></div>';
   var theme = S.routine.active && S.routine.topicLabel ? S.routine.topicLabel : DESC_THEMES[Math.floor(Math.random()*DESC_THEMES.length)];
   var setting = DESC_SETTINGS[Math.floor(Math.random()*DESC_SETTINGS.length)];
@@ -2119,6 +2224,15 @@ JSON: {"score":75,"feedback":"Japanese feedback - good points, specific improvem
       var ev = JSON.parse(evRaw.replace(/```json|```/g,'').trim());
       var dqResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
       S.descResults.push({ ja:q.ja, en:q.en, answer:answer, score:ev.score||0, feedback:ev.feedback||'', responseTime:dqResponseTime, wordCount:answer.trim().split(/\s+/).length });
+      if ((ev.score || 0) < 60 && (ev.improved || q.en)) {
+        addMistake({
+          original: answer,
+          corrected: ev.improved || q.en,
+          explanation: ev.feedback || "",
+          source: q.ja,
+          mode: "describe"
+        });
+      }
       var sc = ev.score||0, scCol = sc>=80?'var(--green)':sc>=60?'var(--yellow)':'var(--red)';
       $("dsInputArea").classList.add("hidden");
       $("dsResult").classList.remove("hidden");
@@ -2192,7 +2306,7 @@ const LS_TYPES = [
   { id: "mix",     label: "🎲 ミックス",   desc: "全5種類をランダム出題" },
   { id: "blank",   label: "🔤 穴埋め",     desc: "一部を聞き取って選択" },
   { id: "intent",  label: "🎭 意図・感情", desc: "トーンから話者の気持ちを読む" },
-  { id: "linking", label: "🔗 連結音",     desc: "実際の発音を聞き分ける" },
+  { id: "linking", label: "🔗 弱形・短縮",  desc: "can/cannot など紛らわしい音を判別" },
   { id: "reply",   label: "💬 次の一言",   desc: "自然な返答を選ぶ" },
   { id: "detail",  label: "🔢 数字・固有名詞", desc: "具体的な情報を拾う" },
 ];
@@ -2251,6 +2365,7 @@ function renderListeningSetup() {
 }
 
 async function generateListeningQuestions() {
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, premiumInTokens: 0, premiumOutTokens: 0, searchCalls: 0 };
   app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">👂 リスニング問題を作成中...</div></div>';
   var lvl = CEFR_LEVELS[S.lsLevel] || CEFR_LEVELS.B1;
   var typeInstruction = '';
@@ -2266,16 +2381,34 @@ async function generateListeningQuestions() {
   - "question": "話者の気持ちは？"
   - "options": 3 Japanese descriptions of intent/emotion
   - "answer": index of correct option`,
-    linking: `Type "linking": Play natural connected speech, ask what was actually said.
-  - "audio": sentence with linking/reduction (gonna, wanna, didja, lemme, kinda, coulda)
-  - "question": "実際に発音されたのは？"
-  - "options": 3 versions (formal written form vs actual reduced form vs wrong form)
-  - "answer": index of correct option`,
+    linking: `Type "linking": test whether the learner can DECODE reduced speech, not spot it.
+  - "audio": a natural sentence spoken with reduction/linking
+  - "question": "話者が言ったのは？"
+  - "options": 3 MINIMAL PAIRS that differ by a meaning-changing sound, ALL written in the same natural reduced register
+  - "answer": index of correct option
+  FORBIDDEN: never contrast a formal written form against a reduced form (e.g. "going to" vs "gonna").
+  That is guessable without listening. Every option must look equally natural.
+  Good contrast sets (pick one axis per item):
+    can / can't  ("I can make it" vs "I can't make it")
+    gonna / gotta  ("He's gonna call" vs "He's gotta call")
+    wanna / wanted to
+    could / couldn't ; would / wouldn't ; should / shouldn't
+    he's / he'd  ("He's left" vs "He'd left")
+    I've been / I'd been
+    was / wasn't ; is / isn't
+    do you / did you  ("D'ya wanna go" vs "Didja wanna go")
+    a / the ; some / a
+  Also acceptable: same words, different meaning by stress or juncture
+    ("an ice cream" vs "a nice cream", "I scream" vs "ice cream")`,
     reply: `Type "reply": Play a question or statement, ask for the natural response.
-  - "audio": a question or statement from speaker A
+  - "audio": a question or statement from speaker A, containing a specific detail
+    (a name, a time, a condition, a negation) that determines which reply fits
   - "question": "自然な返答は？"
-  - "options": 3 possible replies in English
-  - "answer": index of correct option`,
+  - "options": 3 replies that are ALL grammatically correct and pragmatically plausible;
+    only the specific detail in the audio makes one of them right
+  - "answer": index of correct option
+  FORBIDDEN: sets where one option is obviously rude or nonsensical.
+  The learner must need the audio's content, not just politeness intuition.`,
     detail: `Type "detail": Play a sentence with specific info, ask about a number/name/place.
   - "audio": sentence containing numbers, times, gate numbers, names, or places
   - "question": "○○は？" asking about the specific detail
@@ -2319,7 +2452,12 @@ ${typeInstruction}
 
 CRITICAL RULES:
 - "audio" must be natural spoken English (5-15 words), suitable for text-to-speech
-- Each question must be answerable ONLY by listening carefully
+- ANTI-GUESSING (most important): a learner who CANNOT hear the audio must have no better
+  than a 1-in-3 chance. Before outputting each item, check it yourself: if the correct
+  option is identifiable from the options alone — because it is the only polite one,
+  the only grammatical one, the only natural-sounding one, or the only one matching an
+  obvious pattern — REWRITE the options.
+- All three options must be equally plausible on paper. The audio is the ONLY tiebreaker.
 - Options must be plausible — not obviously wrong
 - Questions in Japanese, options in English (except "intent" type where options are Japanese)
 - Vary topics: daily life, work, travel, shopping, social situations
@@ -2389,6 +2527,14 @@ function renderListeningQuestion() {
       var correct = q.answer === chosen;
       S.lsResults.push({ type: q.type, correct: correct, playCount: S.lsPlayCount });
       recordListeningAnswer(q.type, correct, S.lsLevel);
+      if (!correct && q.audio) {
+        addMistake({
+          original: "（聞き取れなかった音声）",
+          corrected: q.audio,
+          explanation: (q.explain || "") + (q.question ? " / 設問: " + q.question : ""),
+          mode: "listening"
+        });
+      }
       document.querySelectorAll(".ls-opt").forEach((b, i) => {
         b.disabled = true;
         if (i === q.answer) b.style.background = "#d1fae5", b.style.borderColor = "#059669", b.style.color = "#065f46";
@@ -2437,7 +2583,7 @@ function renderListeningSummary() {
   var tips = {
     blank: "穴埋めが苦手です。弱く発音される機能語(a, the, to, of)に注意して聞きましょう",
     intent: "意図の読み取りが苦手です。語尾の上がり下がりや間の取り方に注目しましょう",
-    linking: "連結音が苦手です。going to→gonna のような音の変化に慣れましょう",
+    linking: "弱形・短縮が苦手です。消えやすい音の差に集中して聞きましょう",
     reply: "返答選択が苦手です。Do you mind〜への答え方など会話の型を覚えましょう",
     detail: "数字・固有名詞が苦手です。13と30、B12とB20など似た音の区別を練習しましょう",
   };
@@ -2490,6 +2636,15 @@ function savePronWeakWord(word, score, sentence) {
   }
   while (list.length > 100) list.shift();
   safeLSSet("ett_pron_weak", list);
+  // Repeatedly missed words also enter the shared review queue
+  if ((existing ? existing.attempts : 1) >= 2 && score < 60) {
+    addMistake({
+      original: "（発音が不正確）",
+      corrected: word,
+      explanation: sentence ? "例: " + sentence : "",
+      mode: "pron"
+    });
+  }
 }
 
 function renderPronPractice() {
@@ -3027,7 +3182,7 @@ async function startFreeTalkSession() {
   S.ftStartTime = Date.now();
   S.ftResponseTimes = [];
   S.ftTotalWords = 0;
-  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, premiumInTokens: 0, premiumOutTokens: 0, searchCalls: 0 };
 
   // 音声自動選択
   S.ftVoice = pickVoice(topic.id);
@@ -3688,7 +3843,8 @@ ${userMsgs.map((m,i) => `${i+1}. "${m}"`).join("\n")}
 ${S.ftChallengeExprs.length > 0 ? `\nChallenge expressions to use: ${S.ftChallengeExprs.map(e => e.en).join(", ")}` : ''}
 
 COMPACT JSON. Keep strings SHORT. Max 3 corrections.
-{"overallScore":75,"grammar":{"score":80,"issues":["issue"]},"vocabulary":{"score":70,"suggestions":["tip"]},"naturalness":{"score":75,"notes":["note"]},"corrections":[{"original":"x","corrected":"y","explanation":"z"}]${S.ftChallengeExprs.length > 0 ? ',"challengeResults":[{"expression":"e","used":true,"natural":true,"comment":"短評"}]' : ''},"cefrAssessment":"one sentence","encouragement":"日本語一言"}`;
+Each correction needs "tag": the single main error type, one of: tense|article|preposition|word-order|word-choice|plural|agreement|conjunction|pronoun|other
+{"overallScore":75,"grammar":{"score":80,"issues":["issue"]},"vocabulary":{"score":70,"suggestions":["tip"]},"naturalness":{"score":75,"notes":["note"]},"corrections":[{"original":"x","corrected":"y","explanation":"z","tag":"tense"}]${S.ftChallengeExprs.length > 0 ? ',"challengeResults":[{"expression":"e","used":true,"natural":true,"comment":"短評"}]' : ''},"cefrAssessment":"one sentence","encouragement":"日本語一言"}`;
 
   try {
     const raw = await geminiChat(
@@ -3728,7 +3884,7 @@ COMPACT JSON. Keep strings SHORT. Max 3 corrections.
 
     // Save mistakes for review
     (fb.corrections || []).forEach(c => {
-      addMistake({ original: c.original, corrected: c.corrected, explanation: c.explanation, mode: "freetalk" });
+      addMistake({ original: c.original, corrected: c.corrected, explanation: c.explanation, tag: c.tag || null, mode: "freetalk" });
     });
 
     // #3: Add unused challenge expressions to review queue
@@ -3910,7 +4066,7 @@ function renderFlashSetup() {
 async function generateFlashQuestions() {
   // Flash用に音声自動選択 & コストリセット
   S.ftVoice = pickVoice("flash");
-  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, premiumInTokens: 0, premiumOutTokens: 0, searchCalls: 0 };
   app.innerHTML = `
     <div style="text-align:center;padding:80px 0">
       <div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div>
@@ -4203,7 +4359,8 @@ Evaluate and respond in JSON:
   "score": 85,
   "isCorrect": true,
   "feedback": "Brief feedback in Japanese about what was good/wrong (大文字・句読点は評価しないこと)",
-  "correctedVersion": "The ideal version if user was wrong, or their version if correct"
+  "correctedVersion": "The ideal version if user was wrong, or their version if correct",
+  "tag": "single main error type if wrong, one of: tense|article|preposition|word-order|word-choice|plural|agreement|conjunction|pronoun|other"
 }
 
 Scoring guide:
@@ -4232,7 +4389,7 @@ Scoring guide:
     var qResponseTime = S._qStartTime ? Date.now() - S._qStartTime : 0;
     S.flashResults.push({
       ja: q.ja, en: q.en, userAnswer, score: ev.score,
-      isCorrect: ev.isCorrect, feedback: ev.feedback,
+      isCorrect: ev.isCorrect, feedback: ev.feedback, tag: ev.tag || null,
       responseTime: qResponseTime, wordCount: userAnswer.trim().split(/\s+/).length
     });
 
@@ -4251,10 +4408,14 @@ Scoring guide:
 
 function renderFlashSummary() {
   const results = S.flashResults;
-  const avg = results.length > 0 ? Math.round(results.reduce((a, r) => a + r.score, 0) / results.length) : 0;
-  const perfect = results.filter(r => r.score >= 90).length;
-  const good = results.filter(r => r.score >= 60 && r.score < 90).length;
-  const poor = results.filter(r => r.score < 60).length;
+  // Skipped items are excluded from the average (same rule as Description mode).
+  // Counting them as 0 dragged the score down and polluted the CEFR trend.
+  const answered = results.filter(r => r.userAnswer !== "(skipped)");
+  const skipped = results.length - answered.length;
+  const avg = answered.length > 0 ? Math.round(answered.reduce((a, r) => a + r.score, 0) / answered.length) : 0;
+  const perfect = answered.filter(r => r.score >= 90).length;
+  const good = answered.filter(r => r.score >= 60 && r.score < 90).length;
+  const poor = answered.filter(r => r.score < 60).length;
 
   var timedResults = results.filter(r => r.responseTime > 0);
   var flashAvgResp = timedResults.length > 0 ? Math.round(timedResults.reduce((a,r)=>a+r.responseTime,0)/timedResults.length) : 0;
@@ -4274,7 +4435,7 @@ function renderFlashSummary() {
   updateStreak();
   // Save mistakes for review
   results.filter(r => !r.isCorrect && r.userAnswer !== "(skipped)").forEach(r => {
-    addMistake({ original: r.userAnswer, corrected: r.en, explanation: r.feedback || "", source: r.ja, mode: "flash" });
+    addMistake({ original: r.userAnswer, corrected: r.en, explanation: r.feedback || "", source: r.ja, tag: r.tag || null, mode: "flash" });
   });
 
   const scoreColor = avg >= 80 ? "var(--green)" : avg >= 60 ? "var(--yellow)" : "var(--red)";
@@ -4299,7 +4460,7 @@ function renderFlashSummary() {
 
     <div class="summary-header">
       <div class="score" style="color:${scoreColor}">${avg}</div>
-      <div class="label">Average Score</div>
+      <div class="label">Average Score${skipped > 0 ? `（スキップ${skipped}問は除外）` : ''}</div>
     </div>
 
     <div class="stats-grid mb-16">
@@ -4393,7 +4554,7 @@ function renderShadowSetup() {
 
 async function generateShadowSentences() {
   S.ftVoice = pickVoice("shadow");
-  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, searchCalls: 0 };
+  S.cost = { sttSeconds: 0, pronSeconds: 0, ttsChars: 0, geminiInTokens: 0, geminiOutTokens: 0, premiumInTokens: 0, premiumOutTokens: 0, searchCalls: 0 };
   app.innerHTML = `<div style="text-align:center;padding:80px 0"><div class="typing" style="justify-content:center;margin-bottom:16px"><span></span><span></span><span></span></div><div class="text-sm text-muted">文を生成中...</div></div>`;
   try {
     const lvl = CEFR_LEVELS[S.shadowLevel] || CEFR_LEVELS.B1;
@@ -4755,6 +4916,9 @@ function renderReviewQuiz() {
     const realIdx = all.findIndex(x => x.corrected === m.corrected && x.date === m.date);
     const isChallenge = m.mode === 'challenge';
     const isFlash = m.mode === 'flash';
+    const isListening = m.mode === 'listening';
+    const isDescribe = m.mode === 'describe';
+    const isPron = m.mode === 'pron';
 
     // Build card content based on type
     var topLabel, questionText, correctText, contextText;
@@ -4769,12 +4933,49 @@ function renderReviewQuiz() {
       correctText = m.corrected;
       contextText = m.source ? '日本語: ' + m.source : '';
       questionText = m.original || '';
+    } else if (isListening) {
+      topLabel = '👂 聞き取れなかった音声';
+      correctText = m.corrected;
+      contextText = m.explanation || '';
+      questionText = '';
+    } else if (isDescribe) {
+      topLabel = '🎨 Description 要改善';
+      correctText = m.corrected;
+      contextText = m.source ? 'お題: ' + m.source : '';
+      questionText = m.original || '';
+    } else if (isPron) {
+      topLabel = '🎯 発音が不正確だった語';
+      correctText = m.corrected;
+      contextText = m.explanation || '';
+      questionText = '';
     } else {
       topLabel = '🗣️ Free Talk 修正';
       correctText = m.corrected;
       contextText = m.explanation || '';
       questionText = m.original || '';
     }
+
+    // Active recall: show a cue first, reveal the answer only after the user has tried.
+    // (Showing the answer up front makes this re-reading, not retrieval practice.)
+    var cueLabel, cueText;
+    if (isFlash) {
+      cueLabel = 'この日本語を英語で言うと？';
+      cueText = m.source || contextText || '';
+    } else if (isDescribe) {
+      cueLabel = 'このお題に英語で答えると？';
+      cueText = m.source || '';
+    } else if (isListening || isPron) {
+      // Audio-first cue: hear it, then check the transcript
+      cueLabel = '';
+      cueText = '';
+    } else if (isChallenge) {
+      cueLabel = 'この意味の英語表現は？';
+      cueText = contextText || '';
+    } else {
+      cueLabel = 'この英文を自然に直すと？';
+      cueText = m.original || '';
+    }
+    var hasCue = !!cueText;
 
     app.innerHTML = `
       <div class="navbar"><button class="back" id="rqBack">←</button><div class="title">📝 復習 ${i+1}/${queue.length}</div></div>
@@ -4783,22 +4984,40 @@ function renderReviewQuiz() {
       <div class="card" style="padding:24px;text-align:center">
         <div class="text-xs text-muted mb-12">${topLabel}</div>
 
-        <div style="font-size:20px;font-weight:700;color:var(--accent);line-height:1.6;margin-bottom:16px">${esc(correctText)}</div>
+        ${hasCue ? `<div class="text-xs text-muted mb-8">${cueLabel}</div>
+        <div style="font-size:17px;font-weight:600;line-height:1.6;margin-bottom:8px">${esc(cueText)}</div>` : ''}
 
-        <button class="btn btn-ghost btn-sm rq-speak" data-text="${esc(correctText).replace(/"/g,'&quot;')}" style="color:var(--accent);margin-bottom:16px">🔊 発音を聞く</button>
-
-        ${contextText ? `<div class="text-xs text-muted mb-8">${esc(contextText)}</div>` : ''}
-        ${questionText ? `<div class="text-xs" style="color:var(--red);text-decoration:line-through;opacity:.5">${esc(questionText)}</div>` : ''}
+        <div id="rqAnswer" class="${hasCue ? 'hidden' : ''}">
+          ${hasCue ? '<div style="border-top:1px solid var(--border);margin:16px 0"></div>' : ''}
+          <div style="font-size:20px;font-weight:700;color:var(--accent);line-height:1.6;margin-bottom:16px">${esc(correctText)}</div>
+          <button class="btn btn-ghost btn-sm rq-speak" data-text="${esc(correctText).replace(/"/g,'&quot;')}" style="color:var(--accent);margin-bottom:8px">🔊 発音を聞く</button>
+          ${(contextText && !isFlash && !isChallenge) ? `<div class="text-xs text-muted mb-8">${esc(contextText)}</div>` : ''}
+          ${(questionText && !hasCue) ? `<div class="text-xs" style="color:var(--red);text-decoration:line-through;opacity:.5">${esc(questionText)}</div>` : ''}
+        </div>
       </div>
 
-      <div class="text-xs text-muted mb-8" style="text-align:center">この表現を覚えましたか？</div>
-      <div class="flex gap-8">
-        <button class="btn btn-secondary w-full" id="rqHard">😓 まだ</button>
-        <button class="btn btn-primary w-full" id="rqEasy">✅ 覚えた</button>
+      <div id="rqRevealWrap" class="${hasCue ? '' : 'hidden'}">
+        <div class="text-xs text-muted mb-8" style="text-align:center">頭の中で英語にしてから開きましょう</div>
+        <button class="btn btn-primary w-full" id="rqReveal">👀 答えを見る</button>
+      </div>
+
+      <div id="rqRateWrap" class="${hasCue ? 'hidden' : ''}">
+        <div class="text-xs text-muted mb-8" style="text-align:center">言えましたか？</div>
+        <div class="flex gap-8">
+          <button class="btn btn-secondary w-full" id="rqHard">😓 まだ</button>
+          <button class="btn btn-primary w-full" id="rqEasy">✅ 言えた</button>
+        </div>
       </div>
     `;
 
     $("rqBack").onclick = () => { S.screen = "home"; render(); };
+    if ($("rqReveal")) {
+      $("rqReveal").onclick = function() {
+        $("rqAnswer").classList.remove("hidden");
+        $("rqRevealWrap").classList.add("hidden");
+        $("rqRateWrap").classList.remove("hidden");
+      };
+    }
     document.querySelectorAll(".rq-speak").forEach(function(btn) {
       btn.onclick = function() { speakBrowser(this.dataset.text); };
     });

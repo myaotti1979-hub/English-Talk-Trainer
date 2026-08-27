@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25m";
+const VERSION = "v2026.08.25n";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -3414,6 +3414,8 @@ var _srRestartTimer = null;
 var _srUseAzure = false;
 var _srRecorder = null;
 var _srRetryCount = 0;
+var _srSession = 0;      // increments per take; stale results are discarded
+var _srStopping = false; // true while a take is being finalised
 
 
 function srSupported() {
@@ -3424,7 +3426,8 @@ function srSupported() {
 function srIsActive() { return _srActive; }
 
 function srStart(onComplete) {
-  if (_srActive) return false;
+  if (_srActive || _srStopping) return false;   // don't start while finishing a previous take
+  _srSession++;
   _srBuf = '';
   
   _srActive = true;
@@ -3459,6 +3462,10 @@ function srStart(onComplete) {
 }
 
 function srStop() {
+  if (!_srActive && !_srStopping) { return; }   // ignore stray taps
+  if (_srStopping) return;                      // already finishing up
+  _srStopping = true;
+  var mySession = _srSession;
   _srActive = false;
   clearTimeout(_srRestartTimer);
   if (_srUseAzure && _srRecorder) {
@@ -3467,37 +3474,45 @@ function srStop() {
       if (wavBlob && wavBlob.size > 44 && S.azureKey) {
         azureSTT(wavBlob).then(function(text) {
           _srBuf = text || '';
-          _deliverResult();
-        }).catch(function() { _deliverResult(); });
-      } else { _deliverResult(); }
-    }).catch(function() { _deliverResult(); });
+          _deliverResult(mySession);
+        }).catch(function() { _deliverResult(mySession); });
+      } else { _deliverResult(mySession); }
+    }).catch(function() { _deliverResult(mySession); });
   } else {
     // Web Speech API: use stop() and wait for onend to fire with final results
     if (_sr) {
       var deliverTimer = setTimeout(function() {
-        // Safety: if onend never fires within 2s, deliver anyway
+        // Safety: if onend never fires, deliver anyway
         _sr = null;
-        _deliverResult();
-      }, 2000);
+        _deliverResult(mySession);
+      }, 1200);
       _sr.onend = function() {
         clearTimeout(deliverTimer);
         _sr = null;
         // Small delay to ensure last onresult has fired
-        setTimeout(_deliverResult, 100);
+        setTimeout(function(){ _deliverResult(mySession); }, 100);
       };
       _sr.onerror = function() {}; // suppress errors during stop
       try { _sr.stop(); } catch(e) {
         clearTimeout(deliverTimer);
         _sr = null;
-        _deliverResult();
+        _deliverResult(mySession);
       }
     } else {
-      _deliverResult();
+      _deliverResult(mySession);
     }
   }
 }
 
-function _deliverResult() {
+function _deliverResult(session) {
+  // Only the session that produced this audio may deliver it.
+  // Without this, a double-tap let a stale result fire into the NEW session's
+  // callback — in Flash that auto-submitted a half-finished sentence.
+  if (typeof session === 'number' && session !== _srSession) {
+    _srStopping = false;
+    return;
+  }
+  _srStopping = false;
   var text = _srBuf.trim();
   _srBuf = '';
   if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(text); }
@@ -3506,6 +3521,8 @@ function _deliverResult() {
 // Cancel recording without delivering results (for navigation/ending)
 function srCancel() {
   _srActive = false;
+  _srStopping = false;
+  _srSession++;
   clearTimeout(_srRestartTimer);
   _srBuf = '';
   _srCallback = null;
@@ -3555,7 +3572,7 @@ function _srDoStart() {
       if (_srRetryCount <= 2) {
         // Retry after delay — might be temporary
         console.log("Speech not-allowed, retry " + _srRetryCount);
-        _srRestartTimer = setTimeout(function() { if (_srActive) _srDoStart(); }, 500);
+        _srRestartTimer = setTimeout(function() { if (_srActive && !_srStopping) _srDoStart(); }, 400);
         return;
       }
       // Retries exhausted — try Azure fallback
@@ -3573,7 +3590,7 @@ function _srDoStart() {
   };
   _sr.onend = function() {
     if (_srActive && !_srUseAzure) {
-      _srRestartTimer = setTimeout(function() { if (_srActive) _srDoStart(); }, 200);
+      _srRestartTimer = setTimeout(function() { if (_srActive && !_srStopping) _srDoStart(); }, 60);
     }
   };
   try {
@@ -3583,7 +3600,7 @@ function _srDoStart() {
     console.warn("SR start exception:", e.message);
     _srRetryCount++;
     if (_srRetryCount <= 2) {
-      _srRestartTimer = setTimeout(function() { if (_srActive) _srDoStart(); }, 500);
+      _srRestartTimer = setTimeout(function() { if (_srActive && !_srStopping) _srDoStart(); }, 400);
     } else if (S.azureKey && _srActive) {
       _srStartAzure();
     } else {
@@ -3595,6 +3612,7 @@ function _srDoStart() {
 
 async function _srStartAzure() {
   _srUseAzure = true;
+  var mySession = _srSession;
   try {
     _srRecorder = await recordWav(60000, function(blob) {
       // Auto-stop after 60s: process the result
@@ -3603,11 +3621,11 @@ async function _srStartAzure() {
         azureSTT(blob).then(function(text) {
           _srBuf = text || '';
           _srActive = false;
-          _deliverResult();
-        }).catch(function() { _srActive = false; _deliverResult(); });
+          _deliverResult(mySession);
+        }).catch(function() { _srActive = false; _deliverResult(mySession); });
       } else {
         _srActive = false;
-        _deliverResult();
+        _deliverResult(mySession);
       }
     });
   } catch(e) {
@@ -3628,9 +3646,15 @@ function toggleRecording() {
   } else {
     var started = srStart(function(text) {
       S.isRecording = false;
+      var mb = $("micBtn");
+      if (mb) { mb.disabled = false; mb.textContent = "🎤"; mb.className = "mic-btn idle"; }
       if (text) handleUserMessage(text);
       else renderFreeTalkChat();
     });
+    if (!started) {
+      var mb0 = $("micBtn");
+      if (mb0) { mb0.disabled = false; mb0.textContent = "🎤"; mb0.className = "mic-btn idle"; }
+    }
     if (started) {
       S.isRecording = true;
       renderFreeTalkChat();
@@ -4263,12 +4287,14 @@ function renderFlashQuestion() {
     $("flashMic").onclick = function() {
       if (_srActive) {
         // Stop recording — deliver result
+        this.disabled = true;                       // block double-tap
         $("flashMic").className = "mic-btn processing";
         $("flashMic").textContent = "⏳";
         srStop();  // callback handles result
       } else {
         var started = srStart(function(text) {
           if ($("flashMic")) {
+            $("flashMic").disabled = false;
             $("flashMic").className = "mic-btn idle";
             $("flashMic").textContent = "🎤";
           }

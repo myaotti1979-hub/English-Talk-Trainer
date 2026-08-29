@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25p";
+const VERSION = "v2026.08.29a";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -2684,7 +2684,7 @@ function renderPronPractice() {
         return `<div style="padding:12px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
           <div style="flex:1">
             <div style="font-size:18px;font-weight:700">${esc(w.word)}</div>
-            <div class="text-xs text-muted">${w.attempts}回不正確 · ベスト${w.bestScore}点</div>
+            <div class="text-xs text-muted">${w.attempts}回不正確 · ベスト${w.bestScore}点${w.drillPasses ? ' · 合格' + w.drillPasses + '/2' : ''}</div>
             ${w.sentence ? '<div class="text-xs text-muted" style="margin-top:2px">📝 '+esc(w.sentence.slice(0,50))+'...</div>' : ''}
           </div>
           <div style="display:flex;align-items:center;gap:8px">
@@ -2695,12 +2695,27 @@ function renderPronPractice() {
         </div>`;
       }).join('')}
     </div>
-    <button class="btn btn-primary w-full mt-16" id="ppStartDrill">🎯 発音ドリル開始（上位10語）</button>
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">🎲 出題方式</div>
+      <div class="level-select">
+        <div class="level-chip ${(S._drillMode||'auto')==='auto'?'active':''}" data-dmode="auto">🎯 おまかせ</div>
+        <div class="level-chip ${S._drillMode==='worst'?'active':''}" data-dmode="worst">📉 苦手順</div>
+        <div class="level-chip ${S._drillMode==='random'?'active':''}" data-dmode="random">🎲 ランダム</div>
+      </div>
+      <div class="text-xs text-muted mt-8">${
+        (S._drillMode||'auto')==='auto' ? '苦手・伸び途中・卒業間近をバランスよく出題。直近12時間に練習した語は後回しにします' :
+        S._drillMode==='worst' ? 'スコアが低い順に10語。集中的に潰したいとき向け' :
+        'リスト全体からランダムに10語。総復習向け'
+      }</div>
+    </div>
+    <button class="btn btn-primary w-full mt-16" id="ppStartDrill">🎯 発音ドリル開始（10語）</button>
     <button class="btn btn-ghost w-full mt-8 mb-16" id="ppClear" style="color:var(--red);font-size:13px">全クリア</button>`}
   `;
   // Single delegated handler. Binding each button separately meant one failure
   // left the remaining buttons dead with no error shown.
   app.onclick = function(ev) {
+    var chip = ev.target.closest ? ev.target.closest('[data-dmode]') : null;
+    if (chip) { S._drillMode = chip.dataset.dmode; renderPronPractice(); return; }
     var t = ev.target.closest ? ev.target.closest('button') : null;
     if (!t) return;
     if (t.id === 'ppBack') { app.onclick = null; S.screen = "home"; render(); return; }
@@ -2722,9 +2737,53 @@ function renderPronPractice() {
   };
 }
 
+
+// Pick the drill set. Plain "worst 10" meant the same words forever, because
+// words you cannot pronounce never leave the bottom of the list.
+function selectDrillWords(mode) {
+  var all = getPronWeakWords();
+  if (all.length === 0) return [];
+  var now = Date.now();
+  var COOLDOWN_H = 12;
+
+  function shuffle(a) { return a.slice().sort(function(){ return Math.random() - 0.5; }); }
+  function recentlyDrilled(w) {
+    return w.drilledAt && (now - new Date(w.drilledAt).getTime()) < COOLDOWN_H * 3600000;
+  }
+
+  if (mode === 'worst') {
+    return all.slice().sort(function(a,b){ return a.lastScore - b.lastScore; }).slice(0, 10);
+  }
+  if (mode === 'random') {
+    return shuffle(all).slice(0, 10);
+  }
+
+  // 'auto': rest recently drilled words, then mix three tiers so the set changes
+  var pool = all.filter(function(w){ return !recentlyDrilled(w); });
+  if (pool.length < 10) {
+    var rest = all.filter(function(w){ return recentlyDrilled(w); });
+    pool = pool.concat(shuffle(rest));
+  }
+  var weak    = shuffle(pool.filter(function(w){ return w.lastScore < 50; }));
+  var mid     = shuffle(pool.filter(function(w){ return w.lastScore >= 50 && w.lastScore < 70; }));
+  var closing = shuffle(pool.filter(function(w){ return (w.drillPasses || 0) >= 1 || w.lastScore >= 70; }));
+
+  var out = [];
+  function take(arr, n) {
+    for (var i = 0; i < arr.length && n > 0; i++) {
+      if (out.indexOf(arr[i]) === -1) { out.push(arr[i]); n--; }
+    }
+  }
+  take(weak, 4);      // words that need the most work
+  take(mid, 3);       // words that are improving
+  take(closing, 3);   // words close to graduating — finish them off
+  take(shuffle(pool), 10 - out.length);
+  return shuffle(out).slice(0, 10);
+}
+
 async function startPronDrill() {
   app.onclick = null;   // release the list screen's delegated handler
-  var words = getPronWeakWords().sort((a,b) => a.lastScore - b.lastScore).slice(0, 10);
+  var words = selectDrillWords(S._drillMode || 'auto');
   if (words.length === 0) { alert("練習する単語がありません。Shadowingを行うと自動で追加されます。"); renderPronPractice(); return; }
   if (!S.geminiKey) { alert("Gemini APIキーを設定してください"); renderPronPractice(); return; }
 
@@ -2753,6 +2812,7 @@ Return EXACTLY ${words.length} entries, one per word, in the same order as given
     });
     S._pronDrills = drills;
     S._pronDrillIdx = 0;
+    S._pronDrillResults = [];
     renderPronDrillStep();
   } catch(e) {
     app.innerHTML = `<div class="card"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-8" onclick="renderPronPractice()">戻る</button></div>`;
@@ -2763,44 +2823,189 @@ function renderPronDrillStep() {
   app.onclick = null;
   var drills = S._pronDrills || [];
   var idx = S._pronDrillIdx || 0;
-  if (idx >= drills.length) {
-    app.innerHTML = `
-      <div class="navbar"><div class="title">🎯 発音ドリル完了</div></div>
-      <div class="summary-header"><div class="score" style="color:var(--green)">✅</div><div class="label">${drills.length}語 練習完了</div></div>
-      <div class="card"><div class="text-sm text-muted" style="text-align:center">Shadowingを繰り返してスコアの変化を確認しましょう</div></div>
-      <button class="btn btn-primary w-full mt-16" onclick="S.screen='home';render()">ホームに戻る</button>
-    `;
-    return;
-  }
+
+  if (idx >= drills.length) { renderPronDrillSummary(); return; }
+
   var d = drills[idx];
   var progress = Math.round(idx / drills.length * 100);
+  var target = (d.sentences && d.sentences[0]) ? d.sentences[0] : d.word;
+  var canScore = !!S.azureKey;
+
   app.innerHTML = `
     <div class="navbar"><button class="back" id="pdBack">←</button><div class="title">🎯 発音ドリル ${idx+1}/${drills.length}</div></div>
     <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
     <div class="card" style="padding:24px;text-align:center">
       <div style="font-size:32px;font-weight:800;color:var(--accent)">${esc(d.word)}</div>
-      <button class="btn btn-ghost mt-8" id="pdSpeak" style="font-size:24px">🔊 お手本</button>
-      <div class="tip mt-16" style="text-align:left">${esc(d.tip || '')}</div>
+      <button class="btn btn-ghost mt-8" id="pdSpeak" style="font-size:20px">🔊 単語を聞く</button>
+      ${d.tip ? `<div class="tip mt-16" style="text-align:left">${esc(d.tip)}</div>` : ''}
     </div>
+
     <div class="card">
-      <div class="text-sm" style="font-weight:600;margin-bottom:8px">📝 例文で練習</div>
-      ${(d.sentences||[]).map((s,si) => `
-        <div style="padding:8px 0;border-bottom:1px solid var(--border)">
-          <div class="text-sm">${esc(s)}</div>
-          <button class="btn-ghost pd-speak-sent" data-text="${esc(s).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px;margin-top:4px">🔊 再生</button>
-        </div>
-      `).join('')}
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">📝 この文で練習</div>
+      <div class="text-sm" id="pdTarget" style="font-weight:600;line-height:1.7">${esc(target)}</div>
+      <button class="btn-ghost pd-speak-sent" data-text="${esc(target).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px;margin-top:6px">🔊 お手本を聞く</button>
+      ${canScore
+        ? `<button class="btn btn-primary w-full mt-12" id="pdRec">🎤 録音して採点</button>`
+        : `<div class="text-xs text-muted mt-12">Azure Speech キーを設定すると採点できます</div>`}
     </div>
-    <button class="btn btn-primary w-full mt-16" id="pdNext">次の単語 →</button>
+
+    ${(d.sentences || []).length > 1 ? `<div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">その他の例文</div>
+      ${d.sentences.slice(1).map(function(x){ return `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div class="text-sm">${esc(x)}</div>
+        <button class="btn-ghost pd-speak-sent" data-text="${esc(x).replace(/"/g,'&quot;')}" style="color:var(--accent);font-size:13px;margin-top:4px">🔊 再生</button>
+      </div>`; }).join('')}
+    </div>` : ''}
+
+    <div id="pdResult"></div>
+    <button class="btn btn-ghost w-full mt-8 mb-16" id="pdSkip" style="font-size:13px">スキップして次へ →</button>
   `;
-  $("pdBack").onclick = () => { if(confirm("中断しますか？")) renderPronPractice(); };
-  $("pdSpeak").onclick = function() {
-    quickSpeak(d.word, 0.7);
-  };
-  document.querySelectorAll(".pd-speak-sent").forEach(btn => {
+
+  $("pdBack").onclick = function() { if (confirm("中断しますか？")) renderPronPractice(); };
+  $("pdSpeak").onclick = function() { quickSpeak(d.word, 0.7); };
+  document.querySelectorAll(".pd-speak-sent").forEach(function(btn) {
     btn.onclick = function() { quickSpeak(this.dataset.text, 0.85); };
   });
-  $("pdNext").onclick = () => { S._pronDrillIdx++; renderPronDrillStep(); };
+  $("pdSkip").onclick = function() {
+    S._pronDrillResults = S._pronDrillResults || [];
+    S._pronDrillResults.push({ word: d.word, score: null, passed: false });
+    S._pronDrillIdx++; renderPronDrillStep();
+  };
+
+  if ($("pdRec")) {
+    $("pdRec").onclick = async function() {
+      var btn = this;
+      stopAudio();
+      btn.disabled = true; btn.textContent = "⏳ マイク準備中...";
+      await new Promise(function(r){ setTimeout(r, 400); });
+      try {
+        var rec = await recordWav(0, null, 'pronSeconds');
+        btn.disabled = false;
+        btn.textContent = "⏹ 録音停止";
+        btn.className = "btn btn-danger w-full mt-12";
+        btn.onclick = async function() {
+          btn.disabled = true; btn.textContent = "⏳ 採点中...";
+          var wav = await rec.stop();
+          if (!wav || wav.size <= 44) { showPronDrillResult(d, null, null); return; }
+          try {
+            var result = await azurePronAssess(wav, target);
+            var nb = result && result.NBest && result.NBest[0];
+            var pa = (nb && nb.PronunciationAssessment) || {};
+            var overall = pa.AccuracyScore != null ? pa.AccuracyScore : (nb && nb.AccuracyScore);
+            // Pull out the score of the target word specifically
+            var wordScore = null;
+            var wl = (nb && nb.Words) || [];
+            wl.forEach(function(w) {
+              if (!w.Word) return;
+              if (w.Word.toLowerCase().replace(/[^a-z']/g,'') === String(d.word).toLowerCase().replace(/[^a-z']/g,'')) {
+                var wp = w.PronunciationAssessment || w;
+                if (wp.AccuracyScore != null) wordScore = Math.round(wp.AccuracyScore);
+              }
+            });
+            showPronDrillResult(d, wordScore, overall != null ? Math.round(overall) : null, wl, target);
+          } catch (err) {
+            showPronDrillResult(d, null, null, [], target, err.message);
+          }
+        };
+      } catch (e) {
+        btn.disabled = false; btn.textContent = "🎤 録音して採点";
+        alert("マイクアクセスエラー: " + e.message);
+      }
+    };
+  }
+}
+
+function showPronDrillResult(d, wordScore, overall, words, target, errMsg) {
+  var PASS = 70;
+  var passed = wordScore != null ? wordScore >= PASS : (overall != null && overall >= PASS);
+  var shown = wordScore != null ? wordScore : overall;
+  var col = shown == null ? 'var(--muted)' : shown >= 80 ? 'var(--green)' : shown >= PASS ? 'var(--yellow)' : 'var(--red)';
+
+  var wordHtml = '';
+  if (words && words.length > 0) {
+    wordHtml = '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:2px 5px;font-size:14px">' +
+      words.map(function(w) {
+        var wp = w.PronunciationAssessment || w;
+        var wa = wp.AccuracyScore != null ? wp.AccuracyScore : 0;
+        var et = wp.ErrorType || 'None';
+        var c = et === 'Omission' ? '#9ca3af' : wa >= 80 ? '#059669' : wa >= 50 ? '#f59e0b' : '#dc2626';
+        var dec = et === 'Omission' ? 'line-through' : 'none';
+        var isTarget = w.Word && String(w.Word).toLowerCase().replace(/[^a-z']/g,'') === String(d.word).toLowerCase().replace(/[^a-z']/g,'');
+        return '<span style="color:' + c + ';text-decoration:' + dec + ';font-weight:' + (isTarget ? '800' : '500') + (isTarget ? ';border-bottom:2px solid ' + c : '') + '">' + esc(w.Word || '') + '</span>';
+      }).join('') + '</div>';
+  }
+
+  // Record the attempt and update the weak-word entry
+  if (shown != null) {
+    S._pronDrillResults = S._pronDrillResults || [];
+    S._pronDrillResults.push({ word: d.word, score: shown, passed: passed });
+    var list = getPronWeakWords();
+    var entry = list.find(function(x) { return x.word === d.word; });
+    if (entry) {
+      entry.lastScore = shown;
+      if (shown > entry.bestScore) entry.bestScore = shown;
+      entry.drillPasses = (entry.drillPasses || 0) + (passed ? 1 : 0);
+      entry.lastDate = new Date().toISOString();
+      entry.drilledAt = new Date().toISOString();
+      // Two clean passes = mastered, drop it from the practice list
+      if (entry.drillPasses >= 2 && shown >= 80) {
+        list = list.filter(function(x) { return x.word !== d.word; });
+      }
+      safeLSSet("ett_pron_weak", list);
+    }
+  }
+
+  var el = $("pdResult");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="card" style="padding:20px;text-align:center">
+      ${errMsg ? `<div class="text-sm text-red">${esc(errMsg)}</div>`
+        : shown == null
+          ? `<div class="text-sm text-muted">音声が認識できませんでした。もう一度お試しください。</div>`
+          : `<div style="font-size:36px;font-weight:800;color:${col}">${shown}</div>
+             <div class="text-xs text-muted">「${esc(d.word)}」の発音スコア</div>
+             <div style="font-size:18px;font-weight:700;margin-top:8px;color:${passed ? 'var(--green)' : 'var(--red)'}">${passed ? '✅ 合格' : '❌ もう一度'}</div>
+             ${overall != null ? `<div class="text-xs text-muted mt-4">文全体: ${overall}点</div>` : ''}
+             ${wordHtml}`}
+      <div class="flex gap-8 mt-16">
+        <button class="btn btn-secondary w-full" id="pdRetry">🔄 もう一度</button>
+        <button class="btn btn-primary w-full" id="pdNext">次の単語 →</button>
+      </div>
+    </div>
+  `;
+  $("pdRetry").onclick = function() { renderPronDrillStep(); };
+  $("pdNext").onclick = function() { S._pronDrillIdx++; renderPronDrillStep(); };
+}
+
+function renderPronDrillSummary() {
+  var res = S._pronDrillResults || [];
+  var scored = res.filter(function(r) { return r.score != null; });
+  var passedN = res.filter(function(r) { return r.passed; }).length;
+  var avg = scored.length > 0 ? Math.round(scored.reduce(function(a,r){ return a + r.score; }, 0) / scored.length) : 0;
+  var col = avg >= 80 ? 'var(--green)' : avg >= 70 ? 'var(--yellow)' : 'var(--red)';
+  S._pronDrillResults = [];
+
+  app.innerHTML = `
+    <div class="navbar"><div class="title">🎯 発音ドリル完了</div></div>
+    <div class="summary-header">
+      <div class="score" style="color:${col}">${passedN}/${res.length}</div>
+      <div class="label">合格${scored.length > 0 ? ' ・ 平均' + avg + '点' : ''}</div>
+    </div>
+    ${res.length > 0 ? `<div class="card">
+      ${res.map(function(r) {
+        var c = r.score == null ? 'var(--muted)' : r.passed ? 'var(--green)' : 'var(--red)';
+        return `<div class="flex justify-between items-center" style="padding:10px 0;border-bottom:1px solid var(--border)">
+          <div class="text-sm" style="font-weight:600">${esc(r.word)}</div>
+          <div style="font-weight:700;color:${c}">${r.score == null ? 'スキップ' : r.score + (r.passed ? ' ✅' : '')}</div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+    <div class="tip">💡 80点以上を2回出すと、その単語は練習リストから外れます</div>
+    <button class="btn btn-primary w-full mt-16" id="pdsBack">発音練習に戻る</button>
+    <button class="btn btn-ghost w-full mt-8 mb-16" id="pdsHome">ホームに戻る</button>
+  `;
+  $("pdsBack").onclick = function() { renderPronPractice(); };
+  $("pdsHome").onclick = function() { S.screen = 'home'; render(); };
 }
 
 // ═══════════════════════════════════

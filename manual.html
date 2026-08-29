@@ -6,24 +6,25 @@
 <title>English Talk Trainer マニュアル</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Hiragino Sans',system-ui,sans-serif;background:#f8fafc;color:#1a2a3a;line-height:1.8;font-size:16px}
+body{font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif;background:#f8fafc;color:#1a2a3a;line-height:1.8;font-size:16px}
 .c{max-width:720px;margin:0 auto;padding:24px 20px 80px}
 h1{font-size:28px;font-weight:800;margin:32px 0 8px;color:#4f46e5}
 h2{font-size:22px;font-weight:700;margin:40px 0 12px;padding-bottom:8px;border-bottom:2px solid #4f46e5}
-h3{font-size:18px;font-weight:600;margin:24px 0 8px;color:#4f46e5}
+h3{font-size:17px;font-weight:600;margin:22px 0 8px;color:#4f46e5}
 p{margin:8px 0 16px}
 .card{background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:20px;margin:16px 0}
 table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
-th,td{padding:10px 12px;border:1px solid #e2e8f0;text-align:left}
+th,td{padding:9px 11px;border:1px solid #e2e8f0;text-align:left;vertical-align:top}
 th{background:#f1f5f9;font-weight:600}
 .tip{background:#f0fdf4;border-left:4px solid #059669;padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
 .warn{background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:14px}
 a{color:#4f46e5}
 ul,ol{margin:8px 0 16px 24px}
-li{margin:4px 0}
+li{margin:5px 0}
 .toc{background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;padding:20px;margin:20px 0}
 .toc a{display:block;padding:4px 0;font-size:15px;text-decoration:none}
 .bg{display:inline-block;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:600}
+code{background:#f1f5f9;padding:2px 6px;border-radius:5px;font-size:13px}
 </style>
 </head>
 <body>
@@ -38,15 +39,18 @@ li{margin:4px 0}
 <a href="#routine">2. 🚀 自動ルーティン</a>
 <a href="#freetalk">3. 🗣️ Free Talk</a>
 <a href="#flash">4. ⚡ Flash Training</a>
-<a href="#describe">5. 🎨 Description Training</a>
+<a href="#describe">5. 🎨 Description</a>
 <a href="#shadow">6. 🎧 Shadowing</a>
-<a href="#news">7. 📰 News Discussion</a>
-<a href="#review">8. 復習・フレーズ集・会話ログ</a>
-<a href="#stats">9. 学習履歴・分析</a>
-<a href="#cefr">10. CEFRレベル</a>
-<a href="#settings">11. 設定・データ管理</a>
-<a href="#cost">12. コスト</a>
-<a href="#tips">13. 学習のコツ</a>
+<a href="#listening">7. 👂 Listening Quiz</a>
+<a href="#news">8. 📰 News Discussion</a>
+<a href="#review">9. 📝 復習</a>
+<a href="#pron">10. 🎯 発音練習</a>
+<a href="#vocab">11. 📚 フレーズ集・💬 会話ログ</a>
+<a href="#stats">12. 📊 分析</a>
+<a href="#cefr">13. CEFRレベル</a>
+<a href="#settings">14. 設定・データ移行</a>
+<a href="#cost">15. コスト</a>
+<a href="#tips">16. 学習のコツ</a>
 </div>
 
 <h2 id="setup">1. 初期設定</h2>
@@ -54,133 +58,200 @@ li{margin:4px 0}
 <p><strong>Gemini API Key（必須）</strong> — <a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>で無料取得</p>
 <p><strong>Azure Speech Key（推奨）</strong> — <a href="https://portal.azure.com/" target="_blank">Azure Portal</a> → Speech Services</p>
 </div>
-<div class="tip">💡 Azure Keyがなくてもテキスト入力＋ブラウザ音声で使えます。Shadowing発音評価にはAzure Key必須。</div>
+<div class="tip">💡 Azure Keyがなくてもテキスト入力とブラウザ音声で使えます。ただし Shadowing の発音評価と発音ドリルの採点には必須です。</div>
 
 <h2 id="routine">2. 🚀 自動ルーティン</h2>
-<p>テーマを選ぶだけで4モードを自動連続。テーマが全セクションで統一。約15分。</p>
+<p>レベルとテーマを選ぶだけで4モードを自動連続。約15分。</p>
 <div class="card">
-<strong>フロー：</strong>
 <ol>
-<li>🗣️ Free Talk — 3ターン（AIが最後に締める）</li>
-<li>⚡ Flash — 5問（テーマに沿った英作文）</li>
-<li>🎨 Description — 5シナリオ（段階的に難しくなる描写）</li>
-<li>🎧 Shadowing — 5文（テーマに沿った発音練習）</li>
+<li>🗣️ Free Talk — 3ターン（最後はAIが自然に締める）</li>
+<li>⚡ Flash — 5問</li>
+<li>🎨 Description — 5シナリオ</li>
+<li>🎧 Shadowing — 5文</li>
 <li>🎉 完了 — 4セクション総合スコア</li>
 </ol>
 </div>
-<p>12テーマ: 日常/ビジネス/旅行/意見・社会/食べ物/経済・金融/テクノロジー/健康/文化/趣味/家族/自分のこと</p>
+<p><strong>レベルは開始画面で選択</strong>し、4セクションすべてに適用されます。テーマも全セクションで統一されるので、Free Talkで話した話題がそのままFlash・Description・Shadowingに引き継がれます。</p>
+<p>12テーマ: 日常 / ビジネス / 旅行 / 意見・社会 / 食べ物 / 経済・金融 / テクノロジー / 健康 / 文化 / 趣味 / 家族 / 自分のこと</p>
 
 <h2 id="freetalk">3. 🗣️ Free Talk</h2>
-<p>17カテゴリ・221トピック（うち🎭ロールプレイ68種）。</p>
-<h3>ターン数選択</h3>
-<p>3 / 5 / 7 / 10 / ∞ から選択。最終ターンでAIが自然に会話を締めます。AIスタートなら自分3回+AI4回、自分スタートなら自分3回+AI3回。</p>
+<p>17カテゴリ・221トピック（うち🎭ロールプレイ68種）。全カテゴリでフリーワード入力も可能。</p>
+<h3>ターン数</h3>
+<p>3 / 5 / 7 / 10 / ∞ から選択。表示は「あなた2/5」のように<strong>自分の発言回数</strong>を数えます（AIの発言は含みません）。∞ の場合は「🏁 終了してフィードバック」で手動終了。</p>
 <h3>🙋 自分からスタート</h3>
-<p>会議ファシリテーション、プレゼン、道案内など。</p>
+<p>ONにすると自分が最初に話します。会議の進行、プレゼン、道案内など自分から切り出す場面の練習に。</p>
 <h3>AIの会話スタイル</h3>
-<p>毎回質問で返さず、共感・自分の話・リアクション・エピソードを自然に混ぜます。</p>
+<p>毎回質問で返すのではなく、共感・自分の話・リアクション・エピソードを自然に混ぜます。尋問ではなく会話になるよう設計しています。</p>
 <h3>チャレンジ表現</h3>
-<p>会話トピックで使いやすい短いフレーズ(2-6語)を提案。未使用分は復習キューに自動追加。</p>
+<p>22スキルカテゴリから、その話題で使いやすい短いフレーズ（2〜6語）を提示。使えなかった表現は自動で復習キューに入ります。</p>
 
 <h2 id="flash">4. ⚡ Flash Training</h2>
 <table>
 <tr><th>カテゴリ</th><th>内容</th></tr>
-<tr><td>🏠 日常 / 💼 ビジネス / ✈️ 旅行 / 💭 意見</td><td>日本語→英語の翻訳練習</td></tr>
-<tr><td>⚡ 状況反応</td><td>状況に英語で即反応（翻訳ではなく応答）</td></tr>
-<tr><td>🔄 パターンドリル</td><td>同じパターンを複数状況で反復</td></tr>
+<tr><td>🏠 日常 / 💼 ビジネス / ✈️ 旅行 / 💭 意見</td><td>日本語→英語の翻訳</td></tr>
+<tr><td>⚡ 状況反応</td><td>状況説明を読んで英語で即応答（翻訳ではない）</td></tr>
+<tr><td>🔄 パターンドリル</td><td>同じ型を複数状況で反復し自動化する</td></tr>
 </table>
-<p>30シード×10文体 = 40,600+通りで毎回異なる問題。</p>
+<p>30シード×10文体で40,600通り以上。直近50問は再出題されません。</p>
+<div class="tip">💡 大文字・句読点は評価対象外です（音声入力で制御できないため）。スキップした問題は平均点から除外されます。</div>
 
-<h2 id="describe">5. 🎨 Description Training</h2>
-<p>具体的なシナリオで「自分の言葉で説明する力」を鍛える独立モード。</p>
+<h2 id="describe">5. 🎨 Description</h2>
+<p>具体的なシナリオを与えられ、自分の言葉で説明する独立モード。5問が段階的に難しくなります。</p>
 <div class="card">
-<strong>段階的5問（テーマ×場面×展開 = 3,000+通り）:</strong>
 <ol>
-<li>🟢 報告 — ひとこと〜2文で伝える</li>
-<li>🟢 叙述 — 2〜3文で状況を説明</li>
-<li>🟡 説明 — 理由も含めて説明</li>
-<li>🔴 比較・説得 — 選択肢を比較して意見を言う</li>
-<li>🔴 即興対応 — 予想外の展開に対応</li>
+<li>🟢 <strong>報告</strong> — ひとこと〜2文で事実を伝える</li>
+<li>🟢 <strong>叙述</strong> — 2〜3文で出来事を順に話す</li>
+<li>🟡 <strong>説明</strong> — 原因や理由を述べる</li>
+<li>🔴 <strong>比較・説得</strong> — 選択肢を比較して意見を言う</li>
+<li>🔴 <strong>即興対応</strong> — 予想外の展開にその場で対応する</li>
 </ol>
 </div>
-<p>例: 「今朝、駅でコーヒーをこぼしちゃって、隣の外国人のコートを汚してしまった。英語でなんて謝る？」</p>
-<p>評価: 内容・語彙の幅・文法。模範解答＋✨改善案を表示。会話ログにも保存。</p>
+<p>例:「今朝、駅でコーヒーをこぼして隣の外国人のコートを汚してしまった。英語でなんて謝る？」</p>
+<p>評価は内容の適切さ・語彙の幅・文法。模範解答に加えて✨改善案が出ます。テーマ×場面×展開で3,000通り以上。</p>
+<div class="warn">⚠️ このモードだけ、シナリオの質を優先して常に Gemini 3.7 Flash を使用します。コストは他モードと分けて計上されます。</div>
 
 <h2 id="shadow">6. 🎧 Shadowing</h2>
+<p>AIの英語を聞いて繰り返し、Azureで発音を採点。5文1セット。</p>
 <ul>
 <li>🙈 テキスト非表示モード（耳だけで再現）</li>
-<li>単語ごと色分け（🟢正確 🟡要改善 🔴不正確 取消線=未発話）</li>
+<li>単語ごとの色分け（🟢正確 🟡要改善 🔴不正確、取消線＝未発話）</li>
 <li>🔊 お手本を聞く / 🎙️ 自分の録音を聞く</li>
-<li>🔄 最低スコアをリトライ</li>
-<li>✨ AI発音アドバイス（オプション有料）</li>
-<li>Azure 429自動リトライ（3秒→6秒→9秒）</li>
+<li>🔄 最低スコアの文だけリトライ</li>
+<li>✨ AI発音アドバイス（有料オプション）</li>
 </ul>
+<p>スコアは<strong>レベルとテキスト非表示で補正</strong>されます。難しい条件で練習した方が正当に評価されます。</p>
+<table>
+<tr><th>補正</th><th>係数</th></tr>
+<tr><td>A1 / A2 / B1 / B2 / C1</td><td>×0.85 / ×0.92 / ×1.00 / ×1.08 / ×1.15</td></tr>
+<tr><td>テキスト非表示</td><td>×1.10</td></tr>
+</table>
+<p>70点未満だった単語は自動的に <a href="#pron">発音練習</a> のリストに追加されます（未発話の語は除外）。</p>
 
-<h2 id="news">7. 📰 News Discussion</h2>
-<p>22ジャンル+フリーワード。ターン数選択(3/5/7)。レベルに応じて記事の長さ・複雑さが変化（A1: 30語, C1: 180語）。ルーティンには含まれません。</p>
+<h2 id="listening">7. 👂 Listening Quiz</h2>
+<p>聞いてタップするだけ。<strong>マイク不要・発声不要</strong>なので電車でも練習できます。10問で約5分。</p>
+<table>
+<tr><th>タイプ</th><th>測るもの</th></tr>
+<tr><td>🔤 穴埋め</td><td>弱く発音される語を拾えるか</td></tr>
+<tr><td>🎭 意図・感情</td><td>トーンから話者の気持ちを読めるか</td></tr>
+<tr><td>🔗 弱形・短縮</td><td>can/can't、gonna/gotta など紛らわしい音の判別</td></tr>
+<tr><td>💬 次の一言</td><td>内容を踏まえて自然な返答を選べるか</td></tr>
+<tr><td>🔢 数字・固有名詞</td><td>B12とB20、13と30などを聞き分けられるか</td></tr>
+<tr><td>🎲 ミックス</td><td>上記を2問ずつ</td></tr>
+</table>
+<p>選択肢は<strong>音声を聞かないと答えられない</strong>よう設計されています（3択すべて自然で、文法や丁寧さから正解が分からないようにする）。音声は何度でも再生でき、回答後にスクリプトと解説が出ます。</p>
 
-<h2 id="review">8. 復習・フレーズ集・会話ログ</h2>
-<h3>📝 復習</h3>
-<p>間隔反復（0→1→3→7→14→30日）。フラッシュカード方式。正しい表現を大きく表示＋🔊発音。</p>
-<h3>📚 フレーズ集</h3>
-<p>🔊フレーズ再生 / ✕個別削除 / ✨例文＋🏷️使用シーン生成（有料）</p>
-<h3>💬 会話ログ</h3>
-<p>最大50件。🇯🇵和訳表示（有料・保存可能 — 次回は無料で即表示）。Description履歴はユーザー発言のみ翻訳。</p>
+<h2 id="news">8. 📰 News Discussion</h2>
+<p>22ジャンル＋フリーワード。ターン数は3/5/7から選択。Google Search Grounding で実際の最新ニュースを取得します。</p>
+<p>記事の長さと難しさはレベルで変わります（A1: 30〜50語 / B1: 80〜100語 / C1: 120〜180語）。同じニュースをレベルに合わせて書き換える方式です。ルーティンには含まれません。</p>
 
-<h2 id="stats">9. 学習履歴・分析</h2>
+<h2 id="review">9. 📝 復習</h2>
+<p>間隔反復（0→1→3→7→14→30日）。<strong>手がかりを見て自分で答えを思い出してから</strong>正解を開く方式です。</p>
+<div class="card">
+<p>この日本語を英語で言うと？<br><strong>それを楽しみにしています</strong></p>
+<p>[👀 答えを見る] → I'm looking forward to it. [🔊]<br>[😓 まだ] [✅ 言えた]</p>
+</div>
+<p>復習に入る経路は6系統あります。</p>
+<table>
+<tr><th>出典</th><th>条件</th></tr>
+<tr><td>🗣️ Free Talk 修正</td><td>フィードバックの修正項目</td></tr>
+<tr><td>⚡ Flash 不正解</td><td>採点で不正解</td></tr>
+<tr><td>👂 Listening 誤答</td><td>選択を間違えた問題</td></tr>
+<tr><td>🎨 Description</td><td>60点未満</td></tr>
+<tr><td>🎯 発音の弱点語</td><td>2回以上ミス かつ 60点未満</td></tr>
+<tr><td>💡 未使用チャレンジ</td><td>会話で使わなかった表現</td></tr>
+</table>
+
+<h2 id="pron">10. 🎯 発音練習</h2>
+<p>Shadowingで70点未満だった単語が自動で貯まります。ドリルでは<strong>録音して採点</strong>できます。</p>
+<div class="card">
+<p><strong>through</strong>　[🔊 単語を聞く]<br>
+💡「スルー」ではなく θruː。舌先を上の前歯に軽く当てて息を出す。</p>
+<p>📝 この文で練習<br>I walked through the park.<br>[🔊 お手本] [🎤 録音して採点]</p>
+<p>→ <strong>62点</strong>「through」の発音スコア　❌ もう一度</p>
+</div>
+<p>例文の中でその単語が何点だったかを見るので、単語単独より安定して評価できます。</p>
+<table>
+<tr><th>条件</th><th>結果</th></tr>
+<tr><td>70点以上</td><td>✅ 合格</td></tr>
+<tr><td>80点以上を2回</td><td>リストから卒業（自動削除）</td></tr>
+</table>
+<h3>出題方式</h3>
 <ul>
-<li>📊 スキルバランス — モード別レーダー（2週間 vs 1ヶ月）</li>
-<li>🎯 弱点分析 — 6軸レーダー（発音/流暢さ/文法/語彙/自然さ/瞬発力）+ 自動アドバイス</li>
-<li>📈 スコア推移 — 日別折れ線グラフ（1ヶ月）</li>
-<li>📅 週別学習推移 — セッション数＋学習時間バーチャート（8週間）</li>
-<li>📋 全セッション一覧</li>
+<li><strong>🎯 おまかせ</strong>（既定）— 苦手4語・伸び途中3語・卒業間近3語をバランスよく。直近12時間に練習した語は後回し</li>
+<li><strong>📉 苦手順</strong> — スコアが低い順に10語</li>
+<li><strong>🎲 ランダム</strong> — 全体から10語</li>
 </ul>
 
-<h2 id="cefr">10. CEFRレベル</h2>
+<h2 id="vocab">11. 📚 フレーズ集・💬 会話ログ</h2>
+<h3>📚 フレーズ集</h3>
+<p>会話で使ったフレーズを自動抽出。🔊で発音再生、✕で個別削除、✨で例文と🏷️使用シーンを生成します。</p>
+<div class="tip">💡 知っているフレーズは✕で消して、使いたいものだけ残すと使いやすくなります。</div>
+<h3>💬 会話ログ</h3>
+<p>最大50件。🇯🇵和訳を表示すると<strong>保存されるので2回目以降は無料で即表示</strong>されます。Description の履歴は自分の発言だけを翻訳します（AI側は元から日本語を含むため）。</p>
+
+<h2 id="stats">12. 📊 分析</h2>
+<p>HOME の「📊 分析」から。履歴（セッション一覧）とは別画面です。</p>
+<ul>
+<li><strong>スキルバランス</strong> — モード別レーダー。直近2週間と1ヶ月を重ねて成長を見る</li>
+<li><strong>🎯 弱点分析</strong> — 6軸（発音 / 流暢さ / 文法 / 語彙 / 自然さ / 瞬発力）＋自動アドバイス</li>
+<li><strong>🏷️ 間違いの傾向</strong> — 時制・冠詞・前置詞・語順・語彙選択など10分類。過去分はボタンでまとめて分類可能（有料）</li>
+<li><strong>👂 リスニング分析</strong> — タイプ別の正答率。直近50問で判定（10問未満は参考値）</li>
+<li><strong>📈 スコア推移</strong> — 日別・1ヶ月・モード色分け</li>
+<li><strong>📅 週別学習推移</strong> — セッション数と学習時間の8週間推移</li>
+<li><strong>🎓 CEFRレベル推移</strong> — A1〜C1を13段階（A2+、B1+など中間も表示）</li>
+</ul>
+<p>瞬発力は Free Talk と Flash から算出します（応答速度40%＋発話密度60%）。フィラーが多くダラダラした回答は低く出ます。</p>
+
+<h2 id="cefr">13. CEFRレベル</h2>
 <table>
 <tr><th>レベル</th><th>語彙</th><th>文法</th></tr>
-<tr><td><span class="bg" style="background:#d1fae5;color:#059669">A1</span></td><td>〜500</td><td>現在形・canのみ</td></tr>
+<tr><td><span class="bg" style="background:#d1fae5;color:#059669">A1</span></td><td>〜500</td><td>現在形・can のみ</td></tr>
 <tr><td><span class="bg" style="background:#d1fae5;color:#059669">A2</span></td><td>〜1,500</td><td>過去形・going to・比較級</td></tr>
 <tr><td><span class="bg" style="background:#ede9fe;color:#4f46e5">B1</span></td><td>〜3,000</td><td>現在完了・第一条件文・受動態</td></tr>
 <tr><td><span class="bg" style="background:#ede9fe;color:#4f46e5">B2</span></td><td>〜5,000</td><td>第二第三条件文・過去完了</td></tr>
 <tr><td><span class="bg" style="background:#fee2e2;color:#dc2626">C1</span></td><td>〜8,000+</td><td>倒置・分裂文・仮定法</td></tr>
 </table>
+<p>各レベルに使用禁止文法リストがあり、AIはそれを厳守します。読み上げ速度は全レベル自然速度で、差は語彙・文法・振る舞いで付けています。</p>
 
-<h2 id="settings">11. 設定・データ管理</h2>
+<h2 id="settings">14. 設定・データ移行</h2>
 <h3>Geminiモデル</h3>
 <table>
 <tr><th>モデル</th><th>特徴</th></tr>
-<tr><td><strong>3.1 Flash-Lite</strong>（デフォルト）</td><td>最速・最安・無料枠あり</td></tr>
-<tr><td>2.5 Flash</td><td>安定版・無料枠あり</td></tr>
-<tr><td>3.5 Flash</td><td>最高性能Flash・無料枠あり</td></tr>
-<tr><td>2.5 Pro</td><td>高精度・無料枠あり（制限大）</td></tr>
+<tr><td><strong>3.1 Flash-Lite</strong>（既定）</td><td>最速・最安・無料枠あり</td></tr>
+<tr><td>2.5 Flash</td><td>安定版</td></tr>
+<tr><td>3.7 Flash</td><td>最高性能。Description では設定に関わらず常にこれを使用</td></tr>
+<tr><td>2.5 Pro</td><td>高精度</td></tr>
 </table>
+<h3>音声認識</h3>
+<p>Azure STT（既定・高精度）/ Web Speech（無料）/ 自動切替。</p>
+<div class="warn">⚠️ マイクを止めた直後は結果の処理中です。連続でタップすると認識がやり直しになるので、⏳が消えるまで待ってください。</div>
 <h3>📤📥 データ保存・復元</h3>
-<p>HOME画面の下部から操作。スマホ交換時のデータ移行に使います。</p>
+<p>HOME画面の下部から。スマホを買い替えるときはこれで移行します。</p>
 <div class="card">
 <ol>
-<li>旧スマホ: 📤 データ保存 → JSONファイルをGoogleドライブ等に保存</li>
-<li>新スマホ: アプリを開く → 📥 データ復元 → JSONファイルを選択</li>
+<li>旧端末で <strong>📤 データ保存</strong> → JSONファイルをクラウド等に保存</li>
+<li>新端末でアプリを開き <strong>📥 データ復元</strong> → そのファイルを選択</li>
 </ol>
-<p>APIキー・学習履歴・フレーズ集・会話ログ・復習データ等が全て移行されます。</p>
+<p>学習履歴・復習・フレーズ集・会話ログ・発音リスト・APIキーなど全17項目が移行されます。</p>
 </div>
 
-<h2 id="cost">12. コスト</h2>
+<h2 id="cost">15. コスト</h2>
 <div class="card">
 <table>
 <tr><th>構成</th><th>1回</th><th>月額(朝晩)</th></tr>
 <tr><td>3.1 Flash-Lite + Azure STT</td><td>約5円</td><td>約300円</td></tr>
 <tr><td>3.1 Flash-Lite + Web Speech</td><td>約2.5円</td><td>約150円</td></tr>
 </table>
-<p>有料オプション（AIアドバイス・和訳・例文生成）は「（有料）」ラベル付き。累計コストはHOMEに表示。</p>
+<p>「（有料）」表示のある操作（AI発音アドバイス・和訳・例文生成・過去の間違い分類）だけ追加でかかります。累計コストはHOME画面に表示されます。</p>
 </div>
 
-<h2 id="tips">13. 学習のコツ</h2>
+<h2 id="tips">16. 学習のコツ</h2>
 <div class="card">
-<p>🚀 <strong>ルーティンを毎日</strong> — テーマを変えながら朝晩15分。4モード一気通貫。</p>
-<p>📝 <strong>復習を忘れずに</strong> — 間違い表現が自動で復習キューに。毎日チェック。</p>
-<p>📚 <strong>フレーズは厳選</strong> — 知ってるものは✕で消して「使いたい」ものだけ残す。</p>
-<p>💬 <strong>会話ログで振り返り</strong> — 和訳で「伝えたかったこと」と「伝わったこと」を比較。</p>
-<p>🎯 <strong>弱点分析を活用</strong> — 学習履歴のレーダーチャートで弱点を確認し、重点的に練習。</p>
+<p>🚀 <strong>ルーティンを毎日</strong> — テーマを変えながら朝晩15分。4モードが同じ話題で繋がります。</p>
+<p>📝 <strong>復習は「思い出してから」開く</strong> — 答えを見る前に必ず声か頭の中で言ってみる。ここを飛ばすと効果が大きく落ちます。</p>
+<p>🎯 <strong>発音は卒業まで回す</strong> — おまかせモードなら卒業間近の語が毎回混ざるので、リストが着実に減ります。</p>
+<p>👂 <strong>移動中はListening Quiz</strong> — マイク不要なので電車でも。弱形・短縮が伸びると会話の聞き取りが一気に楽になります。</p>
+<p>📊 <strong>週1で分析を見る</strong> — 「間違いの傾向」で冠詞や前置詞など具体的な弱点が分かったら、Flashのカテゴリを選んで集中的に潰す。</p>
 </div>
 
 <div style="margin-top:40px;text-align:center;color:#5a6a7a;font-size:13px">

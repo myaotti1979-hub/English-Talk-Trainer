@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.25n";
+const VERSION = "v2026.08.25p";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -792,8 +792,18 @@ function stopAudio() {
   if (window.speechSynthesis) speechSynthesis.cancel();
 }
 
-// Quick one-off browser TTS (no promise, cancels current speech)
+// Quick one-off playback. Prefers Azure TTS because browser speechSynthesis
+// is frequently silent inside installed PWAs (iOS especially).
 function quickSpeak(text, rate) {
+  if (!text) return;
+  if (S.azureKey) {
+    stopAudio();
+    speakText(text, S.ftVoice).catch(function() { _quickSpeakBrowser(text, rate); });
+    return;
+  }
+  _quickSpeakBrowser(text, rate);
+}
+function _quickSpeakBrowser(text, rate) {
   if (!window.speechSynthesis || !text) return;
   speechSynthesis.cancel();
   var u = new SpeechSynthesisUtterance(text);
@@ -1195,6 +1205,7 @@ function importAllData(e) {
 // RENDER
 // ═══════════════════════════════════
 function render() {
+  app.onclick = null;   // drop any screen-level delegated handler before redrawing
   if (S.screen === "apikey") renderApiKey();
   else if (S.screen === "home") renderHome();
   else if (S.screen === "history") renderHistory();
@@ -2621,7 +2632,20 @@ function renderListeningSummary() {
 // ═══════════════════════════════════
 
 function getPronWeakWords() {
-  try { return JSON.parse(localStorage.getItem("ett_pron_weak") || "[]"); } catch { return []; }
+  var list;
+  try { list = JSON.parse(localStorage.getItem("ett_pron_weak") || "[]"); } catch { return []; }
+  if (!Array.isArray(list)) return [];
+  // One-time cleanup: entries saved before Omission words were excluded.
+  // A word scored 0 on its only attempt was almost certainly never spoken.
+  if (!localStorage.getItem("ett_pron_cleaned")) {
+    var cleaned = list.filter(function(w) { return !(w.attempts <= 1 && w.lastScore === 0); });
+    try {
+      localStorage.setItem("ett_pron_cleaned", "1");
+      if (cleaned.length !== list.length) safeLSSet("ett_pron_weak", cleaned);
+    } catch (e) {}
+    return cleaned;
+  }
+  return list;
 }
 function savePronWeakWord(word, score, sentence) {
   var list = getPronWeakWords();
@@ -2648,6 +2672,7 @@ function savePronWeakWord(word, score, sentence) {
 }
 
 function renderPronPractice() {
+  S.screen = "pronpractice";
   var words = getPronWeakWords().sort((a,b) => a.lastScore - b.lastScore);
   app.innerHTML = `
     <div class="navbar"><button class="back" id="ppBack">←</button><div class="title">🎯 発音練習 (${words.length}語)</div></div>
@@ -2665,7 +2690,7 @@ function renderPronPractice() {
           <div style="display:flex;align-items:center;gap:8px">
             <span style="font-weight:700;color:${col}">${w.lastScore}</span>
             <button class="btn-ghost pp-speak" data-word="${esc(w.word)}" style="font-size:20px">🔊</button>
-            <button class="btn-ghost pp-del" data-idx="${i}" style="font-size:16px;color:var(--red)">✕</button>
+            <button class="btn-ghost pp-del" data-word="${esc(w.word)}" style="font-size:16px;color:var(--red)">✕</button>
           </div>
         </div>`;
       }).join('')}
@@ -2673,20 +2698,35 @@ function renderPronPractice() {
     <button class="btn btn-primary w-full mt-16" id="ppStartDrill">🎯 発音ドリル開始（上位10語）</button>
     <button class="btn btn-ghost w-full mt-8 mb-16" id="ppClear" style="color:var(--red);font-size:13px">全クリア</button>`}
   `;
-  $("ppBack").onclick = () => { S.screen = "home"; render(); };
-  document.querySelectorAll(".pp-speak").forEach(btn => {
-    btn.onclick = function() { quickSpeak(this.dataset.word, 0.8); };
-  });
-  document.querySelectorAll(".pp-del").forEach(btn => {
-    btn.onclick = function() { var list=getPronWeakWords(); list.splice(parseInt(this.dataset.idx),1); safeLSSet("ett_pron_weak",list); renderPronPractice(); };
-  });
-  if ($("ppClear")) $("ppClear").onclick = function() { if(confirm("発音リストを全削除しますか？")){localStorage.removeItem("ett_pron_weak");renderPronPractice();} };
-  if ($("ppStartDrill")) $("ppStartDrill").onclick = startPronDrill;
+  // Single delegated handler. Binding each button separately meant one failure
+  // left the remaining buttons dead with no error shown.
+  app.onclick = function(ev) {
+    var t = ev.target.closest ? ev.target.closest('button') : null;
+    if (!t) return;
+    if (t.id === 'ppBack') { app.onclick = null; S.screen = "home"; render(); return; }
+    if (t.id === 'ppStartDrill') { app.onclick = null; startPronDrill(); return; }
+    if (t.id === 'ppClear') {
+      if (confirm("発音リストを全削除しますか？")) { localStorage.removeItem("ett_pron_weak"); renderPronPractice(); }
+      return;
+    }
+    if (t.classList.contains('pp-speak')) { quickSpeak(t.dataset.word, 0.8); return; }
+    if (t.classList.contains('pp-del')) {
+      // Delete by word, not by index: the list is displayed sorted but stored
+      // unsorted, so an index removed the wrong entry.
+      var w = t.dataset.word;
+      var list = getPronWeakWords().filter(function(x) { return x.word !== w; });
+      safeLSSet("ett_pron_weak", list);
+      renderPronPractice();
+      return;
+    }
+  };
 }
 
 async function startPronDrill() {
+  app.onclick = null;   // release the list screen's delegated handler
   var words = getPronWeakWords().sort((a,b) => a.lastScore - b.lastScore).slice(0, 10);
-  if (words.length === 0) return;
+  if (words.length === 0) { alert("練習する単語がありません。Shadowingを行うと自動で追加されます。"); renderPronPractice(); return; }
+  if (!S.geminiKey) { alert("Gemini APIキーを設定してください"); renderPronPractice(); return; }
 
   app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">🎯 練習文を生成中...</div></div>';
 
@@ -2699,10 +2739,18 @@ For each word provide:
 2. Two short example sentences using the word naturally
 
 Return JSON:
-{"drills": [{"word": "example", "tip": "日本語での発音アドバイス", "sentences": ["Example sentence 1.", "Example sentence 2."]}]}` }], "JSON only.", true);
+{"drills": [{"word": "example", "tip": "日本語での発音アドバイス", "sentences": ["Example sentence 1.", "Example sentence 2."]}]}
+
+Return EXACTLY ${words.length} entries, one per word, in the same order as given.` }], "JSON only.", true, false, null, 0.4);
     var data = JSON.parse(raw.replace(/```json|```/g,'').trim());
     var drills = data.drills || [];
-    if (drills.length === 0) throw new Error("生成失敗");
+    if (drills.length === 0) throw new Error("練習文を生成できませんでした");
+    // If the model skipped words, keep them in the drill with a blank tip
+    var got = {};
+    drills.forEach(function(d) { if (d && d.word) got[String(d.word).toLowerCase()] = true; });
+    words.forEach(function(w) {
+      if (!got[w.word]) drills.push({ word: w.word, tip: "", sentences: w.sentence ? [w.sentence] : [] });
+    });
     S._pronDrills = drills;
     S._pronDrillIdx = 0;
     renderPronDrillStep();
@@ -2712,6 +2760,7 @@ Return JSON:
 }
 
 function renderPronDrillStep() {
+  app.onclick = null;
   var drills = S._pronDrills || [];
   var idx = S._pronDrillIdx || 0;
   if (idx >= drills.length) {
@@ -4723,7 +4772,9 @@ async function renderShadowPractice() {
                     var wpa = w.PronunciationAssessment || w;
                     var wacc = wpa.AccuracyScore ?? 100;
                     var errType = wpa.ErrorType || 'None';
-                    if (wacc < 70 && errType !== 'Insertion' && w.Word && w.Word.length > 1) {
+                    // Omission = never spoken, Insertion = extra word. Neither is a
+                    // pronunciation problem, so they must not pollute the practice list.
+                    if (wacc < 70 && errType !== 'Insertion' && errType !== 'Omission' && w.Word && w.Word.length > 1) {
                       savePronWeakWord(w.Word.toLowerCase(), Math.round(wacc), sent.en);
                     }
                   });

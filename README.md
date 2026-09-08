@@ -6,12 +6,13 @@ Gemini API × Azure Speech × PWA
 
 ## Features
 
-### 6 Training Modes + Auto Routine
+### 7 Training Modes + Auto Routine
 - **🗣️ Free Talk** — AI英会話（17カテゴリ・221トピック・68ロールプレイ）。ターン数選択(3/5/7/10/∞)。自分スタート。AIは質問だけでなく共感・自分の話・リアクションを混ぜる
 - **⚡ Flash Training** — 瞬間英作文（6カテゴリ）。⚡状況反応、🔄パターンドリル含む。30シード×10文体で40,600+通り
 - **🎨 Description** — シナリオ描写トレーニング。段階的5問（報告→叙述→説明→比較説得→即興対応）。テーマ×場面×展開で3,000+通り
 - **🎧 Shadowing** — Azure発音評価。単語色分け・テキスト非表示・録音再生・最低スコアリトライ。レベル×非表示で正規化
 - **👂 Listening Quiz** — 聞いてタップのみ。6タイプ（ミックス/穴埋め/意図・感情/弱形・短縮/次の一言/数字）。マイク不要で電車でも可
+- **🔁 4/3/2 Fluency** — 同じ話を50→40→30秒で3回。朝のFree Talk話題を自動で引き継ぐ。WPM・フィラー率をローカル計測し、3回分を1回のAPI呼出で比較（内容/構成/表現/流暢さ）
 - **📰 News Discussion** — 最新ニュースで議論（22ジャンル・Google Search Grounding）。レベル別記事長(A1:30語〜C1:180語)
 - **🚀 自動ルーティン** — 12テーマ。Free Talk 3ターン → Flash 5問 → Description 5問 → Shadowing 5文。全セクションでレベル・テーマ統一
 
@@ -69,4 +70,4 @@ icon-*.png      # PWA アイコン
 ```
 
 ## Version
-v2026.08.29a
+v2026.09.08b

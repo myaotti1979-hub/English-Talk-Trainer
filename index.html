@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.09.08b";
+const VERSION = "v2026.09.08c";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -4022,6 +4022,8 @@ var _srRecorder = null;
 var _srRetryCount = 0;
 var _srSession = 0;      // increments per take; stale results are discarded
 var _srStopping = false; // true while a take is being finalised
+var _srPendingStop = false; // stop was tapped while the recorder was still opening
+var _srStopWatchdog = null; // frees the UI if delivery never happens
 
 
 function srSupported() {
@@ -4074,6 +4076,20 @@ function srStop() {
   var mySession = _srSession;
   _srActive = false;
   clearTimeout(_srRestartTimer);
+
+  // Never leave the button stuck on ⏳ if a promise below never settles
+  clearTimeout(_srStopWatchdog);
+  _srStopWatchdog = setTimeout(function() {
+    if (_srStopping) { _srPendingStop = false; _deliverResult(mySession); }
+  }, 15000);
+
+  // recordWav() is awaited, so _srRecorder is null for a moment after start.
+  // Falling through to the Web Speech branch here delivered an empty result
+  // immediately and left the recorder running with the mic still held.
+  if (_srUseAzure && !_srRecorder) {
+    _srPendingStop = true;
+    return;
+  }
   if (_srUseAzure && _srRecorder) {
     _srRecorder.stop().then(function(wavBlob) {
       _srRecorder = null;
@@ -4114,11 +4130,14 @@ function _deliverResult(session) {
   // Only the session that produced this audio may deliver it.
   // Without this, a double-tap let a stale result fire into the NEW session's
   // callback — in Flash that auto-submitted a half-finished sentence.
+  clearTimeout(_srStopWatchdog);
   if (typeof session === 'number' && session !== _srSession) {
     _srStopping = false;
+    _srPendingStop = false;
     return;
   }
   _srStopping = false;
+  _srPendingStop = false;
   var text = _srBuf.trim();
   _srBuf = '';
   if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(text); }
@@ -4128,6 +4147,8 @@ function _deliverResult(session) {
 function srCancel() {
   _srActive = false;
   _srStopping = false;
+  _srPendingStop = false;
+  clearTimeout(_srStopWatchdog);
   _srSession++;
   clearTimeout(_srRestartTimer);
   _srBuf = '';
@@ -4234,8 +4255,23 @@ async function _srStartAzure() {
         _deliverResult(mySession);
       }
     });
+    // The user tapped stop while the mic was still opening — finish immediately
+    if (_srPendingStop) {
+      _srPendingStop = false;
+      var rec = _srRecorder;
+      _srRecorder = null;
+      _srActive = false;
+      try {
+        var wav = await rec.stop();
+        if (wav && wav.size > 44 && S.azureKey) {
+          try { _srBuf = (await azureSTT(wav)) || ''; } catch (e2) { _srBuf = ''; }
+        }
+      } catch (e3) { console.warn('pending stop failed', e3); }
+      _deliverResult(mySession);
+    }
   } catch(e) {
-    _srActive = false; _srUseAzure = false;
+    _srActive = false; _srUseAzure = false; _srStopping = false; _srPendingStop = false;
+    clearTimeout(_srStopWatchdog);
     alert("マイクアクセスエラー: " + e.message);
     if (_srCallback) { var cb = _srCallback; _srCallback = null; cb(''); }
   }
@@ -4254,8 +4290,15 @@ function toggleRecording() {
       S.isRecording = false;
       var mb = $("micBtn");
       if (mb) { mb.disabled = false; mb.textContent = "🎤"; mb.className = "mic-btn idle"; }
-      if (text) handleUserMessage(text);
-      else renderFreeTalkChat();
+      if (text) { handleUserMessage(text); return; }
+      // Empty result: say so instead of silently returning to the mic button
+      renderFreeTalkChat();
+      var ind = document.querySelector('.turn-indicator');
+      if (ind) {
+        ind.innerHTML = '🔇 音声を認識できませんでした。もう一度お試しください。';
+        ind.style.background = '#fef3c7';
+        ind.style.color = '#78350f';
+      }
     });
     if (!started) {
       var mb0 = $("micBtn");

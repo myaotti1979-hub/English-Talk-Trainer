@@ -219,7 +219,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
    Gemini 2.5 Flash + Azure Speech + PWA
    ═══════════════════════════════════════════════ */
 
-const VERSION = "v2026.08.29a";
+const VERSION = "v2026.09.08b";
 
 const $ = id => document.getElementById(id);
 const app = document.getElementById("app");
@@ -467,6 +467,8 @@ const S = {
   descQuestions: [], descCurrent: 0, descResults: [], descLevel: "B1",  // #6: replay own recording
   // Listening mode
   lsQuestions: [], lsCurrent: 0, lsResults: [], lsLevel: "B1", lsType: "mix", lsPlayCount: 0,
+  // 4/3/2 fluency drill (50/40/30 seconds)
+  fdTopic: '', fdTopicLabel: '', fdRound: 0, fdRuns: [], fdLevel: "B1",
   // Routine mode
   routine: { active: false, theme: 'daily', step: 0, scores: [] },
   // Recording
@@ -1218,6 +1220,7 @@ function render() {
   else if (S.screen === "analysis") renderAnalysis();
   else if (S.screen === "pronpractice") renderPronPractice();
   else if (S.screen === "listening") renderListeningSetup();
+  else if (S.screen === "fluency") renderFluencySetup();
   else if (S.screen === "describe") renderDescribeSetup();
   else if (S.screen === "reviewquiz") renderReviewQuiz();
 }
@@ -1238,7 +1241,7 @@ function renderHistory() {
       reversed.slice(0,50).map(h => {
         const d = new Date(h.date);
         const dateStr = (d.getMonth()+1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2,'0');
-        const icon = h.mode==='freetalk'?'🗣️':h.mode==='flash'?'⚡':h.mode==='describe'?'🎨':h.mode==='shadow'?'🎧':h.mode==='listening'?'👂':'📰';
+        const icon = h.mode==='freetalk'?'🗣️':h.mode==='flash'?'⚡':h.mode==='describe'?'🎨':h.mode==='shadow'?'🎧':h.mode==='listening'?'👂':h.mode==='fluency'?'🔁':'📰';
         const scoreColor = (h.score||0)>=80?'var(--green)':(h.score||0)>=60?'var(--yellow)':'var(--muted)';
         return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' +
           '<div class="flex justify-between items-center">' +
@@ -1267,9 +1270,9 @@ function renderAnalysis() {
     var f = arr.filter(h => h.mode === mode && h.score > 0);
     return f.length > 0 ? Math.round(f.reduce((a,h) => a+(h.score||0),0)/f.length) : 0;
   }
-  var modes = ['freetalk','flash','describe','shadow','listening'];
-  var labels = ['Talk','Flash','Desc','Shadow','Listen'];
-  var icons = ['🗣️','⚡','🎨','🎧','👂'];
+  var modes = ['freetalk','flash','describe','shadow','listening','fluency'];
+  var labels = ['Talk','Flash','Desc','Shadow','Listen','4/3/2'];
+  var icons = ['🗣️','⚡','🎨','🎧','👂','🔁'];
   var w2 = modes.map(m => modeAvg(week2, m));
   var m1 = modes.map(m => modeAvg(month1, m));
 
@@ -1338,7 +1341,7 @@ function renderAnalysis() {
       '<div style="font-size:15px;font-weight:600;margin-bottom:4px">📊 スキルバランス（モード別）</div>' +
       '<div style="font-size:12px;color:var(--muted);margin-bottom:12px"><span style="color:#059669">━━</span> 直近2週間　<span style="color:#818cf8">- - -</span> 直近1ヶ月</div>' +
       radarSVG(w2, m1, labels) +
-      '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:12px;text-align:center;font-size:12px">' +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:12px;text-align:center;font-size:12px">' +
       modes.map((m,i) => '<div>'+icons[i]+'<br><span style="color:#059669;font-weight:700">'+w2[i]+'</span> / <span style="color:#818cf8">'+m1[i]+'</span></div>').join('') +
       '</div></div>' : ''}
 
@@ -1468,8 +1471,8 @@ function renderAnalysis() {
       ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
       ctx.fillText(g, 4, gy+3);
     }
-    var colors = {freetalk:'#3b82f6', flash:'#f59e0b', describe:'#8b5cf6', shadow:'#059669', listening:'#f43f5e'};
-    var modeNames = {freetalk:'Talk', flash:'Flash', describe:'Desc', shadow:'Shadow', listening:'Listen'};
+    var colors = {freetalk:'#3b82f6', flash:'#f59e0b', describe:'#8b5cf6', shadow:'#059669', listening:'#f43f5e', fluency:'#ec4899'};
+    var modeNames = {freetalk:'Talk', flash:'Flash', describe:'Desc', shadow:'Shadow', listening:'Listen', fluency:'4/3/2'};
     var days30 = [];
     for (var di = 29; di >= 0; di--) {
       var dd = new Date(now - di*DAY);
@@ -1745,7 +1748,7 @@ function renderHome() {
         '</div>' +
         '<div class="text-xs text-muted mt-8">' +
         Object.entries(weekByMode).map(function(e) {
-          var icon = e[0]==='freetalk'?'🗣️':e[0]==='flash'?'⚡':e[0]==='describe'?'🎨':e[0]==='shadow'?'🎧':e[0]==='listening'?'👂':'📰';
+          var icon = e[0]==='freetalk'?'🗣️':e[0]==='flash'?'⚡':e[0]==='describe'?'🎨':e[0]==='shadow'?'🎧':e[0]==='listening'?'👂':e[0]==='fluency'?'🔁':'📰';
           return icon + ' ' + e[1] + '回';
         }).join(' / ') +
         '</div></div>';
@@ -1776,8 +1779,8 @@ function renderHome() {
     </div>` : ''}
 
     <div class="card mb-16" id="routineCard" style="background:linear-gradient(135deg,${new Date().getHours()<12?'#fef3c7,#fde68a':'#e0e7ff,#c7d2fe'});border:none;cursor:pointer">
-      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅':'🌙'} 自動ルーティン（10分）</div>
-      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Shadowing 5文を自動連続</div>
+      <div class="text-sm" style="font-weight:700">${new Date().getHours()<12?'🌅 朝の':'🌙 夜の'}自動ルーティン（約15分）</div>
+      <div class="text-xs mt-4" style="color:#1a2a3a">Free Talk 3ターン → Flash 5問 → Description 5問 → Shadowing 5文を自動連続</div>
       <div class="text-xs mt-8" style="font-weight:600;color:var(--accent)">▶ タップしてテーマを選択</div>
     </div>
     <div class="card mb-16 hidden" id="routineSetup">
@@ -1827,6 +1830,13 @@ function renderHome() {
       <div class="arrow">→</div>
     </div>
 
+    <div class="mode-card mb-16" id="startFluency" style="background:#fce7f3;border:1.5px solid #f472b6;color:#831843">
+      <div class="icon">🔁</div>
+      <h3>4/3/2 Fluency</h3>
+      <p>同じ話を50→40→30秒で。流暢さを鍛える</p>
+      <div class="arrow">→</div>
+    </div>
+
     <div class="mode-card mb-16" id="startNews" style="background:#e0e7ff;border:1.5px solid #818cf8;color:#312e81">
       <div class="icon">📰</div>
       <h3>News Discussion</h3>
@@ -1859,6 +1869,7 @@ function renderHome() {
   $("startDescribe").onclick = () => initDescribe();
   if ($("startNews")) $("startNews").onclick = () => initNews();
   if ($("startListening")) $("startListening").onclick = () => initListening();
+  if ($("startFluency")) $("startFluency").onclick = () => initFluency();
 
   // Routine launcher
   if ($("routineCard")) {
@@ -2625,6 +2636,347 @@ function renderListeningSummary() {
   `;
   $("lssBack").onclick = $("lssHome").onclick = () => { S.screen = "home"; render(); };
   $("lssAgain").onclick = () => initListening();
+}
+
+// ═══════════════════════════════════
+// 4/3/2 FLUENCY DRILL (50 / 40 / 30 sec)
+// ═══════════════════════════════════
+
+const FD_LIMITS = [50, 40, 30];
+const FD_FILLERS = ['um','uh','er','ah','like','you know','i mean','well','actually','basically','sort of','kind of','so yeah'];
+
+// Today's Free Talk topic, if there was one — the evening drill retells the morning's story
+function fdTodayTopic() {
+  var hist = getHistory();
+  var today = localDateKey();
+  for (var i = hist.length - 1; i >= 0; i--) {
+    var h = hist[i];
+    if (h.mode !== 'freetalk') continue;
+    if (localDateKey(new Date(h.date)) !== today) continue;
+    if (!h.topic) continue;
+    return h.topic;
+  }
+  return null;
+}
+
+function fdFillerCount(text) {
+  var t = ' ' + text.toLowerCase().replace(/[.,!?]/g, ' ') + ' ';
+  var n = 0;
+  FD_FILLERS.forEach(function(f) {
+    var re = new RegExp('\\s' + f.replace(/ /g, '\\s+') + '\\s', 'g');
+    var m = t.match(re);
+    if (m) n += m.length;
+  });
+  return n;
+}
+
+function initFluency() {
+  S.screen = 'fluency';
+  S.fdRound = 0; S.fdRuns = [];
+  S.fdTopic = ''; S.fdTopicLabel = '';
+  renderFluencySetup();
+}
+
+function renderFluencySetup() {
+  var todays = fdTodayTopic();
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="fdBack">←</button><div class="title">🔁 4/3/2 Fluency</div></div>
+
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">🔁 やり方</div>
+      <div class="text-xs text-muted">同じ話を3回します。制限時間だけが短くなります（50秒 → 40秒 → 30秒）。
+      内容は削らず、言い淀まずに話せるようになるのが狙いです。終了後に3回分を比較して、流暢さ・内容・構成の変化を見ます。</div>
+    </div>
+
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📊 レベル</div>
+      <div class="level-select">
+        ${Object.values(CEFR_LEVELS).map(function(l){ return '<div class="level-chip'+(S.fdLevel===l.id?' active':'')+'" data-fdlvl="'+l.id+'">'+l.label+'</div>'; }).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:10px">🎯 お題</div>
+      ${todays ? `<div class="topic-pill selected" data-fdtopic="${esc(todays)}" style="display:block;text-align:left;padding:12px 16px;margin-bottom:8px">
+        <div style="font-weight:600;pointer-events:none">🌅 今日の朝の話題「${esc(todays)}」</div>
+        <div class="text-xs text-muted" style="pointer-events:none">同じ話題をもう一度、短く話す</div>
+      </div>` : `<div class="text-xs text-muted mb-8">今日はまだ Free Talk をしていないので、お題を選んでください</div>`}
+      <div class="topic-grid">
+        ${Object.entries(ROUTINE_THEMES).map(function(e){ return '<div class="topic-pill'+((!todays && e[0]==='daily')?' selected':'')+'" data-fdtopic="'+esc(e[1].label)+'">'+e[1].label+'</div>'; }).join('')}
+      </div>
+    </div>
+
+    <button class="btn btn-primary w-full mt-16 mb-16" id="fdStart">🔁 スタート（準備30秒 → 50/40/30秒）</button>
+  `;
+  S.fdTopicLabel = todays || ROUTINE_THEMES.daily.label;
+
+  $("fdBack").onclick = function() { S.screen = 'home'; render(); };
+  document.querySelectorAll('[data-fdlvl]').forEach(function(el) {
+    el.onclick = function() { S.fdLevel = this.dataset.fdlvl; renderFluencySetup(); };
+  });
+  document.querySelectorAll('[data-fdtopic]').forEach(function(el) {
+    el.onclick = function() {
+      S.fdTopicLabel = this.dataset.fdtopic;
+      document.querySelectorAll('[data-fdtopic]').forEach(function(e){ e.classList.remove('selected'); });
+      this.classList.add('selected');
+    };
+  });
+  $("fdStart").onclick = function() { S.fdRound = 0; S.fdRuns = []; generateFluencyPrompt(); };
+}
+
+async function generateFluencyPrompt() {
+  app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">🔁 お題を作成中...</div></div>';
+  var lvl = CEFR_LEVELS[S.fdLevel] || CEFR_LEVELS.B1;
+  try {
+    var raw = await geminiChat([{ role: 'user', content:
+`Create ONE speaking prompt for a ${lvl.id} level English learner, on the theme "${S.fdTopicLabel}".
+
+The learner will tell the same story three times, in 50, then 40, then 30 seconds.
+So the prompt must invite a short personal narrative or opinion that can fill ~50 seconds.
+
+Rules:
+- Ask for a concrete personal experience or a clear opinion with reasons
+- NOT a yes/no question, NOT a list
+- Japanese prompt, natural and specific (like a friend asking)
+- Also give 3 short English keyword hints the learner can lean on
+
+Return JSON: {"ja": "日本語のお題", "hints": ["keyword1", "keyword2", "keyword3"]}` }],
+      'JSON only.', true, false, null, 1.0);
+    var d = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    S.fdTopic = d.ja || S.fdTopicLabel;
+    S._fdHints = d.hints || [];
+    renderFluencyPrep();
+  } catch (e) {
+    app.innerHTML = `<div class="card" style="text-align:center;padding:32px"><div class="text-sm text-red">${esc(e.message)}</div><button class="btn btn-secondary mt-16" onclick="initFluency()">リトライ</button></div>`;
+  }
+}
+
+function renderFluencyPrep() {
+  var left = 30;
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="fdpBack">←</button><div class="title">🔁 準備</div></div>
+    <div class="card" style="padding:24px">
+      <div class="text-xs text-muted mb-8">🎯 お題</div>
+      <div class="text-sm" style="font-weight:600;font-size:16px;line-height:1.8">${esc(S.fdTopic)}</div>
+      ${(S._fdHints||[]).length ? `<div class="text-xs text-muted mt-12">💡 ${(S._fdHints||[]).map(esc).join(' / ')}</div>` : ''}
+    </div>
+    <div class="card" style="text-align:center;padding:28px">
+      <div style="font-size:44px;font-weight:800;color:var(--accent)" id="fdPrepCount">${left}</div>
+      <div class="text-xs text-muted">秒 — 話す内容を考えましょう</div>
+      <button class="btn btn-primary w-full mt-16" id="fdSkipPrep">準備できた、始める →</button>
+    </div>
+  `;
+  $("fdpBack").onclick = function() { clearInterval(S._fdPrepTimer); S.screen = 'home'; render(); };
+  S._fdPrepTimer = setInterval(function() {
+    left--;
+    if ($("fdPrepCount")) $("fdPrepCount").textContent = left;
+    if (left <= 0) { clearInterval(S._fdPrepTimer); startFluencyRound(); }
+  }, 1000);
+  $("fdSkipPrep").onclick = function() { clearInterval(S._fdPrepTimer); startFluencyRound(); };
+}
+
+async function startFluencyRound() {
+  var round = S.fdRound;
+  var limit = FD_LIMITS[round];
+  var prev = S.fdRuns[round - 1];
+
+  app.innerHTML = `
+    <div class="navbar"><button class="back" id="fdrBack">←</button><div class="title">🔁 Round ${round+1}/3 — ${limit}秒</div></div>
+    <div class="progress-bar"><div class="progress-fill" id="fdBar" style="width:0%"></div></div>
+    <div class="card" style="padding:20px">
+      <div class="text-xs text-muted mb-8">🎯 お題</div>
+      <div class="text-sm" style="font-weight:600;line-height:1.7">${esc(S.fdTopic)}</div>
+      ${prev ? `<div class="text-xs mt-12" style="color:var(--accent)">前回: ${prev.words}語 / ${prev.wpm} WPM。内容は削らず、同じ話をもっとスムーズに。</div>` : ''}
+    </div>
+    <div class="card" style="text-align:center;padding:28px">
+      <div style="font-size:48px;font-weight:800;color:var(--accent)" id="fdCount">${limit}</div>
+      <div class="text-xs text-muted mb-16">残り秒数</div>
+      <button class="btn btn-primary w-full" id="fdRec" style="padding:18px;font-size:17px">🎤 録音を開始</button>
+    </div>
+    <div id="fdNote" class="text-xs text-muted" style="text-align:center"></div>
+  `;
+  $("fdrBack").onclick = function() {
+    if (confirm("中断しますか？")) { clearInterval(S._fdTimer); if (S._fdRec) { try { S._fdRec.stop(); } catch(e){} } S.screen='home'; render(); }
+  };
+
+  $("fdRec").onclick = async function() {
+    var btn = this;
+    btn.disabled = true; btn.textContent = "⏳ マイク準備中...";
+    try {
+      var rec = await recordWav(0, null, 'sttSeconds');
+      S._fdRec = rec;
+      var started = Date.now();
+      var left = limit;
+      btn.disabled = false;
+      btn.textContent = "⏹ 話し終えた";
+      btn.className = "btn btn-danger w-full";
+      if ($("fdNote")) $("fdNote").textContent = "時間いっぱい話しきりましょう";
+
+      var finish = async function(auto) {
+        clearInterval(S._fdTimer);
+        btn.disabled = true; btn.textContent = "⏳ 解析中...";
+        var elapsed = Math.max(1, Math.round((Date.now() - started) / 1000));
+        var wav = await rec.stop();
+        S._fdRec = null;
+        var text = '';
+        try { if (wav && wav.size > 44 && S.azureKey) text = await azureSTT(wav); } catch (e) { console.warn(e); }
+        var words = text ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+        var fillers = fdFillerCount(text);
+        S.fdRuns.push({
+          round: round + 1, limit: limit, seconds: Math.min(elapsed, limit),
+          text: text, words: words,
+          wpm: Math.round(words / (Math.min(elapsed, limit) / 60)) || 0,
+          fillers: fillers,
+          fillerRate: words > 0 ? Math.round(fillers / words * 100) : 0,
+          auto: !!auto
+        });
+        renderFluencyRoundResult();
+      };
+
+      S._fdTimer = setInterval(function() {
+        left--;
+        if ($("fdCount")) $("fdCount").textContent = left;
+        if ($("fdBar")) $("fdBar").style.width = ((limit - left) / limit * 100) + '%';
+        if (left <= 5 && $("fdCount")) $("fdCount").style.color = 'var(--red)';
+        if (left <= 0) finish(true);
+      }, 1000);
+
+      btn.onclick = function() { finish(false); };
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "🎤 録音を開始";
+      alert("マイクアクセスエラー: " + e.message);
+    }
+  };
+}
+
+function renderFluencyRoundResult() {
+  var r = S.fdRuns[S.fdRuns.length - 1];
+  var prev = S.fdRuns.length > 1 ? S.fdRuns[S.fdRuns.length - 2] : null;
+  var isLast = S.fdRuns.length >= 3;
+  var dWpm = prev ? r.wpm - prev.wpm : 0;
+  var dWords = prev ? r.words - prev.words : 0;
+
+  app.innerHTML = `
+    <div class="navbar"><div class="title">🔁 Round ${r.round} 結果</div></div>
+    <div class="summary-header">
+      <div class="score" style="color:var(--accent)">${r.wpm}</div>
+      <div class="label">WPM（${r.words}語 / ${r.seconds}秒）</div>
+    </div>
+    <div class="card">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="val" style="color:${prev ? (dWpm>=0?'var(--green)':'var(--red)') : 'var(--accent)'}">${prev ? (dWpm>=0?'+':'')+dWpm : r.wpm}</div><div class="lbl">${prev?'WPM変化':'WPM'}</div></div>
+        <div class="stat-card"><div class="val" style="color:${r.fillerRate<=5?'var(--green)':r.fillerRate<=10?'var(--yellow)':'var(--red)'}">${r.fillerRate}%</div><div class="lbl">フィラー率</div></div>
+      </div>
+      ${prev ? `<div class="text-xs text-muted mt-8" style="text-align:center">語数 ${dWords>=0?'+':''}${dWords}語（内容が減っていないかの目安）</div>` : ''}
+      ${r.text ? `<div class="text-xs text-muted mt-12">🗣️ 認識結果</div><div class="text-sm mt-4">${esc(r.text)}</div>`
+               : `<div class="text-xs text-red mt-12">音声を認識できませんでした。Azure Speech キーを確認してください。</div>`}
+    </div>
+    ${isLast ? `<button class="btn btn-primary w-full mt-16 mb-16" id="fdAnalyze">📊 3回分を比較する（有料）</button>`
+             : `<button class="btn btn-primary w-full mt-16" id="fdNext">▶ Round ${r.round+1}（${FD_LIMITS[r.round]}秒）へ</button>
+                <div class="text-xs text-muted mt-8 mb-16" style="text-align:center">同じ話を、もっと短い時間で</div>`}
+  `;
+  if ($("fdNext")) $("fdNext").onclick = function() { S.fdRound++; startFluencyRound(); };
+  if ($("fdAnalyze")) $("fdAnalyze").onclick = analyzeFluency;
+}
+
+async function analyzeFluency() {
+  var runs = S.fdRuns;
+  app.innerHTML = '<div class="card" style="text-align:center;padding:40px"><div class="text-sm">📊 3回分を比較中...</div></div>';
+
+  var fb = null;
+  var hasText = runs.some(function(r){ return r.text && r.text.length > 10; });
+  if (hasText) {
+    try {
+      var body = runs.map(function(r){ return 'Round ' + r.round + ' (' + r.limit + 's limit, ' + r.words + ' words, ' + r.wpm + ' WPM):\n' + (r.text || '(no speech recognised)'); }).join('\n\n');
+      var raw = await geminiChat([{ role: 'user', content:
+`A learner told the SAME story three times under shrinking time limits (50s, 40s, 30s). This is the 4/3/2 fluency technique.
+
+Topic: ${S.fdTopic}
+
+${body}
+
+Judge whether the retellings actually improved. Speed alone is not improvement — check that the CONTENT survived.
+
+Score 0-100 for each:
+- "content": did the key information survive the compression? (dropping the point = low score)
+- "structure": did the telling get better organised?
+- "language": did wording get more accurate or natural?
+- "fluency": fewer hesitations, smoother delivery (judge from repetitions, restarts, filler words in the transcript)
+
+Also list, in Japanese:
+- "kept": what was successfully kept or improved (max 3, short)
+- "lost": what was dropped or got worse (max 3, short)
+- "advice": one concrete tip for next time (1-2 sentences)
+
+Respond in Japanese for all text fields.
+JSON: {"content":80,"structure":70,"language":65,"fluency":75,"kept":["..."],"lost":["..."],"advice":"..."}` }],
+        'JSON only.', true, false, null, 0.4);
+      fb = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    } catch (e) { console.warn('fluency analysis failed', e); }
+  }
+
+  var wpms = runs.map(function(r){ return r.wpm; });
+  var gain = wpms[0] > 0 ? Math.round((wpms[2] - wpms[0]) / wpms[0] * 100) : 0;
+  var avgOf = function(o){ return Math.round(((o.content||0)+(o.structure||0)+(o.language||0)+(o.fluency||0))/4); };
+  var overall = fb ? avgOf(fb) : Math.max(0, Math.min(100, 50 + gain));
+  var col = overall >= 80 ? 'var(--green)' : overall >= 60 ? 'var(--yellow)' : 'var(--red)';
+
+  updateStreak();
+  saveSession({ mode: 'fluency', topic: '🔁 ' + (S.fdTopicLabel || '4/3/2'), level: S.fdLevel, score: overall,
+                wordsPerMin: wpms[2], minutes: 4 });
+  addToCumulativeCost(calcSessionTotal());
+
+  var maxWpm = Math.max.apply(null, wpms.concat([1]));
+  var bars = runs.map(function(r, i) {
+    var h = Math.round(r.wpm / maxWpm * 100);
+    return '<div style="flex:1;text-align:center">' +
+      '<div style="height:110px;display:flex;align-items:flex-end;justify-content:center">' +
+        '<div style="width:70%;height:' + h + '%;background:linear-gradient(180deg,#f472b6,#ec4899);border-radius:6px 6px 0 0;min-height:4px"></div>' +
+      '</div>' +
+      '<div style="font-weight:700;color:#ec4899;font-size:15px">' + r.wpm + '</div>' +
+      '<div class="text-xs text-muted">' + r.limit + '秒 / ' + r.words + '語</div>' +
+      '<div class="text-xs" style="color:' + (r.fillerRate<=5?'#059669':r.fillerRate<=10?'#f59e0b':'#dc2626') + '">filler ' + r.fillerRate + '%</div>' +
+    '</div>';
+  }).join('');
+
+  app.innerHTML = `
+    <div class="navbar"><div class="title">🔁 4/3/2 完了</div></div>
+    <div class="summary-header">
+      <div class="score" style="color:${col}">${overall}</div>
+      <div class="label">総合${gain !== 0 ? ` ・ WPM ${gain>=0?'+':''}${gain}%` : ''}</div>
+    </div>
+
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">📈 3回の推移</div>
+      <div style="display:flex;gap:8px;align-items:flex-end">${bars}</div>
+    </div>
+
+    ${fb ? `<div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:12px">🔍 内容の評価</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
+        ${[['内容',fb.content],['構成',fb.structure],['表現',fb.language],['流暢さ',fb.fluency]].map(function(x){
+          var c = (x[1]||0)>=75?'var(--green)':(x[1]||0)>=55?'var(--yellow)':'var(--red)';
+          return '<div><div style="font-weight:700;font-size:18px;color:'+c+'">'+(x[1]||0)+'</div><div class="text-xs text-muted">'+x[0]+'</div></div>';
+        }).join('')}
+      </div>
+      ${(fb.kept||[]).length ? '<div class="text-xs mt-16" style="color:var(--green);font-weight:600">✅ 良くなった点</div>' + (fb.kept||[]).map(function(k){ return '<div class="text-xs text-muted mt-4">・'+esc(k)+'</div>'; }).join('') : ''}
+      ${(fb.lost||[]).length ? '<div class="text-xs mt-12" style="color:var(--red);font-weight:600">⚠️ 落ちた点</div>' + (fb.lost||[]).map(function(k){ return '<div class="text-xs text-muted mt-4">・'+esc(k)+'</div>'; }).join('') : ''}
+      ${fb.advice ? '<div class="tip mt-12">💡 '+esc(fb.advice)+'</div>' : ''}
+    </div>` : '<div class="card"><div class="text-sm text-muted" style="text-align:center">音声が認識できなかったため、内容の比較はできませんでした</div></div>'}
+
+    <div class="card">
+      <div class="text-sm" style="font-weight:600;margin-bottom:8px">🗣️ 各回の発話</div>
+      ${runs.map(function(r){ return '<div style="padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<div class="text-xs text-muted">Round '+r.round+'（'+r.limit+'秒）</div>' +
+        '<div class="text-sm mt-4">'+esc(r.text || '(認識なし)')+'</div></div>'; }).join('')}
+    </div>
+
+    ${calcCostHTML()}
+    <button class="btn btn-primary w-full mt-16" id="fdHome">ホームに戻る</button>
+    <button class="btn btn-secondary w-full mt-8 mb-16" id="fdAgain">もう一度（新しいお題）</button>
+  `;
+  $("fdHome").onclick = function() { S.screen = 'home'; render(); };
+  $("fdAgain").onclick = function() { initFluency(); };
 }
 
 // ═══════════════════════════════════
